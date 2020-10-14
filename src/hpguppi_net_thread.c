@@ -78,8 +78,11 @@
 
 enum run_states {IDLE, ARMED, RECORD};
 
+// These can be re-enabled once they are used
+#if 0
 static const uint64_t START_OK_MARGIN   =      64;
 static const uint64_t START_LATE_MARGIN = (1<<20);
+#endif
 
 /* It's easier to just make these global ... */
 static uint64_t npacket_total=0, ndropped_total=0, nbogus_total=0;
