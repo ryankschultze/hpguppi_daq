@@ -354,8 +354,11 @@ void hpguppi_read_obs_params(char *buf,
         int YYYY, MM, DD, h, m;
         double s;
         datetime_from_mjd(p->hdr.MJD_epoch, &YYYY, &MM, &DD, &h, &m, &s);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-overflow="
         sprintf(p->hdr.date_obs, "%04d-%02d-%02dT%02d:%02d:%06.3f",
-                YYYY % 10000, MM % 100, DD % 100, h % 24, m % 60, s);
+                YYYY % 10000, MM % 100, DD % 100, h % 24, m % 60, fmod(s, 60));
+#pragma GCC diagnostic pop
     }
 
     // TODO: call telescope-specific settings here
@@ -366,7 +369,7 @@ void hpguppi_read_obs_params(char *buf,
     {
         int ii, jj, kk;
         int bytes_per_dt = p->hdr.nchan * p->hdr.npol * p->hdr.nbits / 8;
-        char key[10];
+        char key[17];
         double offset, scale, dtmp;
         long long max_bytes_per_file;
 
