@@ -144,6 +144,12 @@ void hpguppi_read_pktsock_params(char *buf, struct hpguppi_pktsock_params *p)
         p->packet_size = 4128;
     else if (strncmp(p->packet_format, "SHORT", 5)==0)
         p->packet_size = 544;
+    else if (strncmp(p->packet_format, "ATASNAPV", 8)==0){
+        int bitspersample;
+        get_int("NBITS", bitspersample, 4);
+        //               payload : complex4[nchan, 16, 2]      +  header 
+        p->packet_size = p->obsnchan*16*2*(bitspersample*2/8) + 16;
+    }
     else
         p->packet_size = 8208;
 }

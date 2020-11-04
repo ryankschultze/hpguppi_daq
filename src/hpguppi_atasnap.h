@@ -182,6 +182,20 @@ struct __attribute__ ((__packed__)) ata_snap_ibv_pkt {
 	uint8_t payload[];
 };
 
+struct __attribute__ ((__packed__)) ata_snap_pkt {
+  struct ethhdr ethhdr; // headers aren't functionally 
+  struct iphdr iphdr; // headers aren't functionally 
+  struct udphdr udphdr; // headers aren't functionally 
+  uint8_t pad0[66]; // Dont know the reason, but actual network payload is offset
+  uint8_t version;
+  uint8_t type;
+  uint16_t n_chans;
+  uint16_t chan;
+  uint16_t feng_id;
+  uint64_t timestamp;
+  uint8_t payload[];//complex4 data[n_chans, 16, 2] // 4-bit real + 4-bit imaginary
+};
+
 // ATA SNAP header byte offset within (unpadded) packet
 #define ATA_SNAP_PKT_OFFSET_HEADER \
   (sizeof(struct ethhdr) + \
