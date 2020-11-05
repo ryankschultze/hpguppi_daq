@@ -158,7 +158,7 @@ static void finalize_block(struct datablock_stats *d)
   if(d->pkts_per_block > d->npacket) {
     d->ndrop = d->pkts_per_block - d->npacket;
   }
-  
+
   sprintf(dropstat, "%d/%lu", d->ndrop, d->pkts_per_block);
   hputi8(header, "PKTIDX", d->block_num * d->pktidx_per_block);
   hputi4(header, "NPKT", d->npacket);
@@ -295,44 +295,47 @@ static void wait_for_block_free(const struct datablock_stats * d,
 // int copy_packet_data_to_databuf_printed = 1;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt, int pkt_payload_size)
+    struct ata_snap_pkt* ata_pkt, size_t pkt_payload_size)
 {
-    uint16_t * dst_base = (uint16_t *)datablock_stats_data(d);
-    unsigned long pkt_idx = __bswap_64(ata_pkt->timestamp);
-    unsigned short feng_id = __bswap_16(ata_pkt->feng_id);
+    char * dst_base = datablock_stats_data(d);
+    const unsigned long pkt_idx = __bswap_64(ata_pkt->timestamp);
+    const unsigned short feng_id = __bswap_16(ata_pkt->feng_id);
 
     // stream_stride is the size of a single stream for a single F engine for all
     // NTIME samples of the block and all channels in a stream (i.e. in a packet):
-    const int stream_stride = pkt_payload_size * d->pktidx_per_block;
+    const unsigned int stream_stride = pkt_payload_size * d->pktidx_per_block;
 
     // fid_stride is the size of all streams of a single F engine:
-    const int fid_stride = stream_stride * ata_oi->nstrm;
+    const unsigned int fid_stride = stream_stride * ata_oi->nstrm;
 
     // pktidx_stride is the size of a single channel for a single PKTIDX value
     // (i.e. for a single packet):
-    const int pktidx_stride = ata_oi->pkt_nchan;
+    const unsigned int pktidx_stride = ata_oi->pkt_nchan;
 
     // Stream is the "channel chunk" for this FID
-    const int stream = (feng_id - ata_oi->schan) / ata_oi->pkt_nchan;
+    const unsigned int stream = (feng_id - ata_oi->schan) / ata_oi->pkt_nchan;
 
     // Advance dst_base to...
-    const long offset = feng_id * fid_stride // first location of this FID, then
+    const unsigned long offset = feng_id * fid_stride // first location of this FID, then
             +  stream * stream_stride // first location of this stream, then
-            +  (pkt_idx - d->pktidx_per_block) * pktidx_stride; // to this pktidx
+            +  (d->pktidx_per_block - (pkt_idx%d->pktidx_per_block)) * pktidx_stride; // to this pktidx
 
     // if (! copy_packet_data_to_databuf_printed){
-    //     printf("nstrm            = %d\n", ata_oi->nstrm);
-    //     printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
-    //     printf("feng_id          = %d\n", feng_id);
-    //     printf("schan            = %d\n", ata_oi->schan);
-    //     printf("pkt_payload_size = %d\n", pkt_payload_size);
-    //     printf("pktidx_per_block = %d\n", d->pktidx_per_block);
-    //     printf("stream_stride    = %d\n", stream_stride);
-    //     printf("fid_stride       = %d\n", fid_stride);
-    //     printf("pktidx_stride    = %d\n", pktidx_stride);
-    //     printf("stream           = %d\n", stream);
-    //     printf("offset           = %ld\n", offset);
-    //     copy_packet_data_to_databuf_printed = 1;
+    if(offset < 0 || offset > 128*1024*1024){
+      printf("nstrm            = %d\n", ata_oi->nstrm);
+      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+      printf("feng_id          = %d\n", feng_id);
+      printf("schan            = %d\n", ata_oi->schan);
+      printf("pkt_payload_size = %ld\n", pkt_payload_size);
+      printf("pktidx           = %ld\n", pkt_idx);
+      printf("pktidx_per_block = %d\n", d->pktidx_per_block);
+      printf("stream_stride    = %d\n", stream_stride);
+      printf("fid_stride       = %d\n", fid_stride);
+      printf("pktidx_stride    = %d\n", pktidx_stride);
+      printf("stream           = %d\n", stream);
+      printf("offset           = %lu\n", offset);
+    }
+    //   copy_packet_data_to_databuf_printed = 1;
     // }
 
     dst_base += offset;
@@ -443,26 +446,7 @@ static int init(hashpipe_thread_args_t *args)
     int overlap=0;
     double tbin=0.0;
     char obs_mode[80] = {0};
-    char fifo_name[PATH_MAX];
-
-    /* Create control FIFO (/tmp/hpguppi_daq_control/$inst_id) */
-    int rv = mkdir(HPGUPPI_DAQ_CONTROL, 0777);
-    if (rv!=0 && errno!=EEXIST) {
-        hashpipe_error(thread_name, "Error creating control fifo directory");
-        return HASHPIPE_ERR_SYS;
-    } else if(errno == EEXIST) {
-        errno = 0;
-    }
-
-    sprintf(fifo_name, "%s/%d", HPGUPPI_DAQ_CONTROL, args->instance_id);
-    rv = mkfifo(fifo_name, 0666);
-    if (rv!=0 && errno!=EEXIST) {
-        hashpipe_error(thread_name, "Error creating control fifo");
-        return HASHPIPE_ERR_SYS;
-    } else if(errno == EEXIST) {
-        errno = 0;
-    }
-
+    
     struct hpguppi_pktsock_params *p_psp = (struct hpguppi_pktsock_params *)
         malloc(sizeof(struct hpguppi_pktsock_params));
 
@@ -519,8 +503,7 @@ static int init(hashpipe_thread_args_t *args)
     // number of blocks
     p_psp->ps.nblocks = PKTSOCK_NBLOCKS;
 
-    rv = hashpipe_pktsock_open(&p_psp->ps, p_psp->ifname, PACKET_RX_RING);
-    if (rv!=HASHPIPE_OK) {
+    if (hashpipe_pktsock_open(&p_psp->ps, p_psp->ifname, PACKET_RX_RING) != HASHPIPE_OK) {
         hashpipe_error(thread_name, "Error opening pktsock.");
         pthread_exit(NULL);
     }
@@ -542,16 +525,6 @@ static void *run(hashpipe_thread_args_t * args)
     const char * status_key = args->thread_desc->skey;
     struct hpguppi_pktsock_params *p_ps_params =
         (struct hpguppi_pktsock_params *)args->user_data;
-
-    /* Open command FIFO for read */
-    char fifo_name[PATH_MAX];
-    char fifo_cmd[MAX_CMD_LEN];
-    sprintf(fifo_name, "%s/%d", HPGUPPI_DAQ_CONTROL, args->instance_id);
-    int fifo_fd = open(fifo_name, O_RDONLY | O_NONBLOCK);
-    if (fifo_fd<0) {
-        hashpipe_error(thread_name, "Error opening control fifo)");
-        pthread_exit(NULL);
-    }
 
     /* Read in general parameters */
     struct hpguppi_params gp;
@@ -577,18 +550,18 @@ static void *run(hashpipe_thread_args_t * args)
 
     /* Packet format to use */
     int seq_step = 1;
-    int pkt_nchan=0, pkt_npol=0, pkt_nbits=0, pkt_payload_size;
+    int pkt_nchan=0, pkt_npol=0, pkt_nbits=0;
     pkt_nchan = pf.hdr.nchan;
     pkt_nbits = pf.hdr.nbits;
     pkt_npol = pf.hdr.npol;
-    pkt_payload_size = pkt_nchan*16*pkt_npol*(pkt_nbits*2/8);//exclude the ATA-SNAP's header-16 bytes 
+    size_t pkt_payload_size = pkt_nchan*16*pkt_npol*(pkt_nbits*2/8);//exclude the ATA-SNAP's header-16 bytes 
     size_t packet_data_size = pkt_payload_size+16;//hpguppi_udp_packet_datasize(p_ps_params->packet_size);
 
     fprintf(stderr, "Observational header:\n"
             "\tnchan: %d\n"
             "\tnbits: %d\n"
             "\tnpol: %d\n"
-            "\t\tPacket Payload Size (nchan*16*npol*(nbits*2/8)): %d\n",
+            "\t\tPacket Payload Size (nchan*16*npol*(nbits*2/8)): %ld\n",
             pkt_nchan,
             pkt_nbits,
             pkt_npol,
@@ -616,8 +589,8 @@ static void *run(hashpipe_thread_args_t * args)
             hputi4(status_buf, "BLOCSIZE", block_size);
         }
     }
-    unsigned pkt_per_block = block_size / pkt_payload_size;
-    unsigned pktidx_per_block = pkt_per_block/seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
+    unsigned int pkt_per_block = block_size / pkt_payload_size;
+    unsigned int pktidx_per_block = pkt_per_block/seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
     unsigned long pkt_blk_num;
 
@@ -643,18 +616,17 @@ static void *run(hashpipe_thread_args_t * args)
     // wblk is a two element array of datablock_stats structures (i.e. the working
     // blocks)
     /* List of databuf blocks currently in use */
-    unsigned i;
+    int wblk_idx;
     const int n_wblock = 2;
     struct datablock_stats wblk[n_wblock];
     // Initialize working blocks
-    for(i=0; i<n_wblock; i++) {
+    for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
         //important to initialise the blocks with unique block idx an block_num values
-        init_datablock_stats(&wblk[i], db, i, i, pkt_per_block);
-        wait_for_block_free(wblk+i, st, status_key);
+        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, pkt_per_block);
+        wait_for_block_free(wblk+wblk_idx, st, status_key);
     }
 
     /* Misc counters, etc */
-    int rv;
     // char *curdata=NULL, *curheader=NULL;
     uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0, pkt_seq_num, last_pkt_seq_num=2048, nextblock_pkt_seq_num=0;
     int64_t pkt_seq_num_diff;    
@@ -785,49 +757,6 @@ static void *run(hashpipe_thread_args_t * args)
                 hputs(st->buf, status_key, "waiting");
                 hashpipe_status_unlock_safe(st);
                 waiting=1;
-            }
-
-            // Check FIFO for command
-            rv = read(fifo_fd, fifo_cmd, MAX_CMD_LEN-1);
-            if(rv == -1 && errno != EAGAIN) {
-                hashpipe_error(thread_name, "error reading control fifo)");
-            } else if(rv > 0) {
-                // Trim newline from command, if any
-                char *newline = strchr(fifo_cmd, '\n');
-                if (newline!=NULL) *newline='\0';
-
-                // Log command
-                hashpipe_warn(thread_name, "got %s command", fifo_cmd);
-
-                // Act on command
-                if(strcasecmp(fifo_cmd, "QUIT") == 0) {
-                    // Go to IDLE state
-                    state = IDLE;
-                    // Hashpipe will exit upon thread exit
-                    pthread_exit(NULL);
-                } else if(strcasecmp(fifo_cmd, "MONITOR") == 0) {
-                    hashpipe_warn(thread_name,
-                            "MONITOR command not supported, use null_output_thread.");
-                } else if(strcasecmp(fifo_cmd, "START") == 0) {
-                    // If in the IDLE or ARMED states
-                    // (START in RECORD state is a no-op)
-                    if(state == IDLE || state == ARMED) {
-                        // Reset current blocks' packet_idx values and stats
-                        for (i=0; i<n_wblock; i++) {
-                            wblk[i].packet_idx = 0;
-                            reset_datablock_stats(&wblk[i]);
-                        }
-
-                        // Go to (or stay in) ARMED state
-                        state = ARMED;
-                    }
-                } else if(strcasecmp(fifo_cmd, "STOP") == 0) {
-                    // Go to IDLE state
-                    state = IDLE;
-                } else {
-                    hashpipe_error(thread_name,
-                            "got unrecognized command '%s'", fifo_cmd);
-                }
             }
 
         } while (!p_frame && run_threads());
@@ -964,9 +893,9 @@ static void *run(hashpipe_thread_args_t * args)
 
             // Re-init working blocks for block number *after* current packet's block
             // and clear their data buffers
-            for(i=0; i<n_wblock; i++) {
-            init_datablock_stats(wblk+i, NULL, -1, pkt_blk_num+i+1,
-                pkt_per_block);
+            for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+              init_datablock_stats(wblk+wblk_idx, NULL, -1, pkt_blk_num+wblk_idx+1,
+                  pkt_per_block);
             }
             fprintf(stderr, "Packet Block Index for finalisation: %ld\n", wblk[n_wblock-1].block_num + 1);
             // Check start/stop using wblk[0]'s first PKTIDX
@@ -986,7 +915,7 @@ static void *run(hashpipe_thread_args_t * args)
         // Once we get here, compute the index of the working block corresponding
         // to this packet.  The computed index may not correspond to a valid
         // working block!
-        int wblk_idx = pkt_blk_num - wblk[0].block_num;
+        wblk_idx = pkt_blk_num - wblk[0].block_num;
 
         // Only copy packet data and count packet if its wblk_idx is valid
         if(0 <= wblk_idx && wblk_idx < n_wblock) {
