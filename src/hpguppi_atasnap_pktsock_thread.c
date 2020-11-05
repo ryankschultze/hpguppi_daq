@@ -253,26 +253,26 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //
 // The p_payload parameter points to the payload of the packet.
 //
-// This is for packets in [time (slowest), channel, pol (fastest)] order.  In
+// This is for packets in [channel (slowest), time, pol (fastest)] order.  In
 // other words:
 //
-//     T0C0P0 T0C0P1 T0C1P0 T0C1P1 ... T0CcP0 T0CcP1 <- t=0
-//     T1C0P0 T1C0P1 T1C1P0 T1C1P1 ... T1CcP0 T1CcP1 <- t=1
+//     C0T0P0 C0T0P1 C0T1P0 C0T1P1 ... C0TtP0 C0TtP1 <- t=0
+//     C1T0P0 C1T0P1 C1T1P0 C1T1P1 ... C1TtP0 C1TtP1 <- t=1
 //     ...
-//     TtC0P0 TtC0P1 TtC1P0 TtC1P1 ... TtCcP0 TtCcP1 <- t=pkt_ntime-1
+//     CtT0P0 CtT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- t=pkt_ntime-1
 //
 // GUPPI RAW block is ordered as:
 //
 //     t=0               t=1                   t=NTIME
-//     F0T0C0P0 F0T0C0P1 F0T1C0P0 F0T1C0P1 ... F0TtC0P0 F0TtC0P1
-//     F0T0C1P0 F0T0C1P1 F0T1C1P0 F0T1C1P1 ... F0TtC1P0 F0TtC1P1
+//     F0C0T0P0 F0C0T0P1 F0C1T0P0 F0C1T0P1 ... F0CcT0P0 F0CcT0P1
+//     F0C0T1P0 F0C0T1P1 F0C1T1P0 F0C1T1P1 ... F0CcT1P0 F0CcT1P1
 //     ...
-//     F0T0CcP0 F0T0CcP1 F0T1CcP0 F0T1CcP1 ... F0TtCcP0 F0TtCcP1
-//     F1T0C0P0 F1T0C0P1 F1T1C0P0 F1T1C0P1 ... F1TtC0P0 F1TtC0P1
-//     F1T0C1P0 F1T0C1P1 F1T1C1P0 F1T1C1P1 ... F1TtC1P0 F1TtC1P1
+//     F0C0TtP0 F0C0TtP1 F0C1TtP0 F0C1TtP1 ... F0CcTtP0 F0CcTtP1
+//     F1C0T0P0 F1C0T0P1 F1C1T0P0 F1C1T0P1 ... F1CcT0P0 F1CcT0P1
+//     F1C0T1P0 F1C0T1P1 F1C1T1P0 F1C1T1P1 ... F1CcT1P0 F1CcT1P1
 //     ...
 //     ...
-//     FfT0CcP0 FfT0CcP1 FfT1CcP0 FfT1CcP1 ... FfTtCcP0 FfTtCcP1
+//     FfC0TtP0 FfC0TtP1 FfC1TtP0 FfC1TtP1 ... FfCcTtP0 FfCcTtP1
 //
 // where F is FID (f=NANTS-1), T is time (t=PKT_NTIME-1), C is channel
 // (c=NSTRMS*PKT_NCHAN-1), and P is polarization.  Streams are not shown
@@ -282,23 +282,25 @@ static void wait_for_block_free(const struct datablock_stats * d,
 // direction, then channel changing in the vertical direction) for a single
 // PKTIDX value (i.e. this is a slice in time of the GUPPI RAW block):
 //
-//     [FID=0, STREAM=0, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
-//     [FID=0, STREAM=1, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
+//     [FID=0, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=0, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //      ...
-//     [FID=0, STREAM=s, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
-//     [FID=1, STREAM=0, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
-//     [FID=1, STREAM=1, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
+//     [FID=0, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=1, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=1, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //      ...
 //      ...
-//     [FID=f, STREAM=s, TIME=0:PKT_NTIME-1, CHAN=0:PKT_NCHAN-1] ...
+//     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //
 // int copy_packet_data_to_databuf_printed = 1;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
     struct ata_snap_pkt* ata_pkt, size_t pkt_payload_size)
 {
-    char * dst_base = datablock_stats_data(d);
+    // the pointer's data width reflects the paired dual polarisation 8 bit time samples
+    uint16_t *dst_base = (uint16_t *) datablock_stats_data(d);
     const unsigned long pkt_idx = __bswap_64(ata_pkt->timestamp);
+    const unsigned short pkt_schan = __bswap_16(ata_pkt->chan);
     const unsigned short feng_id = __bswap_16(ata_pkt->feng_id);
 
     // stream_stride is the size of a single stream for a single F engine for all
@@ -310,31 +312,31 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
 
     // pktidx_stride is the size of a single channel for a single PKTIDX value
     // (i.e. for a single packet):
-    const unsigned int pktidx_stride = ata_oi->pkt_nchan;
+    const unsigned int pktidx_stride = ata_oi->pkt_nchan;//npol factor is taken care of in dst_base pointer type
 
     // Stream is the "channel chunk" for this FID
-    const unsigned int stream = (feng_id - ata_oi->schan) / ata_oi->pkt_nchan;
+    const int stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
 
     // Advance dst_base to...
     const unsigned long offset = feng_id * fid_stride // first location of this FID, then
             +  stream * stream_stride // first location of this stream, then
-            +  (d->pktidx_per_block - (pkt_idx%d->pktidx_per_block)) * pktidx_stride; // to this pktidx
+            +  (pkt_idx - d->pktidx_per_block) * pktidx_stride; // to this pktidx
 
     // if (! copy_packet_data_to_databuf_printed){
-    if(offset < 0 || offset > 128*1024*1024){
-      printf("nstrm            = %d\n", ata_oi->nstrm);
-      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
-      printf("feng_id          = %d\n", feng_id);
-      printf("schan            = %d\n", ata_oi->schan);
-      printf("pkt_payload_size = %ld\n", pkt_payload_size);
-      printf("pktidx           = %ld\n", pkt_idx);
-      printf("pktidx_per_block = %d\n", d->pktidx_per_block);
-      printf("stream_stride    = %d\n", stream_stride);
-      printf("fid_stride       = %d\n", fid_stride);
-      printf("pktidx_stride    = %d\n", pktidx_stride);
-      printf("stream           = %d\n", stream);
-      printf("offset           = %lu\n", offset);
-    }
+    // if(offset < 0 || offset > 128*1024*1024){
+    //   printf("nstrm            = %d\n", ata_oi->nstrm);
+    //   printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+    //   printf("feng_id          = %d\n", feng_id);
+    //   printf("schan            = %d\n", ata_oi->schan);
+    //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
+    //   printf("pktidx           = %ld\n", pkt_idx);
+    //   printf("pktidx_per_block = %d\n", d->pktidx_per_block);
+    //   printf("stream_stride    = %d\n", stream_stride);
+    //   printf("fid_stride       = %d\n", fid_stride);
+    //   printf("pktidx_stride    = %d\n", pktidx_stride);
+    //   printf("stream           = %d\n", stream);
+    //   printf("offset           = %lu\n", offset);
+    // }
     //   copy_packet_data_to_databuf_printed = 1;
     // }
 
