@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
@@ -295,11 +296,11 @@ static void wait_for_block_free(const struct datablock_stats * d,
 // int copy_packet_data_to_databuf_printed = 1;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt, size_t pkt_payload_size)
+    struct ata_snap_pkt* ata_pkt, size_t pkt_payload_size,
+    const unsigned long pkt_idx)
 {
-    // the pointer's data width reflects the paired dual polarisation 8 bit time samples
-    uint16_t *dst_base = (uint16_t *) datablock_stats_data(d);
-    const unsigned long pkt_idx = __bswap_64(ata_pkt->timestamp);
+    // the pointer's data width means the offset is in terms of bytes
+    char *dst_base = datablock_stats_data(d);
     const unsigned short pkt_schan = __bswap_16(ata_pkt->chan);
     const unsigned short feng_id = __bswap_16(ata_pkt->feng_id);
 
@@ -312,7 +313,7 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
 
     // pktidx_stride is the size of a single channel for a single PKTIDX value
     // (i.e. for a single packet):
-    const unsigned int pktidx_stride = ata_oi->pkt_nchan;//npol factor is taken care of in dst_base pointer type
+    const unsigned int pktidx_stride = ata_oi->pkt_nchan;//npol factor is 2, per time sample
 
     // Stream is the "channel chunk" for this FID
     const int stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
@@ -320,7 +321,7 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     // Advance dst_base to...
     const unsigned long offset = feng_id * fid_stride // first location of this FID, then
             +  stream * stream_stride // first location of this stream, then
-            +  (pkt_idx - d->pktidx_per_block) * pktidx_stride; // to this pktidx
+            +  ((pkt_idx - d->pktidx_per_block)%d->pktidx_per_block) * pktidx_stride; // to this pktidx
 
     // if (! copy_packet_data_to_databuf_printed){
     // if(offset < 0 || offset > 128*1024*1024){
@@ -330,10 +331,10 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     //   printf("schan            = %d\n", ata_oi->schan);
     //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
     //   printf("pktidx           = %ld\n", pkt_idx);
-    //   printf("pktidx_per_block = %d\n", d->pktidx_per_block);
-    //   printf("stream_stride    = %d\n", stream_stride);
-    //   printf("fid_stride       = %d\n", fid_stride);
-    //   printf("pktidx_stride    = %d\n", pktidx_stride);
+    //   printf("pktidx_per_block = %u\n", d->pktidx_per_block);
+    //   printf("stream_stride    = %u\n", stream_stride);
+    //   printf("fid_stride       = %u\n", fid_stride);
+    //   printf("pktidx_stride    = %u\n", pktidx_stride);
     //   printf("stream           = %d\n", stream);
     //   printf("offset           = %lu\n", offset);
     // }
@@ -549,6 +550,7 @@ static void *run(hashpipe_thread_args_t * args)
     /* Time parameters */
     // int stt_imjd=0, stt_smjd=0;
     // double stt_offs=0.0;
+    struct timespec ts_start_wait = {0}, ts_stop_wait = {0};
 
     /* Packet format to use */
     int seq_step = 1;
@@ -592,7 +594,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
     }
     unsigned int pkt_per_block = block_size / pkt_payload_size;
-    unsigned int pktidx_per_block = pkt_per_block/seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
+    unsigned int pktidx_per_block = pkt_per_block*seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
     unsigned long pkt_blk_num;
 
@@ -630,7 +632,7 @@ static void *run(hashpipe_thread_args_t * args)
 
     /* Misc counters, etc */
     // char *curdata=NULL, *curheader=NULL;
-    uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0, pkt_seq_num, last_pkt_seq_num=2048, nextblock_pkt_seq_num=0;
+    uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0, pkt_seq_num, last_pkt_seq_num=-1, nextblock_pkt_seq_num=0;
     int64_t pkt_seq_num_diff;    
     // double drop_frac_avg=0.0;
     // const double drop_lpf = 0.25;
@@ -702,7 +704,6 @@ static void *run(hashpipe_thread_args_t * args)
         do {
             p_frame = hashpipe_pktsock_recv_udp_frame(
                 &p_ps_params->ps, p_ps_params->port, 1000); // 1 second timeout
-            
             // Heartbeat update?
             time(&curtime);
             if(curtime != lasttime) {//time stores seconds since epoch
@@ -802,14 +803,17 @@ static void *run(hashpipe_thread_args_t * args)
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
         pkt_seq_num = __bswap_64(ata_snap_pkt->timestamp);
+        pkt_blk_num = pkt_seq_num / pktidx_per_block;
 
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
-        if(pkt_seq_num % pktidx_per_block == 0 || pkt_seq_num >= stop_pkt_seq_num) {// || pkt_seq_num < stop_pkt_seq_num - pktidx_per_block) {
+        if(pkt_seq_num % pktidx_per_block == 0
+          || pkt_seq_num >= stop_pkt_seq_num) {
             start_pkt_seq_num = pkt_seq_num;
 
             hashpipe_status_lock_safe(st);
             hputi8(st->buf, "PKTIDX", pkt_seq_num);
+            hputi8(st->buf, "BLKIDX", pkt_blk_num);
             // hgetu8(st->buf, "PKTSTART", &start_pkt_seq_num);
             // start_pkt_seq_num -= start_pkt_seq_num % pktidx_per_block;
             hputu8(st->buf, "PKTSTART", start_pkt_seq_num);
@@ -837,29 +841,20 @@ static void *run(hashpipe_thread_args_t * args)
         // }
 
         /* Check seq num diff */
-        pkt_seq_num_diff = pkt_seq_num - last_pkt_seq_num;
-        if (pkt_seq_num_diff<seq_step) {
-            if (pkt_seq_num_diff<-1024) {
-                // force_new_block=1;
-            } else if (pkt_seq_num_diff==0) {
-                hashpipe_warn(thread_name,
-                        "Received duplicate packet (pkt_seq_num=%lu)",
-                        pkt_seq_num);
-            }
-            else {
-              // Release frame!
-              hashpipe_pktsock_release_frame(p_frame);
-              /* No going backwards */
-              continue;
-            }
+        pkt_seq_num_diff = (pkt_seq_num - last_pkt_seq_num)/seq_step;
+        if (pkt_seq_num_diff < 1 && npacket_total != 0) {
+          // Release frame!
+          hashpipe_pktsock_release_frame(p_frame);
+          /* No going backwards */
+          continue;
         } else {
             // force_new_block=0;
             if(npacket_total == 0) {
                 npacket_total = 1;
                 ndrop_total = 0;
             } else {
-                npacket_total += pkt_seq_num_diff/seq_step;
-                ndrop_total += (pkt_seq_num_diff - seq_step)/seq_step;
+              npacket_total += pkt_seq_num_diff;
+              ndrop_total += pkt_seq_num_diff - 1;
             }
         }
 
@@ -867,9 +862,8 @@ static void *run(hashpipe_thread_args_t * args)
         // if(ata_snap_pkt->feng_id >= obs_info.nants) {
         //     continue;
         // }
-
-        pkt_blk_num = pkt_seq_num / pktidx_per_block;
         // Manage blocks based on pkt_blk_num
+        // fprintf(stderr, "%010ld\r", pkt_blk_num);
         if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
             // Time to advance the blocks!!!
             // Finalize first working block
@@ -883,15 +877,20 @@ static void *run(hashpipe_thread_args_t * args)
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
             // Wait for new databuf data block to be free
+            clock_gettime(CLOCK_MONOTONIC, &ts_start_wait);
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
+            clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
+            // hashpipe_info(thread_name,
+            // fprintf(stderr,
+            //     "\n(%lu)\n",   (int64_t)(ts_stop_wait.tv_sec - ts_start_wait.tv_sec) * (int64_t)1000000000UL + (int64_t)(ts_stop_wait.tv_nsec - ts_start_wait.tv_nsec));
         }
         // Check for PKTIDX discontinuity
         else if(pkt_blk_num < wblk[0].block_num - 1
                 || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
             // Should only happen when transitioning into ARMED, so warn about it
             hashpipe_warn(thread_name,
-                "working blocks reinit due to packet discontinuity (PKTIDX %lu)",
-                pkt_seq_num);
+                "working blocks reinit due to packet discontinuity (PKTIDX %lu) [%ld, %lu  <> %lu]",
+                pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
             // Re-init working blocks for block number *after* current packet's block
             // and clear their data buffers
@@ -929,12 +928,11 @@ static void *run(hashpipe_thread_args_t * args)
 
             // Copy packet data to data buffer of working block
             copy_packet_data_to_databuf(wblk+wblk_idx,
-                &obs_info, ata_snap_pkt, pkt_payload_size);
+                &obs_info, ata_snap_pkt, pkt_payload_size, pkt_seq_num);
 
             // Count packet for block and for processing stats
             wblk[wblk_idx].npacket++;
         }
-
 
         last_pkt_seq_num = pkt_seq_num;
         // Release frame back to ring buffer
