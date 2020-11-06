@@ -161,7 +161,6 @@ static void finalize_block(struct datablock_stats *d)
   }
 
   sprintf(dropstat, "%d/%lu", d->ndrop, d->pkts_per_block);
-  hputi8(header, "PKTIDX", d->block_num * d->pktidx_per_block);
   hputi4(header, "NPKT", d->npacket);
   hputi4(header, "NDROP", d->ndrop);
   hputs(header, "DROPSTAT", dropstat);
@@ -596,7 +595,7 @@ static void *run(hashpipe_thread_args_t * args)
     unsigned int pkt_per_block = block_size / pkt_payload_size;
     unsigned int pktidx_per_block = pkt_per_block*seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
-    unsigned long pkt_blk_num;
+    unsigned long pkt_blk_num, last_pkt_blk_num;
 
 
     // The incoming packets are taken from blocks of the input databuf and then
@@ -632,7 +631,8 @@ static void *run(hashpipe_thread_args_t * args)
 
     /* Misc counters, etc */
     // char *curdata=NULL, *curheader=NULL;
-    uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0, pkt_seq_num, last_pkt_seq_num=-1, nextblock_pkt_seq_num=0;
+    uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0;//, nextblock_pkt_seq_num=0, 
+    uint64_t pkt_seq_num, last_pkt_seq_num=-1;
     int64_t pkt_seq_num_diff;    
     // double drop_frac_avg=0.0;
     // const double drop_lpf = 0.25;
@@ -721,35 +721,12 @@ static void *run(hashpipe_thread_args_t * args)
                 timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
                 hashpipe_status_lock_safe(st);
                 {
-                    hgetu4(st->buf, "FENCHAN",  &obs_info.fenchan);
-                    hgetu4(st->buf, "NANTS",    &obs_info.nants);
-                    hgetu4(st->buf, "NSTRM",    &obs_info.nstrm);
-                    hgetu4(st->buf, "PKTNTIME", &obs_info.pkt_ntime);
-                    hgetu4(st->buf, "PKTNCHAN", &obs_info.pkt_nchan);
-                    hgeti4(st->buf, "SCHAN",    &obs_info.schan);
-                    // If obs_info is valid
-                    if(ata_snap_obs_info_valid(obs_info)) {
-                        // Update obsnchan, pktidx_per_block, and eff_block_size
-                        // obsnchan = ata_snap_obsnchan(obs_info);
-                        // pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
-
-                        // hputu4(st->buf, "OBSNCHAN", obsnchan);
-                        hputu4(st->buf, "PIPERBLK", pktidx_per_block);
-                        // hputi4(st->buf, "BLOCSIZE", eff_block_size);
-
-                        hputs(st->buf, "OBSINFO", "VALID");
-                    } else {
-                        hputs(st->buf, "OBSINFO", "INVALID");
-                    }
-
-                    hputi8(st->buf, "PKTIDX", pkt_seq_num);
                     hputi8(st->buf, "NPKTS", npacket_total);
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
                     hputr4(st->buf, "PHYSGBPS", average_packets_per_second*packet_data_size/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
                     hputs(st->buf, "DAQSTATE", state == IDLE  ? "idle" :
                                             state == ARMED ? "armed"   : "record");
-                    hputi8(st->buf, "NXTBLKSQN", nextblock_pkt_seq_num);
                 }
                 hashpipe_status_unlock_safe(st);
             }
@@ -777,14 +754,11 @@ static void *run(hashpipe_thread_args_t * args)
         // } else 
         // if(p_ps_params->packet_size != PKT_UDP_SIZE(p_frame) - 8) {
         if(packet_data_size != PKT_UDP_SIZE(p_frame) - 8) {
-            /* Unexpected packet size, ignore? */
-            nbogus_total++;
-            if(nbogus_total % 10 == 0) {
-                hashpipe_status_lock_safe(st);
-                hputi4(st->buf, "NBOGUS", nbogus_total);
-                hputi4(st->buf, "PKTSIZE", PKT_UDP_SIZE(p_frame)-8);
-                hashpipe_status_unlock_safe(st);
-            }
+            /* Unexpected packet size, ignore */
+            hashpipe_status_lock_safe(st);
+              hputi4(st->buf, "NBOGUS", ++nbogus_total);
+              hputi4(st->buf, "PKTSIZE", PKT_UDP_SIZE(p_frame)-8);
+            hashpipe_status_unlock_safe(st);
             // Release frame!
             hashpipe_pktsock_release_frame(p_frame);
             continue;
@@ -802,21 +776,22 @@ static void *run(hashpipe_thread_args_t * args)
 
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
-        pkt_seq_num = __bswap_64(ata_snap_pkt->timestamp);
+        pkt_seq_num = __bswap_64((uint64_t) ata_snap_pkt->timestamp);
         pkt_blk_num = pkt_seq_num / pktidx_per_block;
 
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
-        if(pkt_seq_num % pktidx_per_block == 0
-          || pkt_seq_num >= stop_pkt_seq_num) {
+        if(pkt_blk_num != last_pkt_blk_num){
             start_pkt_seq_num = pkt_seq_num;
+            last_pkt_blk_num = pkt_blk_num;
 
             hashpipe_status_lock_safe(st);
             hputi8(st->buf, "PKTIDX", pkt_seq_num);
             hputi8(st->buf, "BLKIDX", pkt_blk_num);
+            // Print end of recording conditions
             // hgetu8(st->buf, "PKTSTART", &start_pkt_seq_num);
             // start_pkt_seq_num -= start_pkt_seq_num % pktidx_per_block;
-            hputu8(st->buf, "PKTSTART", start_pkt_seq_num);
+            hputi8(st->buf, "PKTSTART", start_pkt_seq_num);
             // hgetr8(st->buf, "DWELL", &dwell_seconds);
             // // Dwell blocks is equal to:
             // //
