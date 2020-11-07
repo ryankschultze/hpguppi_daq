@@ -353,27 +353,16 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
         memcpy(&d[i-1], &d[i], sizeof(struct datablock_stats));
 }
 
-// Check the given pktidx value against the status buffer's PKTSTART/PKTSTOP
-// values. Logic goes something like this:
-//   if PKTSTART <= pktidx < PKTSTOPs
-//     if STTVALID == 0
-//       STTVALID=1
-//       calculate and store STT_IMJD, STT_SMJD
-//     endif
-//     return RECORD
-//   else
-//     STTVALID=0
-//     return ARMED
-//   endif
-static
-enum run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
-{
-  enum run_states retval = ARMED;
-  uint32_t sttvalid = 0;
-  uint64_t pktstart = 0;
-  uint64_t pktstop = 0;
-
-  uint32_t pktntime = ATASNAP_DEFAULT_PKTNTIME;
+//  if state == RECORD && STTVALID == 0 
+//    STTVALID=1
+//    calculate and store STT_IMJD, STT_SMJD
+//  else if STTVALID != 0
+//    STTVALID=0
+//  endif
+static void update_stt_status_keys( hashpipe_status_t *st,
+                                    enum run_states state,
+                                    uint64_t pktidx){
+  // uint32_t pktntime = ATASNAP_DEFAULT_PKTNTIME;
   uint64_t synctime = 0;
   double chan_bw = 1.0;
 
@@ -384,51 +373,70 @@ enum run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
   int    stt_smjd = 0;
   double stt_offs = 0;
 
+  uint32_t sttvalid = 0;
   hashpipe_status_lock_safe(st);
   {
     hgetu4(st->buf, "STTVALID", &sttvalid);
-    hgetu8(st->buf, "PKTSTART", &pktstart);
-    hgetu8(st->buf, "PKTSTOP", &pktstop);
+    if(state == RECORD && sttvalid != 1) {
+      hputu4(st->buf, "STTVALID", 1);
 
-    if(pktstart <= pktidx && pktidx < pktstop) {
-      retval = RECORD;
-      hputs(st->buf, "DAQSTATE", "RECORD");
+      // hgetu4(st->buf, "PKTNTIME", &pktntime);
+      hgetr8(st->buf, "CHAN_BW", &chan_bw);
+      hgetu8(st->buf, "SYNCTIME", &synctime);
 
-      if(sttvalid != 1) {
-        hputu4(st->buf, "STTVALID", 1);
-
-        hgetu4(st->buf, "PKTNTIME", &pktntime);
-        hgetr8(st->buf, "CHAN_BW", &chan_bw);
-        hgetu8(st->buf, "SYNCTIME", &synctime);
-
-        // Calc real-time seconds since SYNCTIME for pktidx:
-        //
-        //                      pktidx * pktntime
-        //     realtime_secs = -------------------
-        //                        1e6 * chan_bw
-        if(chan_bw != 0.0) {
-          realtime_secs = pktidx * pktntime / (1e6 * fabs(chan_bw));
-        }
-
-        ts.tv_sec = (time_t)(synctime + rint(realtime_secs));
-        ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
-
-        get_mjd_from_timespec(&ts, &stt_imjd, &stt_smjd, &stt_offs);
-
-        hputu4(st->buf, "STT_IMJD", stt_imjd);
-        hputu4(st->buf, "STT_SMJD", stt_smjd);
-        hputr8(st->buf, "STT_OFFS", stt_offs);
+      // Calc real-time seconds since SYNCTIME for pktidx, taken to be a multiple of PKTNTIME:
+      //
+      //                          pktidx
+      //     realtime_secs = -------------------
+      //                        1e6 * chan_bw
+      if(chan_bw != 0.0) {
+        realtime_secs = pktidx / (1e6 * fabs(chan_bw));
       }
-    } else {
-      hputs(st->buf, "DAQSTATE", "ARMED");
-      if(sttvalid != 0) {
-        hputu4(st->buf, "STTVALID", 0);
-      }
+
+      ts.tv_sec = (time_t)(synctime + rint(realtime_secs));
+      ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
+
+      get_mjd_from_timespec(&ts, &stt_imjd, &stt_smjd, &stt_offs);
+
+      hputu4(st->buf, "STT_IMJD", stt_imjd);
+      hputu4(st->buf, "STT_SMJD", stt_smjd);
+      hputr8(st->buf, "STT_OFFS", stt_offs);
+    }
+    else if(sttvalid != 0) {
+      hputu4(st->buf, "STTVALID", 0);
     }
   }
   hashpipe_status_unlock_safe(st);
+}
 
-  return retval;
+// Check the given pktidx value against the status buffer's OBSSTART/OBSSTOP
+// values (given as PKT sequence numbers). Logic goes something like this:
+//   if OBSSTART <= pktidx < OBSSTOP
+//     return RECORD
+//   else if pktidx <= OBSSTART
+//     return ARMED
+//   else
+//     return IDLE
+//   endif
+static
+enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
+{
+  uint64_t pkt_start;
+  uint64_t pkt_stop;
+  hashpipe_status_lock_safe(st);
+  {
+    hgetu8(st->buf, "PKTSTART", &pkt_start);
+    hgetu8(st->buf, "PKTSTOP", &pkt_stop);
+  }
+  hashpipe_status_unlock_safe(st);
+
+  if(pkt_start <= pktidx && pktidx < pkt_stop) {
+    return RECORD;
+  } else if (pktidx < pkt_start) {
+    return ARMED;
+  } else {// pktstop <= pktidx
+    return IDLE;
+  }
 }
 
 static int init(hashpipe_thread_args_t *args)
@@ -829,8 +837,10 @@ static void *run(hashpipe_thread_args_t * args)
             // ndrop_total += wblk->ndrop;
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
-            // Check start/stop using wblk[0]'s first PKTIDX
-            check_start_stop(st, pkt_seq_num);//wblk[0].block_num * pktidx_per_block);
+            // Check start/stop
+            update_stt_status_keys(st, 
+                  status_from_start_stop(st, pkt_seq_num),
+                  pkt_seq_num);
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
             // Wait for new databuf data block to be free
@@ -860,8 +870,10 @@ static void *run(hashpipe_thread_args_t * args)
                   pkt_per_block);
             }
             fprintf(stderr, "Packet Block Index for finalisation: %ld\n", wblk[n_wblock-1].block_num + 1);
-            // Check start/stop using wblk[0]'s first PKTIDX
-            check_start_stop(st, wblk[0].block_num * pktidx_per_block);
+            // Check start/stop
+            update_stt_status_keys(st, 
+                  status_from_start_stop(st, pkt_seq_num),
+                  pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
             // it.
         } else if(pkt_blk_num == wblk[0].block_num - 1) {
