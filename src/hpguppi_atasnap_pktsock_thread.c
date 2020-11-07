@@ -439,6 +439,50 @@ enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
   }
 }
 
+
+int read_obs_status_keys(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
+{//TODO extend obs_info to include fields pertinent for pkt_payload size calc, update pkt_idx_per_blk
+  int rc = 1;//obsinfo valid
+
+  // Get any obs info from status buffer, store values
+  hashpipe_status_lock_safe(st);
+  {
+    // Read (no change if not present)
+    hgetu4(st->buf, "FENCHAN",  &obs_info->fenchan);
+    hgetu4(st->buf, "NANTS",    &obs_info->nants);
+    hgetu4(st->buf, "NSTRM",    &obs_info->nstrm);
+    hgetu4(st->buf, "PKTNTIME", &obs_info->pkt_ntime);
+    hgetu4(st->buf, "PKTNCHAN", &obs_info->pkt_nchan);
+    hgeti4(st->buf, "SCHAN",    &obs_info->schan);
+    // If obs_info is valid
+    if(ata_snap_obs_info_valid(*obs_info)) {
+      // Update obsnchan, pktidx_per_block, and eff_block_size
+      // obsnchan = ata_snap_obsnchan(obs_info);
+      // pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
+      // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
+
+      hputs(st->buf, "OBSINFO", "VALID");
+    } else {
+      rc = 0;
+      hputs(st->buf, "OBSINFO", "INVALID");
+    }
+
+    // Write (store default/invalid values if not present)
+    hputu4(st->buf, "FENCHAN",  obs_info->fenchan);
+    hputu4(st->buf, "NANTS",    obs_info->nants);
+    hputu4(st->buf, "NSTRM",    obs_info->nstrm);
+    hputu4(st->buf, "PKTNTIME", obs_info->pkt_ntime);
+    hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
+    hputi4(st->buf, "SCHAN",    obs_info->schan);
+
+    // hputu4(st->buf, "OBSNCHAN", obsnchan);
+    // hputu4(st->buf, "PIDXPBLK", pktidx_per_block);
+    // hputi4(st->buf, "BLOCSIZE", eff_block_size);
+  }
+  hashpipe_status_unlock_safe(st);
+  return rc;
+}
+
 static int init(hashpipe_thread_args_t *args)
 {
   	const char * thread_name = args->thread_desc->name;
@@ -602,6 +646,9 @@ static void *run(hashpipe_thread_args_t * args)
     unsigned int pkt_per_block = block_size / pkt_payload_size;
     unsigned int pktidx_per_block = pkt_per_block*pkt_seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
+    hashpipe_status_lock_safe(st);
+    hputu4(st->buf, "PIDXPBLK", pktidx_per_block);
+    hashpipe_status_unlock_safe(st);
     unsigned long pkt_blk_num, last_pkt_blk_num;
 
 
@@ -660,41 +707,7 @@ static void *run(hashpipe_thread_args_t * args)
     }
     struct ata_snap_pkt *ata_snap_pkt;
 
-    // Get any obs info from status buffer, store values
-    hashpipe_status_lock_safe(st);
-    {
-        // Read (no change if not present)
-        hgetu4(st->buf, "FENCHAN",  &obs_info.fenchan);
-        hgetu4(st->buf, "NANTS",    &obs_info.nants);
-        hgetu4(st->buf, "NSTRM",    &obs_info.nstrm);
-        hgetu4(st->buf, "PKTNTIME", &obs_info.pkt_ntime);
-        hgetu4(st->buf, "PKTNCHAN", &obs_info.pkt_nchan);
-        hgeti4(st->buf, "SCHAN",    &obs_info.schan);
-        // If obs_info is valid
-        if(ata_snap_obs_info_valid(obs_info)) {
-        // Update obsnchan, pktidx_per_block, and eff_block_size
-        // obsnchan = ata_snap_obsnchan(obs_info);
-        // pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
-        // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
-
-        hputs(st->buf, "OBSINFO", "VALID");
-        } else {
-        hputs(st->buf, "OBSINFO", "INVALID");
-        }
-
-        // Write (store default/invlid values if not present)
-        hputu4(st->buf, "FENCHAN",  obs_info.fenchan);
-        hputu4(st->buf, "NANTS",    obs_info.nants);
-        hputu4(st->buf, "NSTRM",    obs_info.nstrm);
-        hputu4(st->buf, "PKTNTIME", obs_info.pkt_ntime);
-        hputu4(st->buf, "PKTNCHAN", obs_info.pkt_nchan);
-        hputi4(st->buf, "SCHAN",    obs_info.schan);
-
-        // hputu4(st->buf, "OBSNCHAN", obsnchan);
-        hputu4(st->buf, "PIPERBLK", pktidx_per_block);
-        // hputi4(st->buf, "BLOCSIZE", eff_block_size);
-    }
-    hashpipe_status_unlock_safe(st);
+    read_obs_status_keys(st, &obs_info);
 
     fprintf(stderr, "Receiving at interface %s, port %d, expecting packet size %ld\n",
     p_ps_params->ifname, p_ps_params->port, packet_data_size);//p_ps_params->packet_size);
