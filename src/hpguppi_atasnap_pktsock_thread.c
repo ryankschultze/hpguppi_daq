@@ -28,8 +28,6 @@
 #define HPGUPPI_DAQ_CONTROL "/tmp/hpguppi_daq_control"
 #define MAX_CMD_LEN 1024
 
-#define PKTS_PER_SECOND_BUF_LENGTH 5
-
 #define PKTSOCK_BYTES_PER_FRAME (16384)
 #define PKTSOCK_FRAMES_PER_BLOCK (8)
 #define PKTSOCK_NBLOCKS (800)
@@ -550,9 +548,10 @@ static void *run(hashpipe_thread_args_t * args)
     // int stt_imjd=0, stt_smjd=0;
     // double stt_offs=0.0;
     struct timespec ts_start_wait = {0}, ts_stop_wait = {0};
+    struct timespec ts_start_block = {0}, ts_stop_block = {0};
 
     /* Packet format to use */
-    int seq_step = 1;
+    int pkt_seq_step = 1;
     int pkt_nchan=0, pkt_npol=0, pkt_nbits=0;
     pkt_nchan = pf.hdr.nchan;
     pkt_nbits = pf.hdr.nbits;
@@ -573,7 +572,7 @@ static void *run(hashpipe_thread_args_t * args)
 
     // Capture expected step change in ATA SNAP packet's sequential timestamps
     hashpipe_status_lock_safe(st);
-    hgeti4(status_buf, "PKTNTIME", &seq_step);
+    hgeti4(status_buf, "PKTNTIME", &pkt_seq_step);
     hashpipe_status_unlock_safe(st);
 
     /* Figure out size of data in each packet, number of packets
@@ -593,7 +592,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
     }
     unsigned int pkt_per_block = block_size / pkt_payload_size;
-    unsigned int pktidx_per_block = pkt_per_block*seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
+    unsigned int pktidx_per_block = pkt_per_block*pkt_seq_step;//ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
     unsigned long pkt_blk_num, last_pkt_blk_num;
 
@@ -630,14 +629,8 @@ static void *run(hashpipe_thread_args_t * args)
     }
 
     /* Misc counters, etc */
-    // char *curdata=NULL, *curheader=NULL;
-    uint64_t start_pkt_seq_num=0, stop_pkt_seq_num=0;//, nextblock_pkt_seq_num=0, 
     uint64_t pkt_seq_num, last_pkt_seq_num=-1;
-    int64_t pkt_seq_num_diff;    
-    // double drop_frac_avg=0.0;
-    // const double drop_lpf = 0.25;
-    // int netbuf_full = 0;
-    // char netbuf_status[128] = {};
+    int64_t pkt_seq_num_diff;
     // unsigned force_new_block=0, waiting=-1;
     unsigned waiting=-1;
     enum run_states state = IDLE;
@@ -647,8 +640,9 @@ static void *run(hashpipe_thread_args_t * args)
     time_t curtime = 0;
     char timestr[32] = {0};
     
+    const int packets_per_second_buf_length = 5;
     unsigned int packets_per_second = 0;
-    unsigned int packets_per_second_buf[PKTS_PER_SECOND_BUF_LENGTH] = {0};
+    unsigned int packets_per_second_buf[packets_per_second_buf_length];
     float average_packets_per_second = 0.0;
 
     // Drop all packets to date
@@ -709,19 +703,21 @@ static void *run(hashpipe_thread_args_t * args)
             if(curtime != lasttime) {//time stores seconds since epoch
                 lasttime = curtime;
                 average_packets_per_second = 0.0;
-                for (int pps = 1; pps < PKTS_PER_SECOND_BUF_LENGTH; pps++){
+                for (int pps = 1; pps < packets_per_second_buf_length; pps++){
                     packets_per_second_buf[pps-1] = packets_per_second_buf[pps];
                     average_packets_per_second += packets_per_second_buf[pps];
                 }
-                packets_per_second_buf[PKTS_PER_SECOND_BUF_LENGTH-1] = packets_per_second;
+                packets_per_second_buf[packets_per_second_buf_length-1] = packets_per_second;
                 packets_per_second = 0;
-                average_packets_per_second = (packets_per_second + average_packets_per_second)/PKTS_PER_SECOND_BUF_LENGTH;
+                average_packets_per_second = (packets_per_second + average_packets_per_second)/packets_per_second_buf_length;
 
                 ctime_r(&curtime, timestr);
                 timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
                 hashpipe_status_lock_safe(st);
                 {
                     hputi8(st->buf, "NPKTS", npacket_total);
+                    hputi8(st->buf, "NDROP", ndrop_total);
+                    hputr4(st->buf, "BLKSPS", 1000.0*1000.0*1000.0/ELAPSED_NS(ts_stop_block,ts_start_block));
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
                     hputr4(st->buf, "PHYSGBPS", average_packets_per_second*packet_data_size/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
@@ -782,29 +778,12 @@ static void *run(hashpipe_thread_args_t * args)
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
-            start_pkt_seq_num = pkt_seq_num;
             last_pkt_blk_num = pkt_blk_num;
-
             hashpipe_status_lock_safe(st);
             hputi8(st->buf, "PKTIDX", pkt_seq_num);
             hputi8(st->buf, "BLKIDX", pkt_blk_num);
-            // Print end of recording conditions
-            // hgetu8(st->buf, "PKTSTART", &start_pkt_seq_num);
-            // start_pkt_seq_num -= start_pkt_seq_num % pktidx_per_block;
-            hputi8(st->buf, "PKTSTART", start_pkt_seq_num);
-            // hgetr8(st->buf, "DWELL", &dwell_seconds);
-            // // Dwell blocks is equal to:
-            // //
-            // //           dwell_seconds * samples/second
-            // //     -------------------------------------------
-            // //     samples/spectrum * spectra/pkt * pkts/block
-            // //
-            // // To get an integer number of blocks, simply truncate
-            // dwell_blocks = trunc(dwell_seconds * samples_per_second /
-            //         (samples_per_spectrum * spectra_per_packet * pktidx_per_block));
-
-            stop_pkt_seq_num = start_pkt_seq_num + pktidx_per_block;// * dwell_blocks;
-            hputi8(st->buf, "PKTSTOP", stop_pkt_seq_num);
+            hputi8(st->buf, "PKTSTART", pkt_seq_num);
+            hputi8(st->buf, "PKTSTOP", pkt_seq_num + pktidx_per_block);
             hashpipe_status_unlock_safe(st);
         }
 
@@ -816,8 +795,10 @@ static void *run(hashpipe_thread_args_t * args)
         // }
 
         /* Check seq num diff */
-        pkt_seq_num_diff = (pkt_seq_num - last_pkt_seq_num)/seq_step;
-        if (pkt_seq_num_diff < 1 && npacket_total != 0) {
+        pkt_seq_num_diff = pkt_seq_num - last_pkt_seq_num;
+        if (pkt_seq_num_diff < pkt_seq_step && npacket_total != 0) {
+          fprintf(stderr, "******%ld\n", pkt_seq_num_diff);
+          last_pkt_seq_num = pkt_seq_num;
           // Release frame!
           hashpipe_pktsock_release_frame(p_frame);
           /* No going backwards */
@@ -828,8 +809,8 @@ static void *run(hashpipe_thread_args_t * args)
                 npacket_total = 1;
                 ndrop_total = 0;
             } else {
-              npacket_total += pkt_seq_num_diff;
-              ndrop_total += pkt_seq_num_diff - 1;
+              npacket_total += pkt_seq_num_diff/pkt_seq_step;
+              ndrop_total += (pkt_seq_num_diff/pkt_seq_step) - 1;
             }
         }
 
@@ -843,8 +824,9 @@ static void *run(hashpipe_thread_args_t * args)
             // Time to advance the blocks!!!
             // Finalize first working block
             finalize_block(wblk);
+            clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
             // Update ndrop counter
-            ndrop_total += wblk->ndrop;
+            // ndrop_total += wblk->ndrop;
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
             // Check start/stop using wblk[0]'s first PKTIDX
@@ -856,8 +838,12 @@ static void *run(hashpipe_thread_args_t * args)
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
             // hashpipe_info(thread_name,
-            // fprintf(stderr,
-            //     "\n(%lu)\n",   (int64_t)(ts_stop_wait.tv_sec - ts_start_wait.tv_sec) * (int64_t)1000000000UL + (int64_t)(ts_stop_wait.tv_nsec - ts_start_wait.tv_nsec));
+            fprintf(stderr,
+                "WAIT: %010luns\t\tBLOCKS: %010luns\r",
+                ELAPSED_NS(ts_start_wait,ts_stop_wait), 
+                (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
+                
+            clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
         }
         // Check for PKTIDX discontinuity
         else if(pkt_blk_num < wblk[0].block_num - 1
@@ -898,7 +884,8 @@ static void *run(hashpipe_thread_args_t * args)
             // Update block's packets per block.  Not needed for each packet, but
             // probably just as fast to do it for each packet rather than
             // check-and-update-only-if-needed for each packet.
-            wblk[wblk_idx].pkts_per_block = pkt_per_block;//eff_block_size / ATA_SNAP_PKT_SIZE_PAYLOAD;
+
+            wblk[wblk_idx].pkts_per_block = pkt_per_block;
             wblk[wblk_idx].pktidx_per_block = pktidx_per_block;
 
             // Copy packet data to data buffer of working block
