@@ -196,6 +196,10 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
   uint8_t payload[];//complex4 data[n_chans, 16, 2] // 4-bit real + 4-bit imaginary
 };
 
+#define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   __bswap_64((uint64_t) ata_snap_pkt->timestamp)
+#define ATA_SNAP_PKT_CHAN(ata_snap_pkt)     __bswap_16(ata_snap_pkt->chan)
+#define ATA_SNAP_PKT_FENG_ID(ata_snap_pkt)  __bswap_16(ata_snap_pkt->feng_id)
+
 // ATA SNAP header byte offset within (unpadded) packet
 #define ATA_SNAP_PKT_OFFSET_HEADER \
   (sizeof(struct ethhdr) + \

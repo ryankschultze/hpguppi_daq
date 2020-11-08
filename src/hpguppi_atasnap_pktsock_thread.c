@@ -36,6 +36,10 @@
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
+#define HPUT_DAQ_STATE(st, state)\
+  hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
+                             state == ARMED ? "armed"  :\
+                             "recording")
 // Define run states.  Currently three run states are defined: IDLE, ARMED, and
 // RECORD.
 //
@@ -293,30 +297,31 @@ static void wait_for_block_free(const struct datablock_stats * d,
 // int copy_packet_data_to_databuf_printed = 1;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt, size_t pkt_payload_size,
-    const unsigned long pkt_idx)
+    struct ata_snap_pkt* ata_pkt)
 {
     // the pointer's data width means the offset is in terms of bytes
     char *dst_base = datablock_stats_data(d);
-    const unsigned short pkt_schan = __bswap_16(ata_pkt->chan);
-    const unsigned short feng_id = __bswap_16(ata_pkt->feng_id);
+    const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
+    const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
+    const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt);
+    const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
 
     // stream_stride is the size of a single stream for a single F engine for all
     // NTIME samples of the block and all channels in a stream (i.e. in a packet):
-    const unsigned int stream_stride = pkt_payload_size * d->pktidx_per_block;
+    const uint32_t stream_stride = pkt_payload_size * d->pktidx_per_block;
 
     // fid_stride is the size of all streams of a single F engine:
-    const unsigned int fid_stride = stream_stride * ata_oi->nstrm;
+    const uint32_t fid_stride = stream_stride * ata_oi->nstrm;
 
     // pktidx_stride is the size of a single channel for a single PKTIDX value
     // (i.e. for a single packet):
-    const unsigned int pktidx_stride = ata_oi->pkt_nchan;//npol factor is 2, per time sample
+    const uint32_t pktidx_stride = ata_oi->pkt_nchan;//npol factor is 2, per time sample
 
     // Stream is the "channel chunk" for this FID
-    const int stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
+    const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
 
     // Advance dst_base to...
-    const unsigned long offset = feng_id * fid_stride // first location of this FID, then
+    const uint64_t offset = feng_id * fid_stride // first location of this FID, then
             +  stream * stream_stride // first location of this stream, then
             +  ((pkt_idx - d->pktidx_per_block)%d->pktidx_per_block) * pktidx_stride; // to this pktidx
 
@@ -607,7 +612,6 @@ static void *run(hashpipe_thread_args_t * args)
     /* Packet format to use */
     // Capture expected step change in ATA SNAP packet's sequential timestamps
     int pkt_seq_step = obs_info.pkt_ntime;
-    size_t pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
     size_t pkt_data_size = ata_snap_pkt_bytes(obs_info);
 
     /* Figure out size of data in each packet, number of packets
@@ -725,8 +729,7 @@ static void *run(hashpipe_thread_args_t * args)
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
                     hputr4(st->buf, "PHYSGBPS", average_packets_per_second*pkt_data_size/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
-                    hputs(st->buf, "DAQSTATE", state == IDLE  ? "idle" :
-                                            state == ARMED ? "armed"   : "record");
+                    HPUT_DAQ_STATE(st, state);
                 }
                 hashpipe_status_unlock_safe(st);
             }
@@ -776,7 +779,7 @@ static void *run(hashpipe_thread_args_t * args)
 
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
-        pkt_seq_num = __bswap_64((uint64_t) ata_snap_pkt->timestamp);
+        pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
         pkt_blk_num = pkt_seq_num / pktidx_per_block;
 
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
@@ -898,7 +901,7 @@ static void *run(hashpipe_thread_args_t * args)
 
             // Copy packet data to data buffer of working block
             copy_packet_data_to_databuf(wblk+wblk_idx,
-                &obs_info, ata_snap_pkt, pkt_payload_size, pkt_seq_num);
+                &obs_info, ata_snap_pkt);
 
             // Count packet for block and for processing stats
             wblk[wblk_idx].npacket++;
