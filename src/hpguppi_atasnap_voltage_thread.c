@@ -502,9 +502,14 @@ static int init(hashpipe_thread_args_t *args)
 
   // Set RLIMIT_RTPRIO to 1
   getrlimit(RLIMIT_RTPRIO, &rlim);
-  rlim.rlim_cur = 1;
-  if(setrlimit(RLIMIT_RTPRIO, &rlim)) {
-    hashpipe_error(thread_name, "setrlimit(RLIMIT_RTPRIO)");
+  if (rlim.rlim_max >= 1){
+    rlim.rlim_cur = 1;
+    if(setrlimit(RLIMIT_RTPRIO, &rlim)) {
+      hashpipe_error(thread_name, "setrlimit(RLIMIT_RTPRIO)");
+    }
+  }
+  else{
+    hashpipe_info(thread_name, "Not setting rlim_cur=1 because rlim_max = %d < 1.", rlim.rlim_max);
   }
 
   struct sched_param sched_param = {
@@ -928,7 +933,7 @@ int debug_i=0, debug_j=0;
               // If switching to "0.0.0.0"
               if(dest_ip.s_addr == INADDR_ANY) {
                 // Remove all flows
-                hashpipe_info(thread_name, "dest_ip %s (removing %d flows)",
+                hashpipe_info(thread_name, "dest_ip %s (removing %d flows)\nDESTIP 0.0.0.0 is not applicable.",
                     dest_ip_stream_str_new, nstreams);
                 for(dest_idx=0; dest_idx < nstreams; dest_idx++) {
                   if(hpguppi_ibvpkt_flow(dbin, dest_idx, IBV_FLOW_SPEC_UDP,
@@ -1028,6 +1033,7 @@ int debug_i=0, debug_j=0;
       // Go back to waiting for block to be filled
       continue;
     }
+    hashpipe_info(thread_name, "Got packets!");
 
     // Got packet(s)!  Update status if needed.
     if (waiting) {
@@ -1157,7 +1163,7 @@ fprintf(stderr, "feng_chan    = 0x%016lx\n", feng_info.feng_chan);
           //     tbin * ntime/block
           //
           // To get an integer number of blocks, simply truncate
-          dwell_blocks = trunc(dwell_seconds / (tbin * ata_snap_ntime(BLOCK_DATA_SIZE, obs_info)));
+          dwell_blocks = trunc(dwell_seconds / (tbin * ata_snap_pkt_per_block(BLOCK_DATA_SIZE, obs_info)));
 
           stop_seq_num = start_seq_num + pktidx_per_block * dwell_blocks;
           hputi8(st->buf, "PKTSTOP", stop_seq_num);

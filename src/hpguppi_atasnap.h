@@ -153,7 +153,7 @@
 // SYNCTIME.  The status buffer gets written out as the header of each GUPPI
 // RAW block so the SYNCTIME and PKTIDX values will be avilable in the output
 // products.  Another useful status buffer field relating to timekeeping is
-// "PIPERBLK", which is short for "PktIdx PER BLocK".  PIPERBLK is the PKTIDX
+// "PIDXPBLK", which is short for "PktIdx PER BLocK".  PIDXPBLK is the PKTIDX
 // step from one block to the next.  Its value depends on NTIME.
 //
 // ## IBVPKTSZ and voltage mode packet layout
@@ -232,20 +232,27 @@ struct ata_snap_obs_info {
   uint32_t nants;
   // Total number of streams being processed
   uint32_t nstrm;
+  // Number of polarisations per time sample
+  uint32_t pkt_npol;
+  // Number of bits per time sample component (real/imaginary)
+  uint32_t time_nbits;
   // Number of time samples per packet
   uint32_t pkt_ntime;
   // Number of frequency channels per packet
   uint32_t pkt_nchan;
   // Starting F Engine channel number to be processed
   int32_t schan;
+  // The number 
+  uint32_t pktidx_per_block;
 };
 
-#define ATASNAP_DEFAULT_FENCHAN  (4096)
-#define ATASNAP_DEFAULT_NSTRM    (   1)
-#define ATASNAP_DEFAULT_PKTNPOL  (   2)
-#define ATASNAP_DEFAULT_PKTNCHAN ( 256)
-#define ATASNAP_DEFAULT_PKTNTIME (  16)
-#define OBS_INFO_INVALID_SCHAN   (  -1)
+#define ATASNAP_DEFAULT_FENCHAN     (4096)
+#define ATASNAP_DEFAULT_NSTRM       (   1)
+#define ATASNAP_DEFAULT_PKTNPOL     (   2)
+#define ATASNAP_DEFAULT_TIME_NBITS  (   4)
+#define ATASNAP_DEFAULT_PKTNCHAN    ( 256)
+#define ATASNAP_DEFAULT_PKTNTIME    (  16)
+#define OBS_INFO_INVALID_SCHAN      (  -1)
 
 // Returns the largest power of two that it less than or equal to x.
 // Returns 0 if x is 0.
@@ -264,6 +271,8 @@ ata_snap_obs_info_init(struct ata_snap_obs_info * poi)
   memset(poi, 0, sizeof(struct ata_snap_obs_info));
   poi->fenchan = ATASNAP_DEFAULT_FENCHAN;
   poi->nstrm = ATASNAP_DEFAULT_NSTRM;
+  poi->pkt_npol = ATASNAP_DEFAULT_PKTNPOL;
+  poi->time_nbits = ATASNAP_DEFAULT_TIME_NBITS;
   poi->pkt_ntime = ATASNAP_DEFAULT_PKTNTIME;
   poi->pkt_nchan = ATASNAP_DEFAULT_PKTNCHAN;
   poi->schan = OBS_INFO_INVALID_SCHAN;
@@ -277,6 +286,8 @@ ata_snap_obs_info_valid(const struct ata_snap_obs_info oi)
     (oi.fenchan    != 0) &&
     (oi.nants      != 0) &&
     (oi.nstrm      != 0) &&
+    (oi.pkt_npol   != 0) &&
+    (oi.time_nbits != 0) &&
     (oi.pkt_ntime  != 0) &&
     (oi.pkt_nchan  != 0) &&
     (oi.schan      != OBS_INFO_INVALID_SCHAN);
@@ -299,6 +310,24 @@ ata_snap_obsnchan(const struct ata_snap_obs_info oi)
   return calc_ata_snap_obsnchan(oi.nants, oi.nstrm, oi.pkt_nchan);
 }
 
+// This function doesn't assume each sample is 2 bytes ([4 bits real + 4 bits imag] *
+// 2 pols).
+static inline
+uint32_t
+calc_ata_snap_pkt_payload_bytes(uint32_t nchan,
+                               uint32_t pkt_ntime, uint32_t pkt_npol,
+                               uint32_t time_nbits)
+{ // each time sample is real
+  return nchan * pkt_ntime * pkt_npol * 2 / (8/time_nbits);
+}
+
+static inline
+uint32_t
+ata_snap_pkt_payload_bytes(const struct ata_snap_obs_info oi)
+{ 
+  return calc_ata_snap_pkt_payload_bytes(ata_snap_obsnchan(oi), oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
+}
+
 // Calculate the number of pktidx values per block.  Note that nchan is the
 // total number of channels across all F engines.  Each PKTIDX corresponds to a
 // set of packets that all share a common PKTIDX. It is possible that the
@@ -313,26 +342,43 @@ ata_snap_obsnchan(const struct ata_snap_obs_info oi)
 // Furthermore, the number of time samples per block is desired to be a power
 // of two, so that subsequent FFTs can operate on complete blocks with maximum
 // efficiency.  For this to happen, both the number of time samples per packet
-// (PKT_NTIME) and the number of PKTIDX values per block (PIPERBLK) must be
+// (PKT_NTIME) and the number of PKTIDX values per block (PIDXPBLK) must be
 // powers of two.  PKT_NTIME is set by the upstream F engines, so we have no
-// control of that, but we can and do ensure that PIPERBLK is a power of 2.
-//
-// This function assumes each sample is 2 bytes ([4 bits real + 4 bits imag] *
-// 2 pols).
+// control of that, but we can and do ensure that PIDXPBLK is a power of 2.
 static inline
 uint32_t
-calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t nchan, uint32_t pkt_ntime)
+calc_ata_snap_pkt_per_block(size_t block_size, uint32_t nchan,
+                               uint32_t pkt_ntime, uint32_t pkt_npol,
+                               uint32_t time_nbits)
 {
-  uint32_t piperblk = (uint32_t)(block_size / (2 * nchan * pkt_ntime));
-  return prevpow2(piperblk);
+  uint32_t pkt_idxpblk = (uint32_t)(block_size /
+      calc_ata_snap_pkt_payload_bytes(nchan, pkt_ntime, pkt_npol, time_nbits));
+  return prevpow2(pkt_idxpblk);
 }
 
 static inline
 uint32_t
-ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
+ata_snap_pkt_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_pktidx_per_block(
-                  block_size, ata_snap_obsnchan(oi), oi.pkt_ntime);
+  return calc_ata_snap_pkt_per_block(
+                  block_size, ata_snap_obsnchan(oi), oi.pkt_ntime,
+                  oi.pkt_npol, oi.time_nbits);
+}
+
+static inline
+uint32_t
+calc_ata_snap_pkt_bytes(uint32_t nchan,
+                        uint32_t pkt_ntime, uint32_t pkt_npol,
+                        uint32_t time_nbits)
+{
+  return calc_ata_snap_pkt_payload_bytes(nchan, pkt_ntime, pkt_npol, time_nbits) + 16;
+}
+
+static inline
+uint32_t
+ata_snap_pkt_bytes(const struct ata_snap_obs_info oi)
+{ 
+  return calc_ata_snap_pkt_bytes(ata_snap_obsnchan(oi), oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
 // For ATA SNAP, the NTIME parameter (not stored in the status buffer or GUPPI
@@ -343,34 +389,39 @@ ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 // evenly divide the max block size.
 static inline
 uint32_t
-calc_ata_snap_ntime(size_t block_size, uint32_t nchan, uint32_t pkt_ntime)
+calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t nchan, uint32_t pkt_ntime,
+                            uint32_t pkt_npol, uint32_t time_nbits)
 {
-  return pkt_ntime * calc_ata_snap_pktidx_per_block(block_size, nchan, pkt_ntime);
+  return pkt_ntime * calc_ata_snap_pkt_per_block(block_size, nchan,
+                                                    pkt_ntime, pkt_npol, time_nbits);
 }
 
 static inline
 uint32_t
-ata_snap_ntime(size_t block_size, const struct ata_snap_obs_info oi)
+ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_ntime(block_size, ata_snap_obsnchan(oi), oi.pkt_ntime);
+  return calc_ata_snap_pktidx_per_block(block_size, ata_snap_obsnchan(oi),
+                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
 // Calculate the effective block size for the given max block size, nchan, and
 // pkt_ntime values.  The effective block size can be less than the max block size
-// if nchan and/or pkt_ntime do not evenly divide the max block size.  This
-// assumes 4 bytes per sample.
+// if nchan and/or pkt_ntime do not evenly divide the max block size.
 static inline
 uint32_t
-calc_ata_snap_block_size(size_t block_size, uint32_t nchan, uint32_t pkt_ntime)
+calc_ata_snap_block_size(size_t block_size, uint32_t nchan, uint32_t pkt_ntime,
+                         uint32_t pkt_npol, uint32_t time_nbits)
 {
-  return 4 * nchan * pkt_ntime * calc_ata_snap_pktidx_per_block(block_size, nchan, pkt_ntime);
+  return 2*(8/time_nbits) * nchan * pkt_ntime
+            * calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits);
 }
 
 static inline
 uint32_t
 ata_snap_block_size(size_t block_size, const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_block_size(block_size, ata_snap_obsnchan(oi), oi.pkt_ntime);
+  return calc_ata_snap_block_size(block_size, ata_snap_obsnchan(oi),
+                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
 // Parses a ATA SNAP F Engine packet that is in the format of a "struct
