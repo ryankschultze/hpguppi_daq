@@ -90,9 +90,6 @@ static const uint64_t START_OK_MARGIN   =      64;
 static const uint64_t START_LATE_MARGIN = (1<<20);
 #endif
 
-/* It's easier to just make these global ... */
-static uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0;
-
 /* Structs/functions to more easily deal with multiple
  * active blocks being filled
  */
@@ -667,9 +664,11 @@ static void *run(hashpipe_thread_args_t * args)
     }
 
     /* Misc counters, etc */
+    uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0;
+    uint64_t obs_npacket_total=0, obs_ndrop_total=0;
+
     uint64_t pkt_seq_num, last_pkt_seq_num=-1;
     uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
-    int64_t pkt_seq_num_diff;
 
     char waiting=-1;
     enum run_states state = IDLE;
@@ -690,6 +689,7 @@ static void *run(hashpipe_thread_args_t * args)
     unsigned int packets_per_second = 0;
     unsigned int packets_per_second_buf[packets_per_second_buf_length];
     float average_packets_per_second = 0.0;
+    float blocks_per_second = 0.0;
 
     // Drop all packets to date
     unsigned char *p_frame;
@@ -706,13 +706,13 @@ static void *run(hashpipe_thread_args_t * args)
 
         /* Wait for data */
         do {
-            p_frame = hashpipe_pktsock_recv_udp_frame(
-                &p_ps_params->ps, p_ps_params->port, 1000); // 1 second timeout
             // Heartbeat update?
             time(&curtime);
-            if(flag_state_update || curtime != lasttime) {//time stores seconds since epoch
+            if(flag_state_update || curtime > lasttime) {//time stores seconds since epoch
                 flag_state_update = 0;
                 lasttime = curtime;
+
+                // Calculate the packets per second average over the last seconds
                 average_packets_per_second = 0.0;
                 for (int pps = 1; pps < packets_per_second_buf_length; pps++){
                     packets_per_second_buf[pps-1] = packets_per_second_buf[pps];
@@ -727,8 +727,10 @@ static void *run(hashpipe_thread_args_t * args)
                 hashpipe_status_lock_safe(st);
                 {
                     hputi8(st->buf, "NPKTS", npacket_total);
+                    hputi8(st->buf, "OBSNPKTS", obs_npacket_total);
+                    hputi8(st->buf, "OBSNDROP", obs_ndrop_total);
                     hputi8(st->buf, "NDROP", ndrop_total);
-                    hputr4(st->buf, "BLKSPS", 1000.0*1000.0*1000.0/ELAPSED_NS(ts_stop_block,ts_start_block));
+                    hputr4(st->buf, "BLKSPS", blocks_per_second);
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
                     hputr4(st->buf, "PHYSGBPS", average_packets_per_second*pkt_data_size/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
@@ -736,6 +738,9 @@ static void *run(hashpipe_thread_args_t * args)
                 }
                 hashpipe_status_unlock_safe(st);
             }
+
+            p_frame = hashpipe_pktsock_recv_udp_frame(
+                &p_ps_params->ps, p_ps_params->port, 500); // 0.5 second timeout
 
             /* Set "waiting" flag */
             if (!p_frame && run_threads() && waiting!=1) {
@@ -809,9 +814,13 @@ static void *run(hashpipe_thread_args_t * args)
             state = IDLE;
             break;
           case RECORD:// If should RECORD, and not recording, flag obs_start
-            flag_state_update = (state != RECORD ? 1 : 0);// flag state update
-            // flag_obs_start = flag_state_update;
-            state = RECORD;
+            if (state != RECORD){
+              flag_state_update = 1;
+              // flag_obs_start = flag_state_update;
+              state = RECORD;
+              obs_npacket_total = 0;
+              obs_ndrop_total = 0;
+            }
             break;
           case ARMED:// If should ARM,
             flag_state_update = (state != ARMED ? 1 : 0);// flag state update
@@ -825,24 +834,14 @@ static void *run(hashpipe_thread_args_t * args)
           continue;
         }
 
-        /* Check seq num diff */
-        pkt_seq_num_diff = pkt_seq_num - last_pkt_seq_num;
-        if (pkt_seq_num_diff < pkt_seq_step && npacket_total != 0) {
-          fprintf(stderr, "\n******%ld\n", pkt_seq_num_diff);
-          last_pkt_seq_num = pkt_seq_num;
-          // Release frame!
-          hashpipe_pktsock_release_frame(p_frame);
-          /* No going backwards */
-          continue;
+        // Tally npacket_totals
+        if(npacket_total == 0) {
+            npacket_total = 1;
+            ndrop_total = 0;
         } else {
-            // force_new_block=0;
-            if(npacket_total == 0) {
-                npacket_total = 1;
-                ndrop_total = 0;
-            } else {
-              npacket_total += pkt_seq_num_diff/pkt_seq_step;
-              ndrop_total += (pkt_seq_num_diff/pkt_seq_step) - 1;
-            }
+          // count ndrop only when a block is finalised, lest it is filled out of order.
+          npacket_total += 1;
+          obs_npacket_total += 1;
         }
 
         // // Ignore packets with FID >= NANTS
@@ -852,13 +851,14 @@ static void *run(hashpipe_thread_args_t * args)
         // Manage blocks based on pkt_blk_num
         // fprintf(stderr, "%010ld\r", pkt_blk_num);
         if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
-            flag_obs_end = 0;
             // Time to advance the blocks!!!
+            // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
             // Finalize first working block
             finalize_block(wblk);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
             // Update ndrop counter
-            // ndrop_total += wblk->ndrop;
+            obs_ndrop_total += wblk->ndrop;
+            ndrop_total += wblk->ndrop;
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
             // Check start/stop
@@ -874,7 +874,8 @@ static void *run(hashpipe_thread_args_t * args)
                 "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
                 ELAPSED_NS(ts_start_wait,ts_stop_wait), 
                 (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
-                
+            blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
+            flag_obs_end = 0;
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
         }
         // Check for PKTIDX discontinuity
@@ -885,13 +886,16 @@ static void *run(hashpipe_thread_args_t * args)
                 "working blocks reinit due to packet discontinuity (PKTIDX %lu) [%ld, %lu  <> %lu]",
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
-            // Re-init working blocks for block number *after* current packet's block
+            // If the pkt_idx is the first of the block re-init
+            // working blocks for block number of current packet's block
+            // otherwise for the block number *after* the current packet's block
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-              init_datablock_stats(wblk+wblk_idx, NULL, -1, pkt_blk_num+wblk_idx+1,
+              init_datablock_stats(wblk+wblk_idx, NULL, -1,
+                  pkt_blk_num+wblk_idx + (pkt_seq_num % pktidx_per_block == 0 ? 0 : 1),
                   pkt_per_block);
             }
-            fprintf(stderr, "Packet Block Index for finalisation: %ld\n", wblk[n_wblock-1].block_num + 1);
+            fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
             update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
@@ -906,7 +910,8 @@ static void *run(hashpipe_thread_args_t * args)
 
         // Check observation state
         if(state == IDLE){// Only possible if transitioning RECORD->IDLE
-          
+          hashpipe_pktsock_release_frame(p_frame);
+          continue;
         }
 
         // Once we get here, compute the index of the working block corresponding
