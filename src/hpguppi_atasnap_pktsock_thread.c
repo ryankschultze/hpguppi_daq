@@ -407,7 +407,7 @@ static void update_stt_status_keys( hashpipe_status_t *st,
       hputu4(st->buf, "STT_SMJD", stt_smjd);
       hputr8(st->buf, "STT_OFFS", stt_offs);
     }
-    else if(sttvalid != 0) {
+    else if(state != RECORD && sttvalid != 0) {
       hputu4(st->buf, "STTVALID", 0);
     }
   }
@@ -862,9 +862,7 @@ static void *run(hashpipe_thread_args_t * args)
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
             // Check start/stop
-            update_stt_status_keys(st, 
-                  status_from_start_stop(st, pkt_seq_num),
-                  pkt_seq_num);
+            update_stt_status_keys(st, state, pkt_seq_num);
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
             // Wait for new databuf data block to be free
@@ -880,7 +878,7 @@ static void *run(hashpipe_thread_args_t * args)
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
         }
         // Check for PKTIDX discontinuity
-        else if(pkt_blk_num < wblk[0].block_num -1
+        else if(pkt_blk_num + 1 < wblk[0].block_num
                 || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
             // Should only happen when transitioning into ARMED, so warn about it
             hashpipe_warn(thread_name,
@@ -895,9 +893,7 @@ static void *run(hashpipe_thread_args_t * args)
             }
             fprintf(stderr, "Packet Block Index for finalisation: %ld\n", wblk[n_wblock-1].block_num + 1);
             // Check start/stop
-            update_stt_status_keys(st, 
-                  status_from_start_stop(st, pkt_seq_num),
-                  pkt_seq_num);
+            update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
             // it.
         } else if(pkt_blk_num == wblk[0].block_num - 1) {
