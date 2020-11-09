@@ -430,8 +430,8 @@ enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
   uint64_t pkt_stop;
   hashpipe_status_lock_safe(st);
   {
-    hgetu8(st->buf, "PKTSTART", &pkt_start);
-    hgetu8(st->buf, "PKTSTOP", &pkt_stop);
+    hgetu8(st->buf, "OBSSTART", &pkt_start);
+    hgetu8(st->buf, "OBSSTOP", &pkt_stop);
   }
   hashpipe_status_unlock_safe(st);
 
@@ -443,7 +443,6 @@ enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
     return IDLE;
   }
 }
-
 
 int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
 {
@@ -669,10 +668,13 @@ static void *run(hashpipe_thread_args_t * args)
 
     /* Misc counters, etc */
     uint64_t pkt_seq_num, last_pkt_seq_num=-1;
+    uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
     int64_t pkt_seq_num_diff;
-    // unsigned force_new_block=0, waiting=-1;
-    unsigned waiting=-1;
+
+    char waiting=-1;
     enum run_states state = IDLE;
+    char flag_state_update = 0;
+    char flag_obs_end = 0;
 
     /* Time parameters */
     // int stt_imjd=0, stt_smjd=0;
@@ -708,7 +710,8 @@ static void *run(hashpipe_thread_args_t * args)
                 &p_ps_params->ps, p_ps_params->port, 1000); // 1 second timeout
             // Heartbeat update?
             time(&curtime);
-            if(curtime != lasttime) {//time stores seconds since epoch
+            if(flag_state_update || curtime != lasttime) {//time stores seconds since epoch
+                flag_state_update = 0;
                 lasttime = curtime;
                 average_packets_per_second = 0.0;
                 for (int pps = 1; pps < packets_per_second_buf_length; pps++){
@@ -786,25 +789,46 @@ static void *run(hashpipe_thread_args_t * args)
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
             last_pkt_blk_num = pkt_blk_num;
+            blk_start_pkt_seq = pkt_seq_num;
+            blk_stop_pkt_seq = pkt_seq_num + pktidx_per_block;
             hashpipe_status_lock_safe(st);
             hputi8(st->buf, "PKTIDX", pkt_seq_num);
             hputi8(st->buf, "BLKIDX", pkt_blk_num);
-            hputi8(st->buf, "PKTSTART", pkt_seq_num);
-            hputi8(st->buf, "PKTSTOP", pkt_seq_num + pktidx_per_block);
+            hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
+            hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
             hashpipe_status_unlock_safe(st);
         }
 
-        // If IDLE, release frame and continue main loop
-        // if(state == IDLE) {
-        //     // Release frame!
-        //     hashpipe_pktsock_release_frame(p_frame);
-        //     continue;
-        // }
+        switch(status_from_start_stop(st, pkt_seq_num)){
+          case IDLE:// If should IDLE, 
+            flag_state_update = (state != IDLE ? 1 : 0);// flag state update
+
+            if(state == RECORD){//and recording, finalise block
+              flag_obs_end = 1;
+            }
+            state = IDLE;
+            break;
+          case RECORD:// If should RECORD, and not recording, flag obs_start
+            flag_state_update = (state != RECORD ? 1 : 0);// flag state update
+            // flag_obs_start = flag_state_update;
+            state = RECORD;
+            break;
+          case ARMED:// If should ARM,
+            flag_state_update = (state != ARMED ? 1 : 0);// flag state update
+            state = ARMED;
+          default:
+            break;
+        }
+
+        if (state != RECORD && !flag_obs_end){
+          hashpipe_pktsock_release_frame(p_frame);
+          continue;
+        }
 
         /* Check seq num diff */
         pkt_seq_num_diff = pkt_seq_num - last_pkt_seq_num;
         if (pkt_seq_num_diff < pkt_seq_step && npacket_total != 0) {
-          fprintf(stderr, "******%ld\n", pkt_seq_num_diff);
+          fprintf(stderr, "\n******%ld\n", pkt_seq_num_diff);
           last_pkt_seq_num = pkt_seq_num;
           // Release frame!
           hashpipe_pktsock_release_frame(p_frame);
@@ -827,7 +851,8 @@ static void *run(hashpipe_thread_args_t * args)
         // }
         // Manage blocks based on pkt_blk_num
         // fprintf(stderr, "%010ld\r", pkt_blk_num);
-        if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
+        if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
+            flag_obs_end = 0;
             // Time to advance the blocks!!!
             // Finalize first working block
             finalize_block(wblk);
@@ -848,14 +873,14 @@ static void *run(hashpipe_thread_args_t * args)
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
             // hashpipe_info(thread_name,
             fprintf(stderr,
-                "WAIT: %010luns\t\tBLOCKS: %010luns\r",
+                "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
                 ELAPSED_NS(ts_start_wait,ts_stop_wait), 
                 (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
                 
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
         }
         // Check for PKTIDX discontinuity
-        else if(pkt_blk_num < wblk[0].block_num - 1
+        else if(pkt_blk_num < wblk[0].block_num -1
                 || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
             // Should only happen when transitioning into ARMED, so warn about it
             hashpipe_warn(thread_name,
@@ -883,7 +908,10 @@ static void *run(hashpipe_thread_args_t * args)
             // nlate++;
         }
 
-        // TODO Check START/STOP status???
+        // Check observation state
+        if(state == IDLE){// Only possible if transitioning RECORD->IDLE
+          
+        }
 
         // Once we get here, compute the index of the working block corresponding
         // to this packet.  The computed index may not correspond to a valid
