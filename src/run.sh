@@ -12,7 +12,7 @@ hashpipe -p /usr/local/lib/hpguppi_daq.so -I 0 \
 -o NSTRM=1 \
 -o PKTNTIME=16 \
 -o OBSSTART=0 \
--o OBSSTOP=34603008 \ #262144 * (128 + 3 + 1) to fill a file of 128 packet-blocks after the missed starting blocks
+-o OBSSTOP=34603008 \
 -o SCHAN=0 \
 -o CHAN_BW=0.25 \
 -o OBSBW=128 \
