@@ -3,19 +3,22 @@
 for i in `ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`; do echo performance > $i; done
 
 # Set mtu
-# ifconfig enp134s0d1 mtu 5000
+ifconfig enp134s0d1 mtu 9000
 
 # Kernel buffer sizes
-sysctl net.core.rmem_max=8388608
-sysctl net.core.rmem_default=8388608
+sysctl net.core.rmem_max=1073741824 #1G
+sysctl net.core.rmem_default=1073741824 #1G
+
+# Kill packets before the IP stack, applicable to hashpipe_pktsock
+iptables -t raw -A PREROUTING -i enp134s0d1 -p udp -j DROP
 
 # Set interrupt coalescing
-# ethtool -C enp134s0d1 adaptive-rx on
-# ethtool -C enp134s0d1 rx-frames 8
-# ethtool -C enp134s0d1 rx-usecs 0
+ethtool -C enp134s0d1 adaptive-rx on
+ethtool -C enp134s0d1 rx-frames 8
+ethtool -C enp134s0d1 rx-usecs 0
 
 # Set ring sizes to max
-# ethtool -G enp134s0d1 rx 8192
+ethtool -G enp134s0d1 rx 8192
 
 hashpipe -p /usr/local/lib/hpguppi_daq.so -I 0 \
 -o BINDHOST=enp134s0d1 \
