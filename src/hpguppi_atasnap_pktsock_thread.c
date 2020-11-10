@@ -483,7 +483,7 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
     // hputu4(st->buf, "OBSNCHAN", obsnchan);
-    hputu4(st->buf, "PIDXPBLK", ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info));
+    hputu4(st->buf, "PIPERBLK", ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info));
     // hputi4(st->buf, "BLOCSIZE", eff_block_size);
   }
   hashpipe_status_unlock_safe(st);

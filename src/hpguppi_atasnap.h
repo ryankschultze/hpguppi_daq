@@ -153,7 +153,7 @@
 // SYNCTIME.  The status buffer gets written out as the header of each GUPPI
 // RAW block so the SYNCTIME and PKTIDX values will be avilable in the output
 // products.  Another useful status buffer field relating to timekeeping is
-// "PIDXPBLK", which is short for "PktIdx PER BLocK".  PIDXPBLK is the PKTIDX
+// "PIPERBLK", which is short for "PktIdx PER BLocK".  PIPERBLK is the PKTIDX
 // step from one block to the next.  Its value depends on NTIME.
 //
 // ## IBVPKTSZ and voltage mode packet layout
@@ -346,9 +346,9 @@ ata_snap_pkt_payload_bytes(const struct ata_snap_obs_info oi)
 // Furthermore, the number of time samples per block is desired to be a power
 // of two, so that subsequent FFTs can operate on complete blocks with maximum
 // efficiency.  For this to happen, both the number of time samples per packet
-// (PKT_NTIME) and the number of PKTIDX values per block (PIDXPBLK) must be
+// (PKT_NTIME) and the number of PKTIDX values per block (PIPERBLK) must be
 // powers of two.  PKT_NTIME is set by the upstream F engines, so we have no
-// control of that, but we can and do ensure that PIDXPBLK is a power of 2.
+// control of that, but we can and do ensure that PIPERBLK is a power of 2.
 static inline
 uint32_t
 calc_ata_snap_pkt_per_block(size_t block_size, uint32_t nchan,
