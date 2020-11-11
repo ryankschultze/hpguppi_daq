@@ -329,7 +329,7 @@ static inline
 uint32_t
 ata_snap_pkt_payload_bytes(const struct ata_snap_obs_info oi)
 { 
-  return calc_ata_snap_pkt_payload_bytes(ata_snap_obsnchan(oi), oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
+  return calc_ata_snap_pkt_payload_bytes(oi.pkt_nchan, oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
 // Calculate the number of pktidx values per block.  Note that nchan is the
@@ -365,7 +365,7 @@ uint32_t
 ata_snap_pkt_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_pkt_per_block(
-                  block_size, ata_snap_obsnchan(oi), oi.pkt_ntime,
+                  block_size, oi.pkt_nchan, oi.pkt_ntime,
                   oi.pkt_npol, oi.time_nbits);
 }
 
@@ -382,7 +382,7 @@ static inline
 uint32_t
 ata_snap_pkt_bytes(const struct ata_snap_obs_info oi)
 { 
-  return calc_ata_snap_pkt_bytes(ata_snap_obsnchan(oi), oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
+  return calc_ata_snap_pkt_bytes(oi.pkt_nchan, oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
 // For ATA SNAP, the NTIME parameter (not stored in the status buffer or GUPPI
@@ -404,7 +404,7 @@ static inline
 uint32_t
 ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_pktidx_per_block(block_size, ata_snap_obsnchan(oi),
+  return calc_ata_snap_pktidx_per_block(block_size, oi.pkt_nchan,
                                      oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
@@ -424,7 +424,7 @@ static inline
 uint32_t
 ata_snap_block_size(size_t block_size, const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_block_size(block_size, ata_snap_obsnchan(oi),
+  return calc_ata_snap_block_size(block_size, oi.pkt_nchan,
                                      oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
