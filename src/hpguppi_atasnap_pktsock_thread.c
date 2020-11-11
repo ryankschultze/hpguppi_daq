@@ -291,7 +291,6 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //      ...
 //     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //
-// int copy_packet_data_to_databuf_printed = 1;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
     struct ata_snap_pkt* ata_pkt)
@@ -301,47 +300,44 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
     const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
     const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt);
+
+    // pktidx_stride is the size of a packet, i.e. pkt_payload_size
     const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
 
     // stream_stride is the size of a single stream for a single F engine for all
-    // NTIME samples of the block and all channels in a stream (i.e. in a packet):
-    const uint32_t stream_stride = pkt_payload_size * d->pktidx_per_block;
+    // NTIME samples of the block and all channels in a stream (i.e. in a packet).
+    // Easiest way to calculate is to divide the pkts_per_block by the total number of streams
+    const uint32_t stream_stride = pkt_payload_size * 
+                  (d->pkts_per_block/(ata_oi->nants*ata_oi->nstrm));
 
     // fid_stride is the size of all streams of a single F engine:
     const uint32_t fid_stride = stream_stride * ata_oi->nstrm;
 
-    // pktidx_stride is the size of a single channel for a single PKTIDX value
-    // (i.e. for a single packet):
-    const uint32_t pktidx_stride = ata_oi->pkt_nchan;//npol factor is 2, per time sample
 
     // Stream is the "channel chunk" for this FID
     const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
 
-    // Advance dst_base to...
+    // Advance dst_base to... 
     const uint64_t offset = feng_id * fid_stride // first location of this FID, then
             +  stream * stream_stride // first location of this stream, then
-            +  ((pkt_idx - d->pktidx_per_block)%d->pktidx_per_block) * pktidx_stride; // to this pktidx
+            +  ((pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime) * pkt_payload_size; // to this pktidx
 
-    // if (! copy_packet_data_to_databuf_printed){
-    // if(offset < 0 || offset > 128*1024*1024){
-    //   printf("nstrm            = %d\n", ata_oi->nstrm);
-    //   printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
-    //   printf("feng_id          = %d\n", feng_id);
-    //   printf("schan            = %d\n", ata_oi->schan);
-    //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
-    //   printf("pktidx           = %ld\n", pkt_idx);
-    //   printf("pktidx_per_block = %u\n", d->pktidx_per_block);
-    //   printf("stream_stride    = %u\n", stream_stride);
-    //   printf("fid_stride       = %u\n", fid_stride);
-    //   printf("pktidx_stride    = %u\n", pktidx_stride);
-    //   printf("stream           = %d\n", stream);
-    //   printf("offset           = %lu\n", offset);
-    // }
-    //   copy_packet_data_to_databuf_printed = 1;
-    // }
+    if(offset < 0 || offset > 128*1024*1024){
+      printf("nstrm            = %d\n", ata_oi->nstrm);
+      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+      printf("feng_id          = %d\n", feng_id);
+      printf("schan            = %d\n", ata_oi->schan);
+      printf("pkt_payload_size = %ld\n", pkt_payload_size);
+      printf("pktidx           = %ld\n", pkt_idx);
+      printf("pktidx_per_block = %u\n", d->pktidx_per_block);
+      printf("stream_stride    = %u\n", stream_stride);
+      printf("fid_stride       = %u\n", fid_stride);
+      printf("stream           = %d\n", stream);
+      printf("offset           = %lu\n", offset);
+      exit(1);
+    }
 
     dst_base += offset;
-
 
     /* Packet has full data, just do a memcpy */
     memcpy(dst_base, ata_pkt->payload, pkt_payload_size);
