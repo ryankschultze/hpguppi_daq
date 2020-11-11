@@ -394,10 +394,12 @@ ata_snap_pkt_bytes(const struct ata_snap_obs_info oi)
 static inline
 uint32_t
 calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t nchan, uint32_t pkt_ntime,
-                            uint32_t pkt_npol, uint32_t time_nbits)
+                            uint32_t pkt_npol, uint32_t time_nbits,
+                            uint32_t nants, uint32_t nstrm)
 {
-  return pkt_ntime * calc_ata_snap_pkt_per_block(block_size, nchan,
-                                                    pkt_ntime, pkt_npol, time_nbits);
+  return (pkt_ntime *
+      calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits))
+      / (nants * nstrm);
 }
 
 static inline
@@ -405,7 +407,8 @@ uint32_t
 ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_pktidx_per_block(block_size, oi.pkt_nchan,
-                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
+                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits,
+                                     oi.nants, oi.nstrm);
 }
 
 // Calculate the effective block size for the given max block size, nchan, and

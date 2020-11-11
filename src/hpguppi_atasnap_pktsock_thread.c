@@ -291,6 +291,7 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //      ...
 //     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //
+static char copy_packet_printed = 0;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
     struct ata_snap_pkt* ata_pkt)
@@ -306,9 +307,10 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
 
     // stream_stride is the size of a single stream for a single F engine for all
     // NTIME samples of the block and all channels in a stream (i.e. in a packet).
-    // Easiest way to calculate is to divide the pkts_per_block by the total number of streams
-    const uint32_t stream_stride = pkt_payload_size * 
-                  (d->pkts_per_block/(ata_oi->nants*ata_oi->nstrm));
+    // Easiest way to calculate is to divide the pkt_per_block by the total
+    // number of streams
+    const uint32_t stream_stride = pkt_payload_size * d->pkts_per_block
+                  /(ata_oi->nants*ata_oi->nstrm);
 
     // fid_stride is the size of all streams of a single F engine:
     const uint32_t fid_stride = stream_stride * ata_oi->nstrm;
@@ -322,7 +324,7 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
             +  stream * stream_stride // first location of this stream, then
             +  ((pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime) * pkt_payload_size; // to this pktidx
 
-    if(offset < 0 || offset > 128*1024*1024){
+    if(!copy_packet_printed || offset < 0 || offset > 128*1024*1024){
       printf("nstrm            = %d\n", ata_oi->nstrm);
       printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
       printf("feng_id          = %d\n", feng_id);
@@ -334,7 +336,12 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
       printf("fid_stride       = %u\n", fid_stride);
       printf("stream           = %d\n", stream);
       printf("offset           = %lu\n", offset);
-      exit(1);
+      if (!copy_packet_printed){
+        copy_packet_printed = 1;
+      }
+      else{
+        exit(1);
+      }
     }
 
     dst_base += offset;
