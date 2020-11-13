@@ -664,6 +664,7 @@ static void *run(hashpipe_thread_args_t * args)
         //important to initialise the blocks with unique block idx an block_num values
         init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*pktidx_per_block);
     }
 
     /* Misc counters, etc */
