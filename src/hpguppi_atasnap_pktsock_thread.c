@@ -629,8 +629,8 @@ static void *run(hashpipe_thread_args_t * args)
             hputi4(status_buf, "BLOCSIZE", block_size);
         }
     }
-    unsigned int pkt_per_block = ata_snap_pkt_per_block(BLOCK_DATA_SIZE, obs_info);
-    unsigned int pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);
+    unsigned int pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, obs_info);
+    unsigned int pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);//inherently effective 
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
     unsigned long pkt_blk_num, last_pkt_blk_num;
 
@@ -873,6 +873,7 @@ static void *run(hashpipe_thread_args_t * args)
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
             // hashpipe_info(thread_name,
+            fprintf(stderr, "NDROP: %ld\n", ndrop_total);
             fprintf(stderr,
                 "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
                 ELAPSED_NS(ts_start_wait,ts_stop_wait), 
