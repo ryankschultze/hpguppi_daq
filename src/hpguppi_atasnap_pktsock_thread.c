@@ -873,11 +873,11 @@ static void *run(hashpipe_thread_args_t * args)
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
             // hashpipe_info(thread_name,
-            fprintf(stderr, "NDROP: %ld\n", ndrop_total);
-            fprintf(stderr,
-                "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
-                ELAPSED_NS(ts_start_wait,ts_stop_wait), 
-                (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
+            // fprintf(stderr, "NDROP: %ld\n", ndrop_total);
+            // fprintf(stderr,
+            //     "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
+            //     ELAPSED_NS(ts_start_wait,ts_stop_wait), 
+            //     (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
             blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
             flag_obs_end = 0;
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
