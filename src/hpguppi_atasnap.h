@@ -397,9 +397,11 @@ calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t nchan, uint32_t pkt_n
                             uint32_t pkt_npol, uint32_t time_nbits,
                             uint32_t nants, uint32_t nstrm)
 {
-  return (pkt_ntime *
-      calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits))
-      / (nants * nstrm);
+  uint32_t pkidx_per_block = (pkt_ntime *
+        calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits))
+        / (nants * nstrm);
+  // Round up to next multiple of pkt_ntime
+  return (pkt_ntime > 1 ? pkidx_per_block & ~(pkt_ntime-1) : pkidx_per_block);
 }
 
 static inline
