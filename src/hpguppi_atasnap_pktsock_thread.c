@@ -291,7 +291,7 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //      ...
 //     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
 //
-static char copy_packet_printed = 0;
+// static char copy_packet_printed = 0;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
     struct ata_snap_pkt* ata_pkt)
@@ -324,31 +324,29 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
             +  stream * stream_stride // first location of this stream, then
             +  ((pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime) * pkt_payload_size; // to this pktidx
 
-    if(!copy_packet_printed || offset < 0 || offset > 128*1024*1024){
-      printf("nstrm            = %d\n", ata_oi->nstrm);
-      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
-      printf("feng_id          = %d\n", feng_id);
-      printf("pkt_schan        = %d\n", pkt_schan);
-      printf("schan            = %d\n", ata_oi->schan);
-      printf("pkt_payload_size = %ld\n", pkt_payload_size);
-      printf("pktidx           = %ld\n", pkt_idx);
-      printf("pktidx_per_block = %u\n", d->pktidx_per_block);
-      printf("stream_stride    = %u\n", stream_stride);
-      printf("fid_stride       = %u\n", fid_stride);
-      printf("stream           = %d\n", stream);
-      printf("offset           = %lu\n", offset);
-      if (!copy_packet_printed){
-        copy_packet_printed = 1;
-      }
-      else{
-        exit(1);
-      }
-    }
-
-    dst_base += offset;
+    // if(!copy_packet_printed || offset < 0 || offset > 128*1024*1024){
+    //   printf("nstrm            = %d\n", ata_oi->nstrm);
+    //   printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+    //   printf("feng_id          = %d\n", feng_id);
+    //   printf("pkt_schan        = %d\n", pkt_schan);
+    //   printf("schan            = %d\n", ata_oi->schan);
+    //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
+    //   printf("pktidx           = %ld\n", pkt_idx);
+    //   printf("pktidx_per_block = %u\n", d->pktidx_per_block);
+    //   printf("stream_stride    = %u\n", stream_stride);
+    //   printf("fid_stride       = %u\n", fid_stride);
+    //   printf("stream           = %d\n", stream);
+    //   printf("offset           = %lu\n", offset);
+    //   if (!copy_packet_printed){
+    //     copy_packet_printed = 1;
+    //   }
+    //   else{
+    //     exit(1);
+    //   }
+    // }
 
     /* Packet has full data, just do a memcpy */
-    memcpy(dst_base, ata_pkt->payload, pkt_payload_size);
+    memcpy(dst_base+offset, ata_pkt->payload, pkt_payload_size);
 }
 
 /* Push all blocks down a level, losing the first one */
@@ -787,13 +785,13 @@ static void *run(hashpipe_thread_args_t * args)
             hashpipe_status_unlock_safe(st);
             waiting=0;
         }
-        
         packets_per_second++;
 
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
         pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
         pkt_blk_num = pkt_seq_num / pktidx_per_block;
+        // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
@@ -941,8 +939,10 @@ static void *run(hashpipe_thread_args_t * args)
             wblk[wblk_idx].pktidx_per_block = pktidx_per_block;
 
             // Copy packet data to data buffer of working block
-            copy_packet_data_to_databuf(wblk+wblk_idx,
-                &obs_info, ata_snap_pkt);
+            if (1){
+              copy_packet_data_to_databuf(wblk+wblk_idx,
+                  &obs_info, ata_snap_pkt);
+            }
 
             // Count packet for block and for processing stats
             wblk[wblk_idx].npacket++;
