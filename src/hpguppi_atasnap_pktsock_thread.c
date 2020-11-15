@@ -258,7 +258,7 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //     C0T0P0 C0T0P1 C0T1P0 C0T1P1 ... C0TtP0 C0TtP1 <- t=0
 //     C1T0P0 C1T0P1 C1T1P0 C1T1P1 ... C1TtP0 C1TtP1 <- t=1
 //     ...
-//     CtT0P0 CtT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- t=pkt_ntime-1
+//     CcT0P0 CcT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- t=pkt_ntime-1
 //
 // GUPPI RAW block is ordered as:
 //
@@ -328,6 +328,7 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
       printf("nstrm            = %d\n", ata_oi->nstrm);
       printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
       printf("feng_id          = %d\n", feng_id);
+      printf("pkt_schan        = %d\n", pkt_schan);
       printf("schan            = %d\n", ata_oi->schan);
       printf("pkt_payload_size = %ld\n", pkt_payload_size);
       printf("pktidx           = %ld\n", pkt_idx);
@@ -674,7 +675,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t pkt_seq_num, last_pkt_seq_num=-1;
     uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
 
-    char waiting=-1;
+    char waiting=-1, check_obs_start_stop=1;
     enum run_states state = IDLE;
     char flag_state_update = 0;
     char flag_obs_end = 0;
@@ -797,43 +798,49 @@ static void *run(hashpipe_thread_args_t * args)
         // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
-            last_pkt_blk_num = pkt_blk_num;
-            blk_start_pkt_seq = pkt_seq_num;
-            blk_stop_pkt_seq = pkt_seq_num + pktidx_per_block;
-            hashpipe_status_lock_safe(st);
-            hputi8(st->buf, "PKTIDX", pkt_seq_num);
-            hputi8(st->buf, "BLKIDX", pkt_blk_num);
-            hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
-            hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
-            hashpipe_status_unlock_safe(st);
+          check_obs_start_stop = 1;
+
+          last_pkt_blk_num = pkt_blk_num;
+          blk_start_pkt_seq = pkt_seq_num;
+          blk_stop_pkt_seq = pkt_seq_num + pktidx_per_block;
+
+          hashpipe_status_lock_safe(st);
+          hputi8(st->buf, "PKTIDX", pkt_seq_num);
+          hputi8(st->buf, "BLKIDX", pkt_blk_num);
+          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
+          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
+          hashpipe_status_unlock_safe(st);
         }
 
-        switch(status_from_start_stop(st, pkt_seq_num)){
-          case IDLE:// If should IDLE, 
-            flag_state_update = (state != IDLE ? 1 : 0);// flag state update
-
-            if(state == RECORD){//and recording, finalise block
-              flag_obs_end = 1;
-            }
-            state = IDLE;
-            break;
-          case RECORD:// If should RECORD, and not recording, flag obs_start
-            if (state != RECORD){
-              flag_state_update = 1;
-              // flag_obs_start = flag_state_update;
-              state = RECORD;
-              obs_npacket_total = 0;
-              obs_ndrop_total = 0;
-            }
-            break;
-          case ARMED:// If should ARM,
-            flag_state_update = (state != ARMED ? 1 : 0);// flag state update
-            state = ARMED;
-          default:
-            break;
+        if (check_obs_start_stop){
+          check_obs_start_stop = 0;
+          switch(status_from_start_stop(st, pkt_seq_num)){
+            case IDLE:// If should IDLE, 
+              flag_state_update = (state != IDLE ? 1 : 0);// flag state update
+      
+              if(state == RECORD){//and recording, finalise block
+                flag_obs_end = 1;
+              }
+              state = IDLE;
+              break;
+            case RECORD:// If should RECORD, and not recording, flag obs_start
+              if (state != RECORD){
+                flag_state_update = 1;
+                // flag_obs_start = flag_state_update;
+                state = RECORD;
+                obs_npacket_total = 0;
+                obs_ndrop_total = 0;
+              }
+              break;
+            case ARMED:// If should ARM,
+              flag_state_update = (state != ARMED ? 1 : 0);// flag state update
+              state = ARMED;
+            default:
+              break;
+          }
         }
 
-        if (state != RECORD && !flag_obs_end){
+        if (state != RECORD && flag_obs_end != 1){ //causes a block to be missed
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }
