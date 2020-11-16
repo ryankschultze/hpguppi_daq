@@ -294,13 +294,14 @@ static void wait_for_block_free(const struct datablock_stats * d,
 // static char copy_packet_printed = 0;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt)
+    struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
 {
     // the pointer's data width means the offset is in terms of bytes
     char *dst_base = datablock_stats_data(d);
     const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
     const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
-    const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt);
+    // offset pkt_idx so it the first of the observation is at the start of the block
+    const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt) - obs_start_pktidx;
 
     // pktidx_stride is the size of a packet, i.e. pkt_payload_size
     const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
@@ -423,19 +424,19 @@ static void update_stt_status_keys( hashpipe_status_t *st,
 //     return IDLE
 //   endif
 static
-enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
+enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx,
+                                       uint64_t *obs_start_pktidx, uint64_t *obs_stop_pktidx)
 {
-  uint64_t pkt_start = 0, pkt_stop = 0;
   hashpipe_status_lock_safe(st);
   {
-    hgetu8(st->buf, "OBSSTART", &pkt_start);
-    hgetu8(st->buf, "OBSSTOP", &pkt_stop);
+    hgetu8(st->buf, "OBSSTART", obs_start_pktidx);
+    hgetu8(st->buf, "OBSSTOP", obs_stop_pktidx);
   }
   hashpipe_status_unlock_safe(st);
 
-  if(pkt_start <= pktidx && pktidx < pkt_stop) {
+  if(*obs_start_pktidx <= pktidx && pktidx < *obs_stop_pktidx) {
     return RECORD;
-  } else if (pktidx < pkt_start && pkt_start != pkt_stop) {
+  } else if (pktidx < *obs_start_pktidx && *obs_start_pktidx != *obs_stop_pktidx) {
     return ARMED;
   } else {// pktstop <= pktidx
     return IDLE;
@@ -694,6 +695,7 @@ static void *run(hashpipe_thread_args_t * args)
 
     uint64_t pkt_seq_num, last_pkt_seq_num=-1;
     uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
+    uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
     char waiting=-1, check_obs_start_stop=1;
     enum run_states state = IDLE;
@@ -748,8 +750,8 @@ static void *run(hashpipe_thread_args_t * args)
                     average_packets_per_second += packets_per_second_buf[pps];
                 }
                 packets_per_second_buf[packets_per_second_buf_length-1] = packets_per_second;
-                packets_per_second = 0;
                 average_packets_per_second = (packets_per_second + average_packets_per_second)/packets_per_second_buf_length;
+                packets_per_second = 0;
 
                 ctime_r(&curtime, timestr);
                 timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
@@ -761,7 +763,7 @@ static void *run(hashpipe_thread_args_t * args)
                     hputi8(st->buf, "NDROP", ndrop_total);
                     hputr4(st->buf, "BLKSPS", blocks_per_second);
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
-                    hputr4(st->buf, "PHYSGBPS", average_packets_per_second*obs_info.pkt_data_size/(1e9));
+                    hputr4(st->buf, "PHYSGBPS", (average_packets_per_second*obs_info.pkt_data_size)/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
                     HPUT_DAQ_STATE(st, state);
 
@@ -842,7 +844,7 @@ static void *run(hashpipe_thread_args_t * args)
 
         if (check_obs_start_stop){
           check_obs_start_stop = 0;
-          switch(status_from_start_stop(st, pkt_seq_num)){
+          switch(status_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
             case IDLE:// If should IDLE, 
               flag_state_update = (state != IDLE ? 1 : 0);// flag state update
       
@@ -974,7 +976,7 @@ static void *run(hashpipe_thread_args_t * args)
             // Copy packet data to data buffer of working block
             if (1){
               copy_packet_data_to_databuf(wblk+wblk_idx,
-                  &obs_info, ata_snap_pkt);
+                  &obs_info, ata_snap_pkt, obs_start_pktidx);
             }
 
             // Count packet for block and for processing stats
