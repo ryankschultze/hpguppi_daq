@@ -446,7 +446,6 @@ enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
 int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
 {
   int rc = 1;//obsinfo valid
-  uint32_t obsnchan = 0;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -462,17 +461,37 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hgeti4(st->buf, "SCHAN",    &obs_info->schan);
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
-      /* Packet format to use */
       // Capture expected step change in ATA SNAP packet's sequential timestamps
       // int pkt_seq_step = obs_info.pkt_ntime;
-      // Update obsnchan, pktidx_per_block, and eff_block_size
 
       obs_info->pkt_data_size = ata_snap_pkt_bytes(*obs_info);
       obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
       obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
-      obsnchan = ata_snap_obsnchan(*obs_info);
       // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
 
+      hputs(st->buf, "OBSINFO", "VALID");
+    } else {
+      rc = 0;
+      hputs(st->buf, "OBSINFO", "INVALID");
+    }
+  }
+  hashpipe_status_unlock_safe(st);
+  return rc;
+}
+
+// This function overwrites the status values with those of the provided ata_snap_obs_info
+// which primarily serves to revert any changes that were made mid-observation
+int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
+{
+  int rc = 1;//obsinfo valid
+  uint32_t obsnchan = 0;
+
+  // Get any obs info from status buffer, store values
+  hashpipe_status_lock_safe(st);
+  {
+    // If obs_info is valid
+    if(ata_snap_obs_info_valid(*obs_info)) {
+      obsnchan = ata_snap_obsnchan(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
       rc = 0;
@@ -490,9 +509,10 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
-    // hputu4(st->buf, "OBSNCHAN", obsnchan);
+    hputu4(st->buf, "OBSNCHAN", obsnchan);
     hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
-    // hputi4(st->buf, "BLOCSIZE", eff_block_size);
+    hputu4(st->buf, "PKTSIZE", obs_info->pkt_data_size);
+    // hputi4(st->buf, "BLKESIZE", eff_block_size);
   }
   hashpipe_status_unlock_safe(st);
   return rc;
@@ -630,8 +650,8 @@ static void *run(hashpipe_thread_args_t * args)
      * recommended, so observational flexibility is only possible 
      * when hashpipe is idling.
      */
-    
     ata_snap_obs_info_read(st, &obs_info);
+    ata_snap_obs_info_write(st, &obs_info);
     
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
     unsigned long pkt_blk_num, last_pkt_blk_num;
@@ -704,8 +724,8 @@ static void *run(hashpipe_thread_args_t * args)
     }
     struct ata_snap_pkt *ata_snap_pkt;
 
-    fprintf(stderr, "Receiving at interface %s, port %d, expecting packet size %u\n",
-    p_ps_params->ifname, p_ps_params->port, obs_info.pkt_data_size);//p_ps_params->packet_size);
+    fprintf(stderr, "Receiving at interface %s, port %d\n",
+    p_ps_params->ifname, p_ps_params->port);//p_ps_params->packet_size);
 
     /* Main loop */
     while (run_threads()) {
@@ -713,8 +733,12 @@ static void *run(hashpipe_thread_args_t * args)
         /* Wait for data */
         do {
             // Heartbeat update?
-            time(&curtime);
-            if(flag_state_update || curtime > lasttime) {//time stores seconds since epoch
+            time(&curtime);//time stores seconds since epoch
+            if(flag_state_update || curtime > lasttime) {// once per second
+                if (state == IDLE){
+                  ata_snap_obs_info_read(st, &obs_info);
+                }
+                ata_snap_obs_info_write(st, &obs_info);
                 flag_state_update = 0;
                 lasttime = curtime;
 
@@ -741,6 +765,10 @@ static void *run(hashpipe_thread_args_t * args)
                     hputr4(st->buf, "PHYSGBPS", average_packets_per_second*obs_info.pkt_data_size/(1e9));
                     hputs(st->buf, "DAQPULSE", timestr);
                     HPUT_DAQ_STATE(st, state);
+
+                    // Overwrite any changes to reflect the static nature of these keys
+                    hputs(st->buf, "BINDHOST", p_ps_params->ifname);
+                    hputi4(st->buf, "BINDPORT", p_ps_params->port);
                 }
                 hashpipe_status_unlock_safe(st);
             }
@@ -774,7 +802,7 @@ static void *run(hashpipe_thread_args_t * args)
             /* Unexpected packet size, ignore */
             hashpipe_status_lock_safe(st);
               hputi4(st->buf, "NBOGUS", ++nbogus_total);
-              hputi4(st->buf, "PKTSIZE", PKT_UDP_SIZE(p_frame)-8);
+              hputi4(st->buf, "BOGUSIZE", PKT_UDP_SIZE(p_frame)-8);
             hashpipe_status_unlock_safe(st);
             // Release frame!
             hashpipe_pktsock_release_frame(p_frame);
@@ -826,6 +854,9 @@ static void *run(hashpipe_thread_args_t * args)
               break;
             case RECORD:// If should RECORD, and not recording, flag obs_start
               if (state != RECORD){
+                nbogus_total = 0;
+                hputi4(st->buf, "NBOGUS", nbogus_total);
+                hputi4(st->buf, "BOGUSIZE", 0);
                 flag_state_update = 1;
                 // flag_obs_start = flag_state_update;
                 state = RECORD;
