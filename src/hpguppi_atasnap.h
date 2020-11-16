@@ -196,7 +196,7 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
   uint8_t payload[];//complex4 data[n_chans, 16, 2] // 4-bit real + 4-bit imaginary
 };
 
-#define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   __bswap_64((uint64_t) ata_snap_pkt->timestamp)
+#define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   (uint64_t)__bswap_64(ata_snap_pkt->timestamp)
 #define ATA_SNAP_PKT_CHAN(ata_snap_pkt)     __bswap_16(ata_snap_pkt->chan)
 #define ATA_SNAP_PKT_FENG_ID(ata_snap_pkt)  __bswap_16(ata_snap_pkt->feng_id)
 
@@ -246,17 +246,24 @@ struct ata_snap_obs_info {
   uint32_t pkt_nchan;
   // Starting F Engine channel number to be processed
   int32_t schan;
-  // The number 
+  // The number of bytes per packets
+  uint32_t pkt_data_size;
+  // The number of (effective) packets per block
+  uint32_t pkt_per_block;
+  // The number of packet timestamps per block
   uint32_t pktidx_per_block;
 };
 
-#define ATASNAP_DEFAULT_FENCHAN     (4096)
-#define ATASNAP_DEFAULT_NSTRM       (   1)
-#define ATASNAP_DEFAULT_PKTNPOL     (   2)
-#define ATASNAP_DEFAULT_TIME_NBITS  (   4)
-#define ATASNAP_DEFAULT_PKTNCHAN    ( 256)
-#define ATASNAP_DEFAULT_PKTNTIME    (  16)
-#define OBS_INFO_INVALID_SCHAN      (  -1)
+#define ATASNAP_DEFAULT_FENCHAN         (  4096)
+#define ATASNAP_DEFAULT_NSTRM           (     1)
+#define ATASNAP_DEFAULT_PKTNPOL         (     2)
+#define ATASNAP_DEFAULT_TIME_NBITS      (     4)
+#define ATASNAP_DEFAULT_PKTNCHAN        (   256)
+#define ATASNAP_DEFAULT_PKTNTIME        (    16)
+#define ATASNAP_DEFAULT_PKT_SIZE        (  8208)
+#define ATASNAP_DEFAULT_PKT_PER_BLK     ( 16834)
+#define ATASNAP_DEFAULT_PKTIDX_PER_BLK  (262144)
+#define OBS_INFO_INVALID_SCHAN          (    -1)
 
 // Returns the largest power of two that it less than or equal to x.
 // Returns 0 if x is 0.
@@ -280,6 +287,9 @@ ata_snap_obs_info_init(struct ata_snap_obs_info * poi)
   poi->pkt_ntime = ATASNAP_DEFAULT_PKTNTIME;
   poi->pkt_nchan = ATASNAP_DEFAULT_PKTNCHAN;
   poi->schan = OBS_INFO_INVALID_SCHAN;
+  poi->pkt_data_size = ATASNAP_DEFAULT_PKT_SIZE;
+  poi->pkt_per_block = ATASNAP_DEFAULT_PKT_PER_BLK;
+  poi->pktidx_per_block = ATASNAP_DEFAULT_PKTIDX_PER_BLK;
 }
 
 static inline

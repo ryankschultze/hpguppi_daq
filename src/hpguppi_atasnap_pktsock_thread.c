@@ -225,7 +225,7 @@ static void wait_for_block_free(const struct datablock_stats * d,
       hputs(st->buf, "NETBUFST", netbuf_status);
       hashpipe_status_unlock_safe(st);
     } else {
-      hashpipe_error("hpguppi_atasnap_voltage_thread",
+      hashpipe_error("hpguppi_atasnap_pktsock_thread",
           "error waiting for free databuf");
       pthread_exit(NULL);
     }
@@ -462,9 +462,15 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hgeti4(st->buf, "SCHAN",    &obs_info->schan);
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
+      /* Packet format to use */
+      // Capture expected step change in ATA SNAP packet's sequential timestamps
+      // int pkt_seq_step = obs_info.pkt_ntime;
       // Update obsnchan, pktidx_per_block, and eff_block_size
+
+      obs_info->pkt_data_size = ata_snap_pkt_bytes(*obs_info);
+      obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
+      obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
       obsnchan = ata_snap_obsnchan(*obs_info);
-      obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);
       // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
 
       hputs(st->buf, "OBSINFO", "VALID");
@@ -485,7 +491,7 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
     // hputu4(st->buf, "OBSNCHAN", obsnchan);
-    hputu4(st->buf, "PIPERBLK", ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info));
+    hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
     // hputi4(st->buf, "BLOCSIZE", eff_block_size);
   }
   hashpipe_status_unlock_safe(st);
@@ -605,17 +611,7 @@ static void *run(hashpipe_thread_args_t * args)
     struct ata_snap_obs_info obs_info;
     ata_snap_obs_info_init(&obs_info);
 
-    ata_snap_obs_info_read(st, &obs_info);
 
-    /* Packet format to use */
-    // Capture expected step change in ATA SNAP packet's sequential timestamps
-    int pkt_seq_step = obs_info.pkt_ntime;
-    size_t pkt_data_size = ata_snap_pkt_bytes(obs_info);
-
-    /* Figure out size of data in each packet, number of packets
-     * per block, etc.  Changing packet size during an obs is not
-     * recommended.
-     */
     int block_size = BLOCK_DATA_SIZE;
 
     if (hgeti4(status_buf, "BLOCSIZE", &block_size)==0) {
@@ -628,9 +624,16 @@ static void *run(hashpipe_thread_args_t * args)
             hputi4(status_buf, "BLOCSIZE", block_size);
         }
     }
-    unsigned int pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, obs_info);
-    unsigned int pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, obs_info);//inherently effective 
-    fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", pkt_per_block, pktidx_per_block);
+    
+    /* Figure out size of data in each packet, number of packets
+     * per block, etc.  Changing packet size during an obs is not
+     * recommended, so observational flexibility is only possible 
+     * when hashpipe is idling.
+     */
+    
+    ata_snap_obs_info_read(st, &obs_info);
+    
+    fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
     unsigned long pkt_blk_num, last_pkt_blk_num;
 
 
@@ -661,9 +664,9 @@ static void *run(hashpipe_thread_args_t * args)
     // Initialize working blocks
     for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
         //important to initialise the blocks with unique block idx an block_num values
-        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, pkt_per_block);
+        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*pktidx_per_block);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*obs_info.pktidx_per_block);
     }
 
     /* Misc counters, etc */
@@ -701,8 +704,8 @@ static void *run(hashpipe_thread_args_t * args)
     }
     struct ata_snap_pkt *ata_snap_pkt;
 
-    fprintf(stderr, "Receiving at interface %s, port %d, expecting packet size %ld\n",
-    p_ps_params->ifname, p_ps_params->port, pkt_data_size);//p_ps_params->packet_size);
+    fprintf(stderr, "Receiving at interface %s, port %d, expecting packet size %u\n",
+    p_ps_params->ifname, p_ps_params->port, obs_info.pkt_data_size);//p_ps_params->packet_size);
 
     /* Main loop */
     while (run_threads()) {
@@ -735,7 +738,7 @@ static void *run(hashpipe_thread_args_t * args)
                     hputi8(st->buf, "NDROP", ndrop_total);
                     hputr4(st->buf, "BLKSPS", blocks_per_second);
                     hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
-                    hputr4(st->buf, "PHYSGBPS", average_packets_per_second*pkt_data_size/1e9);
+                    hputr4(st->buf, "PHYSGBPS", average_packets_per_second*obs_info.pkt_data_size/(1e9));
                     hputs(st->buf, "DAQPULSE", timestr);
                     HPUT_DAQ_STATE(st, state);
                 }
@@ -767,7 +770,7 @@ static void *run(hashpipe_thread_args_t * args)
         //     p_ps_params->packet_size = PKT_UDP_SIZE(p_frame) - 8;
         // } else 
         // if(p_ps_params->packet_size != PKT_UDP_SIZE(p_frame) - 8) {
-        if(pkt_data_size != PKT_UDP_SIZE(p_frame) - 8) {
+        if(obs_info.pkt_data_size != PKT_UDP_SIZE(p_frame) - 8) {
             /* Unexpected packet size, ignore */
             hashpipe_status_lock_safe(st);
               hputi4(st->buf, "NBOGUS", ++nbogus_total);
@@ -790,17 +793,17 @@ static void *run(hashpipe_thread_args_t * args)
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
         pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
-        pkt_blk_num = pkt_seq_num / pktidx_per_block;
+        pkt_blk_num = pkt_seq_num / obs_info.pktidx_per_block;
         // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
-        // Update PKTIDX in status buffer if pkt_seq_num % pktidx_per_block == 0
+        // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
           check_obs_start_stop = 1;
 
           last_pkt_blk_num = pkt_blk_num;
           blk_start_pkt_seq = pkt_seq_num;
-          blk_stop_pkt_seq = pkt_seq_num + pktidx_per_block;
+          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
 
           hashpipe_status_lock_safe(st);
           hputi8(st->buf, "PKTIDX", pkt_seq_num);
@@ -902,8 +905,8 @@ static void *run(hashpipe_thread_args_t * args)
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
               init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx + (pkt_seq_num % pktidx_per_block == 0 ? 0 : 1),
-                  pkt_per_block);
+                  pkt_blk_num+wblk_idx + (pkt_seq_num % obs_info.pktidx_per_block == 0 ? 0 : 1),
+                  obs_info.pkt_per_block);
             }
             fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
@@ -935,8 +938,8 @@ static void *run(hashpipe_thread_args_t * args)
             // probably just as fast to do it for each packet rather than
             // check-and-update-only-if-needed for each packet.
 
-            wblk[wblk_idx].pkts_per_block = pkt_per_block;
-            wblk[wblk_idx].pktidx_per_block = pktidx_per_block;
+            wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
+            wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
 
             // Copy packet data to data buffer of working block
             if (1){
