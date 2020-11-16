@@ -425,8 +425,7 @@ static void update_stt_status_keys( hashpipe_status_t *st,
 static
 enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
 {
-  uint64_t pkt_start;
-  uint64_t pkt_stop;
+  uint64_t pkt_start = 0, pkt_stop = 0;
   hashpipe_status_lock_safe(st);
   {
     hgetu8(st->buf, "OBSSTART", &pkt_start);
@@ -436,7 +435,7 @@ enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx)
 
   if(pkt_start <= pktidx && pktidx < pkt_stop) {
     return RECORD;
-  } else if (pktidx < pkt_start) {
+  } else if (pktidx < pkt_start && pkt_start != pkt_stop) {
     return ARMED;
   } else {// pktstop <= pktidx
     return IDLE;
