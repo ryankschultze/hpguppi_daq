@@ -56,11 +56,10 @@ payload = b"\x00" * payload_len
 #     complex4 data[nchan_per_block, NTIME, NPOL]; // 4-bit real + 4-bit imaginary
 #   };
 
-# Pack the header bytes which never change
+# Header fields which never change
 h_version = 0
 h_type = 0
 h_nchan = nchan_per_block
-header_static = struct.pack(">BBH", h_version, h_type, h_nchan)
 
 pkt_count = 0
 t = 0
@@ -70,8 +69,8 @@ nbytes_report = NPKT_REPORT * payload_len
 while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
-            header_dyn = struct.pack(">IIQ", c*nchan_per_block, f, t)
-            sock.sendto(header_static + header_dyn + payload, (args.ip, args.port))
+            header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
+            sock.sendto(header + payload, (args.ip, args.port))
             pkt_count += 1
     t += NTIME
     if pkt_count % NPKT_REPORT == 0:
