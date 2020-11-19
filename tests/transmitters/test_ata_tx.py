@@ -22,6 +22,8 @@ parser.add_argument('-f', '--nfeng', type=int, default=10,
                     help='Number of F-engines to emulate')
 parser.add_argument('-c', '--nchan', type=int, default=256,
                     help='Number of frequency channels to send')
+parser.add_argument('-g', '--gbps', type=float, default=None,
+                    help='Target number of Gbps. Will throttle if necessary. If None, send at max speed')
 args = parser.parse_args()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -64,19 +66,35 @@ h_nchan = nchan_per_block
 pkt_count = 0
 t = 0
 tick = time.time()
-NPKT_REPORT = 100000
-nbytes_report = NPKT_REPORT * payload_len
+throttle_tick = time.time()
+NPKT_THROTTLE = 100
+nbytes_throttle = NPKT_THROTTLE * payload_len
+npkt_sent = 0
 while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
             header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
             sock.sendto(header + payload, (args.ip, args.port))
             pkt_count += 1
+            if args.gbps is None:
+                continue
+            if pkt_count % NPKT_THROTTLE == 0:
+                    throttle_tock = time.time()
+                    elapsed = throttle_tock - throttle_tick
+                    target_elapsed = 8*nbytes_throttle / 1e9 / args.gbps
+                    if target_elapsed > elapsed:
+                        time.sleep(target_elapsed - elapsed)
+                    throttle_tick = time.time()
+
     t += NTIME
-    if pkt_count % NPKT_REPORT == 0:
+
+    if time.time() - tick > 1:
         tock = time.time()
         elapsed = tock-tick
-        print("Sent %d packets (%.1f MB) in %.2fs (%.2fGb/s)" % (NPKT_REPORT, nbytes_report / 1.0e6, elapsed, 8*nbytes_report / elapsed / 1e9))
+        npkt_sent_new = pkt_count - npkt_sent
+        nbyte_sent_new = npkt_sent_new * payload_len
+        print("Sent %d packets (%.1f MB) in %.2fs (%.2fGb/s)" % (npkt_sent_new, nbyte_sent_new / 1.0e6, elapsed, 8*nbyte_sent_new / elapsed / 1e9))
         tick = time.time()
+        npkt_sent = pkt_count
 
 
