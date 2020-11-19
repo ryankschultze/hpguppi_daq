@@ -24,6 +24,8 @@ parser.add_argument('-c', '--nchan', type=int, default=256,
                     help='Number of frequency channels to send')
 parser.add_argument('-g', '--gbps', type=float, default=None,
                     help='Target number of Gbps. Will throttle if necessary. If None, send at max speed')
+parser.add_argument('-m', '--miss', type=int, default=None,
+                    help='If set, specify a number of packets to be sent, after which one will be deliberately dropped')
 args = parser.parse_args()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -73,6 +75,11 @@ npkt_sent = 0
 while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
+            if args.miss is not None:
+                if pkt_count % args.miss == 0:
+                    #skip this packet
+                    pkt_count += 1
+                    continue
             header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
             sock.sendto(header + payload, (args.ip, args.port))
             pkt_count += 1
