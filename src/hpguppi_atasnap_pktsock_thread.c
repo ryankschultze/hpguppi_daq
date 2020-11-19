@@ -347,7 +347,7 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     }
 
     for(int pkt_chan = 0; pkt_chan < ata_oi->pkt_nchan; pkt_chan++){
-      memcpy(dst_base, pkt_payload, pkt_channel_size);
+      memcpy_nt(dst_base, pkt_payload, pkt_channel_size);
       dst_base += blk_channel_stride;
       pkt_payload += pkt_channel_size;
     }
