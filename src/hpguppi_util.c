@@ -57,13 +57,15 @@ mkdir_p(char *pathname, mode_t mode)
 
 #if HAVE_AVX512F_INSTRUCTIONS || HAVE_AVX2_INSTRUCTIONS
 
-#if HAVE_AVX512F_INSTRUCTIONS
+#if HAVE_AVX512F_INSTRUCTIONS && ! defined(BAN_AVX512F)
+#pragma message "Using AVX512 Instructions"
 #define TYPE_NT  __m512i
 #define LOAD_NT  _mm512_stream_load_si512
 #define STORE_NT _mm512_stream_si512
 #define ZERO_NT  _mm512_setzero_si512
 #define SIZE_NT  6
 #elif HAVE_AVX2_INSTRUCTIONS
+#pragma message "Using AVX2 Instructions"
 #define TYPE_NT  __m256i
 #define LOAD_NT  _mm256_stream_load_si256
 #define STORE_NT _mm256_stream_si256
