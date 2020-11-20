@@ -34,14 +34,14 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
   // and also amount to copy at a time
   size_t istride = (ctx->npol * ctx->ndim * ctx->nbits * ctx->ntime)/8;
 
-  size_t tstride = ctx->obsnchan * istride;
+  // size_t tstride = ctx->obsnchan * istride;
   size_t ostride = itime_packets * istride;
 
   // Loop over entire spectrum-packets over all the chans
 //#pragma omp parallel for private (inbuf, outbuf)
+  inbuf  = baseinbuf;// + iptime*tstride;
   for (size_t iptime=0; iptime < itime_packets; iptime++)
   {
-    inbuf  = baseinbuf + iptime*tstride;
     outbuf = baseoutbuf + iptime*istride; 
     for (size_t ichan=0; ichan < ctx->obsnchan; ichan++)
     {
@@ -79,7 +79,7 @@ static void *run(hashpipe_thread_args_t *args)
     hputs(st.buf, status_key, "waiting");
     hputi4(st.buf, "TRBLKOUT", curblock_out);
 
-    hgeti4(st.buf, "NTIME", &ctx.ntime);
+    hgeti4(st.buf, "PKTNTIME", &ctx.ntime);
     hgeti4(st.buf, "OBSNCHAN", &ctx.obsnchan);
     hgeti4(st.buf, "NBITS", &ctx.nbits);
     ctx.ndim = 2; //hardcode for now
