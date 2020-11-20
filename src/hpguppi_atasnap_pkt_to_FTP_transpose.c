@@ -95,15 +95,15 @@ static void *run(hashpipe_thread_args_t *args)
       if (rv == HASHPIPE_TIMEOUT)
       {
         hashpipe_status_lock_safe(&st);
-	hputs(st.buf, status_key, "input blocked");
-    	hashpipe_status_unlock_safe(&st);
-	continue;
+	      hputs(st.buf, status_key, "input blocked");
+    	  hashpipe_status_unlock_safe(&st);
+	      continue;
       }
       else
       {
         hashpipe_error(__FUNCTION__, "error waiting for input buffer");
-	pthread_exit(NULL);
-	break;
+	      pthread_exit(NULL);
+	      break;
       }
     }
 
@@ -114,21 +114,21 @@ static void *run(hashpipe_thread_args_t *args)
       if (rv == HASHPIPE_TIMEOUT)
       {
         hashpipe_status_lock_safe(&st);
-	hputs(st.buf, status_key, "blocked out");
+	      hputs(st.buf, status_key, "blocked out");
        	hashpipe_status_unlock_safe(&st);
-	continue;
+	      continue;
       }
       else
       {
         hashpipe_error(__FUNCTION__, "error waiting for output buffer");
         pthread_exit(NULL);
-	break;
+	      break;
       }
         
     }
 
     hashpipe_status_lock_safe(&st);
-    hputs(st.buf, status_key, "processing transpose");
+    hputs(st.buf, status_key, "transposing");
     hashpipe_status_unlock_safe(&st);
   
     //omp_set_num_threads(NTHREADS);
@@ -154,9 +154,9 @@ static void *run(hashpipe_thread_args_t *args)
 
 
 
-static hashpipe_thread_desc_t pkt_FTP_transpose = {
-  name: "pkt_FTP_transpose",
-  skey: "TRANS",
+static hashpipe_thread_desc_t pkt_FTP_transpose_thread = {
+  name: "hpguppi_atasnap_pkt_to_FTP_transpose",
+  skey: "TRANSTAT",
   init: NULL,
   run: run,
   ibuf_desc: {hpguppi_input_databuf_create},
@@ -165,5 +165,5 @@ static hashpipe_thread_desc_t pkt_FTP_transpose = {
 
 static __attribute__((constructor)) void ctor()
 {
-  register_hashpipe_thread(& pkt_FTP_transpose);
+  register_hashpipe_thread(& pkt_FTP_transpose_thread);
 }
