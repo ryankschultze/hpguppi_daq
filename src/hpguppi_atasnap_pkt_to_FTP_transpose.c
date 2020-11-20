@@ -50,7 +50,6 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
       outbuf += ostride;
     }
   }
-  fprintf(stderr, "transpose...\n");
   return 0;
 }
 
@@ -136,8 +135,13 @@ static void *run(hashpipe_thread_args_t *args)
   
     // create context
   
-    transpose(&ctx, indb->block[curblock_in].data, 
-		    outdb->block[curblock_out].data);
+    // copy across the header
+    memcpy(hpguppi_databuf_header(outdb, curblock_out), 
+           hpguppi_databuf_header(indb, curblock_in), 
+           HASHPIPE_STATUS_TOTAL_SIZE);
+
+    transpose(&ctx, hpguppi_databuf_data(indb, curblock_in), 
+		    hpguppi_databuf_data(outdb, curblock_out));
     
     hpguppi_input_databuf_set_free(indb, curblock_in);
     curblock_in  = (curblock_in + 1) % indb->header.n_block;
