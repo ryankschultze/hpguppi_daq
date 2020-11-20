@@ -62,6 +62,7 @@ static void *run(hashpipe_thread_args_t *args)
 
   hashpipe_status_t st = args->st;
   const char* status_key = args->thread_desc->skey;
+  const char* thread_name = args->thread_desc->name;
 
   int rv;
 
@@ -89,38 +90,38 @@ static void *run(hashpipe_thread_args_t *args)
     hashpipe_status_unlock_safe(&st);
 
     // Waiting for input
-    while ((rv=hpguppi_input_databuf_wait_free(indb, curblock_in)) != 
+    while ((rv=hpguppi_input_databuf_wait_filled(indb, curblock_in)) != 
 		    HASHPIPE_OK)
     {
       if (rv == HASHPIPE_TIMEOUT)
       {
         hashpipe_status_lock_safe(&st);
-	      hputs(st.buf, status_key, "input blocked");
+	      hputs(st.buf, status_key, "inblocked");
     	  hashpipe_status_unlock_safe(&st);
 	      continue;
       }
       else
       {
-        hashpipe_error(__FUNCTION__, "error waiting for input buffer");
+        hashpipe_error(thread_name, "error waiting for input buffer");
 	      pthread_exit(NULL);
 	      break;
       }
     }
 
     // Waiting for output
-    while ((rv==hpguppi_input_databuf_wait_free(outdb, curblock_out)) !=
+    while ((rv=hpguppi_input_databuf_wait_free(outdb, curblock_out)) !=
 		    HASHPIPE_OK)
     {
       if (rv == HASHPIPE_TIMEOUT)
       {
         hashpipe_status_lock_safe(&st);
-	      hputs(st.buf, status_key, "blocked out");
+	      hputs(st.buf, status_key, "outblocked");
        	hashpipe_status_unlock_safe(&st);
 	      continue;
       }
       else
       {
-        hashpipe_error(__FUNCTION__, "error waiting for output buffer");
+        hashpipe_error(thread_name, "error waiting for output buffer");
         pthread_exit(NULL);
 	      break;
       }
@@ -138,14 +139,14 @@ static void *run(hashpipe_thread_args_t *args)
     transpose(&ctx, indb->block[curblock_in].data, 
 		    outdb->block[curblock_out].data);
     
-    hpguppi_input_databuf_set_filled(outdb, curblock_out);
-    curblock_out = (curblock_out + 1) % outdb->header.n_block;
-
     hpguppi_input_databuf_set_free(indb, curblock_in);
     curblock_in  = (curblock_in + 1) % indb->header.n_block;
+
+    hpguppi_input_databuf_set_filled(outdb, curblock_out);
+    curblock_out = (curblock_out + 1) % outdb->header.n_block;
   }
 
-  hashpipe_info(__FUNCTION__, "returning");
+  hashpipe_info(thread_name, "returning");
 
   return NULL;
 }
