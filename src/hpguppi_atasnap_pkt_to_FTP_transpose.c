@@ -3,9 +3,12 @@
 #include <string.h>
 #include <pthread.h>
 
+#include <omp.h>
+
 #include "hashpipe.h"
 #include "hpguppi_databuf.h"
 
+#define USE_MULTI_THREAD
 
 typedef struct
 {
@@ -34,14 +37,22 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
   // and also amount to copy at a time
   size_t istride = (ctx->npol * ctx->ndim * ctx->nbits * ctx->ntime)/8;
 
-  // size_t tstride = ctx->obsnchan * istride;
+#ifdef USE_MULTI_THREAD
+  size_t tstride = ctx->obsnchan * istride;
+#endif
   size_t ostride = itime_packets * istride;
 
   // Loop over entire spectrum-packets over all the chans
-//#pragma omp parallel for private (inbuf, outbuf)
+#ifdef USE_MULTI_THREAD
+#pragma omp parallel for private (inbuf, outbuf)
+#else
   inbuf  = baseinbuf;// + iptime*tstride;
+#endif
   for (size_t iptime=0; iptime < itime_packets; iptime++)
   {
+#ifdef USE_MULTI_THREAD
+    inbuf  = baseinbuf + iptime*tstride;
+#endif
     outbuf = baseoutbuf + iptime*istride; 
     for (size_t ichan=0; ichan < ctx->obsnchan; ichan++)
     {
@@ -69,8 +80,6 @@ static void *run(hashpipe_thread_args_t *args)
   int curblock_out=0;
 
   db_transpose_t ctx;
-
-  //size_t NTHREADS = 2;
 
   while (run_threads())
   {
@@ -129,9 +138,22 @@ static void *run(hashpipe_thread_args_t *args)
 
     hashpipe_status_lock_safe(&st);
     hputs(st.buf, status_key, "transposing");
-    hashpipe_status_unlock_safe(&st);
   
-    //omp_set_num_threads(NTHREADS);
+#ifdef USE_MULTI_THREAD
+    float phys_gbps;
+    hgetr4(st.buf, "PHYSGBPS", &phys_gbps);
+    int nthreads = 1;
+
+    if (phys_gbps > 1.5)
+      nthreads += 1;
+    if (phys_gbps > 3)
+      nthreads += 1;
+
+    hputi4(st.buf, "TRNTHRDS", nthreads);
+    omp_set_num_threads(nthreads);
+#endif
+
+    hashpipe_status_unlock_safe(&st);
   
     // create context
   

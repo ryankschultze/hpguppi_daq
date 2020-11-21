@@ -4,7 +4,7 @@ AM_CPPFLAGS     =
 AM_CPPFLAGS += -I"@HASHPIPE_INCDIR@"
 
 # AM_CFLAGS is used for all C compiles
-AM_CFLAGS = -ggdb -fPIC -O3 -Wall -Werror -Wno-error=cpp -fno-strict-aliasing @X86_FEATURE_CFLAGS@
+AM_CFLAGS = -fopenmp -ggdb -fPIC -O3 -Wall -Werror -Wno-error=cpp -fno-strict-aliasing @X86_FEATURE_CFLAGS@
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
