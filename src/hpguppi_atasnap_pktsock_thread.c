@@ -240,7 +240,8 @@ static void wait_for_block_free(const struct datablock_stats * d,
 }
 
 // The copy_packet_data_to_databuf() function does what it says: copies packet
-// data into a data buffer.
+// data into a data buffer. This data buffer ought to be passed on to a transposition
+// thread, that produces the GUPPI RAW blockk layout.
 //
 // The data buffer block is identified by the datablock_stats structure pointed to
 // by the bi parameter.
@@ -254,105 +255,69 @@ static void wait_for_block_free(const struct datablock_stats * d,
 //
 // This is for packets in [channel (slowest), time, pol (fastest)] order.  In
 // other words:
-//     t=0           t=1               t=pkt_ntime-1
-//     C0T0P0 C0T0P1 C0T1P0 C0T1P1 ... C0TtP0 C0TtP1 <- c = 0
-//     C1T0P0 C1T0P1 C1T1P0 C1T1P1 ... C1TtP0 C1TtP1 <- c = 1
+//
+//     C0T0P0 C0T0P1 C0T1P0 C0T1P1 ... C0TtP0 C0TtP1 <- t=0
+//     C1T0P0 C1T0P1 C1T1P0 C1T1P1 ... C1TtP0 C1TtP1 <- t=1
 //     ...
-//     CcT0P0 CcT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- c = pkt_nchan
+//     CcT0P0 CcT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- t=pkt_ntime-1
 //
-// GUPPI RAW block is ordered as:
+// Each packet is copied as whole, and thusly the databuf has no contiguity across
+// the time samples.
+// The packet sequence iterates through OBSNCHAN/PKTNCHAN first, then PKT_IDX, 
+// which is to say that packet P+1 typically has the same time
 //
-//     t=0               t=1                   t=pktidx_per_block
-//     F0C0T0P0 F0C0T0P1 F0C0T1P0 F0C0T1P1 ... F0C0TtP0 F0C0TtP1
-//     F0C1T1P0 F0C1T1P1 F0C1T1P0 F0C1T1P1 ... F0C1TtP0 F0C1TtP1
-//     ...
-//     F0CcT0P0 F0CcT0P1 F0CcT1P0 F0CcT1P1 ... F0CcTtP0 F0CcTtP1
-//     F1C0T0P0 F1C0T0P1 F1C0T1P0 F1C0T1P1 ... F1C0TtP0 F1C0TtP1
-//     F1C1T1P0 F1C1T1P1 F1C1T1P0 F1C1T1P1 ... F1C1TtP0 F1C1TtP1
-//     ...
-//     ...
-//     FfCcT0P0 FfCcT0P1 FfC0T1P0 FfCcT1P1 ... FfCcTtP0 FfCcTtP1
-//
-// where F is FID (f=NANTS-1), T is time (t=pktidx_per_block-1), C is channel
-// (c=NSTRMS*PKT_NCHAN-1), and P is polarization.  Streams are not shown
-// separately, which is why they are bundled in with channel number.  Each
-// packet's channels need to be split out over the GUPPI RAW block, which can be
-// shown somewhat pictorially like this (with time faster changing in the horizontal
-// direction, then channel changing in the vertical direction) for a single
-// PKTIDX value (i.e. this is a slice in time of the GUPPI RAW block):
-//
-//     [FID=0, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//     [FID=0, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//      ...
-//     [FID=0, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//     [FID=1, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//     [FID=1, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//      ...
-//      ...
-//     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
-//
-static char copy_packet_printed = 0;
+// static char copy_packet_printed = 0;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     const struct ata_snap_obs_info * ata_oi,
     struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
 {
     // the pointer's data width means the offset is in terms of bytes
     char *dst_base = datablock_stats_data(d);
-    char *pkt_payload = ata_pkt->payload;
     const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
     const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
     // offset pkt_idx so it the first of the observation is at the start of the block
     const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt) - obs_start_pktidx;
 
-    // The packet's individual channels have a data size partial to the packet's payload size.
-    // The pkt_channel_size includes all time samples and polarisations for the channel.
-    const uint32_t pkt_channel_size = ata_snap_pkt_payload_bytes(*ata_oi)/ata_oi->pkt_nchan;
+    // pktidx_stride is the size of a packet, i.e. pkt_payload_size
+    const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
 
-    // blk_channel_stride is the length of a channel's data within the RAW data block,
-    // which equals the number of packet indices per block, as the packet index increments
-    // in steps of pkt_ntime.
-    const uint32_t blk_channel_stride = d->pktidx_per_block*ata_oi->pkt_npol;
+    // Stream is the "channel chunk" for this FID
+    const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
 
-    // stream_stride is the size of pkt_nchan channels
-    const uint32_t stream_stride = blk_channel_stride*ata_oi->pkt_nchan;
+    const uint32_t fid_stride = ata_oi->nstrm*pkt_payload_size;
 
-    // fid_stride is the size of all streams of a single F engine:
-    const uint32_t fid_stride = stream_stride * ata_oi->nstrm;
-
-    // Stream is the channel grouping for an antenna
-    const uint32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
+    const uint32_t time_stride = ata_oi->nants*fid_stride;
 
     // Advance dst_base to... 
-    const uint64_t pktchan0_offset = feng_id * fid_stride // first location of this FID, then
-            +  stream * stream_stride                     // first location of this stream
-            +  ((pkt_idx%d->pktidx_per_block)*ata_oi->pkt_npol);
-    dst_base += pktchan0_offset;
+    const uint64_t offset = 
+            ((pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime) * time_stride // First to this pktenum (time), then to  [biggest stride]
+            +  feng_id * fid_stride                                         // first location of this FID, then       
+            +  stream * pkt_payload_size;                                   // first location of this stream          [smallest stride]
 
-    if(!copy_packet_printed || pktchan0_offset < 0 || pktchan0_offset > 128*1024*1024){
-      printf("pkt_channel_size = %d\n", pkt_channel_size);
-      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
-      printf("pkt_schan        = %d\n", pkt_schan);
-      printf("schan            = %d\n", ata_oi->schan);
-      printf("stream           = %d\n", stream);
-      printf("feng_id          = %d\n", feng_id);
-      printf("stream_stride    = %u\n", stream_stride);
-      printf("fid_stride       = %u\n", fid_stride);
-      printf("pktchan0_offset  = %lu\n", pktchan0_offset);
-      if (!copy_packet_printed && pkt_idx != 0){
-        copy_packet_printed = 1;
-      }
-      else if(pkt_idx != 0){
-        exit(1);
-      }
-    }
+    // if(!copy_packet_printed || offset < 0 || offset > 128*1024*1024){
+    //   printf("nstrm            = %d\n", ata_oi->nstrm);
+    //   printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+    //   printf("feng_id          = %d\n", feng_id);
+    //   printf("pkt_schan        = %d\n", pkt_schan);
+    //   printf("schan            = %d\n", ata_oi->schan);
+    //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
+    //   printf("pktidx           = %ld\n", pkt_idx);
+    //   printf("pktidx_per_block = %u\n", d->pktidx_per_block);
+    //   printf("pkt_enumeration  = %lu\n", (pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime);
+    //   printf("time_stride      = %u\n", time_stride);
+    //   printf("fid_stride       = %u\n", fid_stride);
+    //   printf("stream           = %d\n", stream);
+    //   printf("offset           = %lu\n", offset);
+    //   if (!copy_packet_printed){
+    //     copy_packet_printed = 1;
+    //   }
+    //   else{
+    //     exit(1);
+    //   }
+    // }
 
-    for(int pkt_chan = 0; pkt_chan < ata_oi->pkt_nchan; pkt_chan++){
-      memcpy_nt(dst_base, pkt_payload, pkt_channel_size);
-      dst_base += blk_channel_stride;
-      pkt_payload += pkt_channel_size;
-    }
-
-    return;
+    /* Packet has full data, just do a memcpy */
+    memcpy(dst_base+offset, ata_pkt->payload, pkt_payload_size);
 }
 
 /* Push all blocks down a level, losing the first one */
@@ -698,7 +663,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0;
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
-    uint64_t pkt_seq_num, last_pkt_seq_num=-1;
+    uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
     uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
@@ -988,7 +953,7 @@ static void *run(hashpipe_thread_args_t * args)
             wblk[wblk_idx].npacket++;
         }
 
-        last_pkt_seq_num = pkt_seq_num;
+        // last_pkt_seq_num = pkt_seq_num;
         // Release frame back to ring buffer
         hashpipe_pktsock_release_frame(p_frame);
 
@@ -1017,5 +982,126 @@ static __attribute__((constructor)) void ctor()
 {
   register_hashpipe_thread(&net_thread);
 }
+
+
+
+
+#if 0 // this transposition has been outsourced to pkt_to_FTP_transpose
+// The copy_packet_data_timecontiguously_to_databuf() function does what it says: copies packet
+// data into a data buffer.
+//
+// The data buffer block is identified by the datablock_stats structure pointed to
+// by the bi parameter.
+//
+// The p_oi parameter points to the observation's obs_info data.
+//
+// The p_fei parameter points to an ata_snap_feng_info structure containing the
+// packet's metadata.
+//
+// The p_payload parameter points to the payload of the packet.
+//
+// This is for packets in [channel (slowest), time, pol (fastest)] order.  In
+// other words:
+//     t=0           t=1               t=pkt_ntime-1
+//     C0T0P0 C0T0P1 C0T1P0 C0T1P1 ... C0TtP0 C0TtP1 <- c = 0
+//     C1T0P0 C1T0P1 C1T1P0 C1T1P1 ... C1TtP0 C1TtP1 <- c = 1
+//     ...
+//     CcT0P0 CcT0P1 CcT1P0 CcT1P1 ... CcTtP0 CcTtP1 <- c = pkt_nchan
+//
+// GUPPI RAW block is ordered as:
+//
+//     t=0               t=1                   t=pktidx_per_block
+//     F0C0T0P0 F0C0T0P1 F0C0T1P0 F0C0T1P1 ... F0C0TtP0 F0C0TtP1
+//     F0C1T1P0 F0C1T1P1 F0C1T1P0 F0C1T1P1 ... F0C1TtP0 F0C1TtP1
+//     ...
+//     F0CcT0P0 F0CcT0P1 F0CcT1P0 F0CcT1P1 ... F0CcTtP0 F0CcTtP1
+//     F1C0T0P0 F1C0T0P1 F1C0T1P0 F1C0T1P1 ... F1C0TtP0 F1C0TtP1
+//     F1C1T1P0 F1C1T1P1 F1C1T1P0 F1C1T1P1 ... F1C1TtP0 F1C1TtP1
+//     ...
+//     ...
+//     FfCcT0P0 FfCcT0P1 FfC0T1P0 FfCcT1P1 ... FfCcTtP0 FfCcTtP1
+//
+// where F is FID (f=NANTS-1), T is time (t=pktidx_per_block-1), C is channel
+// (c=NSTRMS*PKT_NCHAN-1), and P is polarization.  Streams are not shown
+// separately, which is why they are bundled in with channel number.  Each
+// packet's channels need to be split out over the GUPPI RAW block, which can be
+// shown somewhat pictorially like this (with time faster changing in the horizontal
+// direction, then channel changing in the vertical direction) for a single
+// PKTIDX value (i.e. this is a slice in time of the GUPPI RAW block):
+//
+//     [FID=0, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=0, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//      ...
+//     [FID=0, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=1, STREAM=0, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//     [FID=1, STREAM=1, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//      ...
+//      ...
+//     [FID=f, STREAM=s, CHAN=0:PKT_NCHAN-1, TIME=0:PKT_NTIME-1] ...
+//
+static char copy_packet_printed = 0;
+static void copy_packet_data_timecontiguously_to_databuf(const struct datablock_stats *d,
+    const struct ata_snap_obs_info * ata_oi,
+    struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
+{
+    // the pointer's data width means the offset is in terms of bytes
+    char *dst_base = datablock_stats_data(d);
+    unsigned char *pkt_payload = ata_pkt->payload;
+    const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
+    const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
+    // offset pkt_idx so it the first of the observation is at the start of the block
+    const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt) - obs_start_pktidx;
+
+    // The packet's individual channels have a data size partial to the packet's payload size.
+    // The pkt_channel_size includes all time samples and polarisations for the channel.
+    const uint32_t pkt_channel_size = ata_snap_pkt_payload_bytes(*ata_oi)/ata_oi->pkt_nchan;
+
+    // blk_channel_stride is the length of a channel's data within the RAW data block,
+    // which equals the number of packet indices per block, as the packet index increments
+    // in steps of pkt_ntime.
+    const uint32_t blk_channel_stride = d->pktidx_per_block*ata_oi->pkt_npol;
+
+    // stream_stride is the size of pkt_nchan channels
+    const uint32_t stream_stride = blk_channel_stride*ata_oi->pkt_nchan;
+
+    // fid_stride is the size of all streams of a single F engine:
+    const uint32_t fid_stride = stream_stride * ata_oi->nstrm;
+
+    // Stream is the channel grouping for an antenna
+    const uint32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
+
+    // Advance dst_base to... 
+    const uint64_t pktchan0_offset = feng_id * fid_stride // first location of this FID, then
+            +  stream * stream_stride                     // first location of this stream
+            +  ((pkt_idx%d->pktidx_per_block)*ata_oi->pkt_npol);
+    dst_base += pktchan0_offset;
+
+    if(!copy_packet_printed || pktchan0_offset < 0 || pktchan0_offset > 128*1024*1024){
+      printf("pkt_channel_size = %d\n", pkt_channel_size);
+      printf("pkt_nchan        = %d\n", ata_oi->pkt_nchan);
+      printf("pkt_schan        = %d\n", pkt_schan);
+      printf("schan            = %d\n", ata_oi->schan);
+      printf("stream           = %d\n", stream);
+      printf("feng_id          = %d\n", feng_id);
+      printf("stream_stride    = %u\n", stream_stride);
+      printf("fid_stride       = %u\n", fid_stride);
+      printf("pktchan0_offset  = %lu\n", pktchan0_offset);
+      if (!copy_packet_printed && pkt_idx != 0){
+        copy_packet_printed = 1;
+      }
+      else if(pkt_idx != 0){
+        exit(1);
+      }
+    }
+
+    for(int pkt_chan = 0; pkt_chan < ata_oi->pkt_nchan; pkt_chan++){
+      memcpy(dst_base, pkt_payload, pkt_channel_size);
+      dst_base += blk_channel_stride;
+      pkt_payload += pkt_channel_size;
+    }
+
+    return;
+}
+#endif
 
 // vi: set ts=8 sw=4 et :
