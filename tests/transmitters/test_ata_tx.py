@@ -1,10 +1,17 @@
 #!/usr/bin/env python
 
+import os
 import socket
 import time
 import struct
 import argparse
 import numpy as np
+
+# Packet header flags
+PKT_IS_VOLTAGE = 1<<7 # packet contains voltage data
+PKT_VER = 2 << 5
+PKT_TYPE = 0
+
 
 NPOL = 2
 NCHAN_MAX = 256
@@ -22,9 +29,35 @@ parser.add_argument('-f', '--nfeng', type=int, default=10,
                     help='Number of F-engines to emulate')
 parser.add_argument('-c', '--nchan', type=int, default=256,
                     help='Number of frequency channels to send')
+parser.add_argument('-t', '--starttime', type=int, default=0,
+                    help='Timestamp of first packet sent')
+parser.add_argument('--ntime', type=int, default=None,
+                    help='If set, generate (or send) `ntime` time samples of data')
+parser.add_argument('--outfile', type=str, default=None,
+                    help='If set, generate a data file with T samples and then exit')
 parser.add_argument('-g', '--gbps', type=float, default=None,
                     help='Target number of Gbps. Will throttle if necessary. If None, send at max speed')
+parser.add_argument('--infile', type=str, default=None,
+                    help='File containing data to be sent. Data should be in time x feng x chan x complexity order')
 args = parser.parse_args()
+
+assert NBIT == 8, "Only 4+4 bit data currently supported"
+
+if args.outfile is not None:
+    print("Not sending data. Generating a test file instead")
+    if args.ntime is None:
+        print("ERROR: When generating a test file the -T option must be specified")
+        exit()
+    if not (args.ntime % NTIME == 0):
+        print("ERROR: The number of time samples generated (set with -T) must be divisible by %d" % NTIME)
+        exit()
+    shape = [args.ntime // NTIME, args.nfeng, args.nchan, NTIME, NPOL]
+    nbytes = np.prod(shape)
+    print("Generating %d bytes random data with axes [Time Blocks x F-engines x Channels x Time x Pols]: %s" % (nbytes, shape))
+    d = np.random.randint(0, 255, size=shape, dtype=np.uint8)
+    with open(args.outfile, "wb") as fh:
+        fh.write(d.tobytes())
+    exit()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -39,6 +72,21 @@ if args.nchan > NCHAN_MAX:
 
 nchan_per_block = args.nchan // nchan_block
 
+if args.infile is not None:
+    if not os.path.isfile(args.infile):
+        print("ERROR: file %s does not exist" % args.infile)
+        exit()
+    print("Reading file %s" % args.infile)
+    with open(args.infile, "rb") as fh:
+        d_raw = fh.read()
+    nbyte = len(d_raw)
+    assert nbyte % (args.nfeng * args.nchan * NTIME * NPOL * NBIT // 8) == 0, "File does not contain an integer number of packets"
+    ntime = nbyte // (args.nfeng * args.nchan * NPOL * NBIT // 8)
+    print("Read %d bytes (%d times)" % (nbyte, ntime))
+    ntime_block = ntime // NTIME
+    d = np.frombuffer(d_raw, dtype=np.uint8).reshape([ntime_block, args.nfeng, nchan_block, nchan_per_block, NTIME, NPOL])
+
+
 print("Sending %d channels from %d F-Engines" % (args.nchan, args.nfeng))
 print("Sending as %d blocks of %d channels" % (nchan_block, nchan_per_block))
 
@@ -49,22 +97,23 @@ payload = b"\x00" * payload_len
 
 # Packet format
 #   struct packet{
-#     uint8_t version;
-#     uint8_t type;
-#     uint16_t nchan;
-#     uint16_t chan;
-#     uint16_t feng_id;
-#     uint64_t timestamp;
+#     uint8_t version;    // Packet version. MSB is always 1 for voltage packets
+#     uint8_t type;       // Type. Currently 0 (indicating channel is slowest axis, 4+4 bit data, no GPU swizzle)
+#     uint16_t nchan;     // Number of channels in this packet
+#     uint16_t chan;      // First channel in this packet
+#     uint16_t feng_id;   // 0-indexed F-engine ID
+#     uint64_t timestamp; // Timestamp of first spectra in this packet
 #     complex4 data[nchan_per_block, NTIME, NPOL]; // 4-bit real + 4-bit imaginary
 #   };
 
 # Header fields which never change
-h_version = 0
-h_type = 0
+h_version = PKT_IS_VOLTAGE + PKT_VER
+h_type = PKT_TYPE
 h_nchan = nchan_per_block
 
 pkt_count = 0
-t = 0
+t = args.starttime
+tn = 0 # Count of complete sets of all fengs / chans
 tick = time.time()
 throttle_tick = time.time()
 NPKT_THROTTLE = 100
@@ -74,6 +123,8 @@ while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
             header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
+            if args.infile:
+                payload = d[tn, f, c, :, :, :].tobytes()
             sock.sendto(header + payload, (args.ip, args.port))
             pkt_count += 1
             if args.gbps is None:
@@ -87,6 +138,16 @@ while(True):
                     throttle_tick = time.time()
 
     t += NTIME
+    tn += 1
+    if args.ntime is not None:
+        if tn*NTIME > args.ntime:
+            print("Exiting because %d time samples have been sent" % (tn*NTIME))
+            exit()
+
+    if args.infile is not None:
+        if tn >= ntime_block:
+            print("Exiting because all %d time samples in the input file have been sent" % (tn*NTIME))
+            exit()
 
     if time.time() - tick > 1:
         tock = time.time()
