@@ -39,6 +39,8 @@ parser.add_argument('-g', '--gbps', type=float, default=None,
                     help='Target number of Gbps. Will throttle if necessary. If None, send at max speed')
 parser.add_argument('--infile', type=str, default=None,
                     help='File containing data to be sent. Data should be in time x feng x chan x complexity order')
+parser.add_argument('-m', '--miss', type=int, default=None,
+                    help='If set, specify a number of packets to be sent, after which one will be deliberately dropped')
 args = parser.parse_args()
 
 assert NBIT == 8, "Only 4+4 bit data currently supported"
@@ -122,6 +124,11 @@ npkt_sent = 0
 while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
+            if args.miss is not None:
+                if pkt_count % args.miss == 0:
+                    #skip this packet
+                    pkt_count += 1
+                    continue
             header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
             if args.infile:
                 payload = d[tn, f, c, :, :, :].tobytes()
