@@ -23,22 +23,22 @@ then
 fi
 
 $(dirname $0)/hpguppi_init.sh $perf atasnap 0 \
-  -o DESTIP="10.11.1.156" \
-  -o DESTDIR=${destdir} \
-  -o FENCHAN=${fenchan} \
-  -o NANTS=${nants} \
-  -o NSTRM=${nstrm} \
-  -o PKTNTIME=${pktntime} \
-  -o PKTNCHAN=${pktnchan} \
-  -o SCHAN=${schan} \
-  -o CHAN_BW=${chan_bw} \
-  -o OBSBW=${obsbw} \
-  -o OBSFREQ=${obsfreq} \
-  -o OBSNCHAN=${obsnchan} \
   "${@}"
+  # -o DESTIP="10.11.1.156" \
+  # -o DESTDIR=${destdir} \
+  # -o FENCHAN=${fenchan} \
+  # -o NANTS=${nants} \
+  # -o NSTRM=${nstrm} \
+  # -o PKTNTIME=${pktntime} \
+  # -o PKTNCHAN=${pktnchan} \
+  # -o SCHAN=${schan} \
+  # -o CHAN_BW=${chan_bw} \
+  # -o OBSBW=${obsbw} \
+  # -o OBSFREQ=${obsfreq} \
+  # -o OBSNCHAN=${obsnchan} \
 
 sleep 1
 
 hashpipe_check_status -k NDROP -i 0
 
-hashpipe_redis_gateway.rb -s ${REDISHOST:-redishost} -D atasnap -g `hostname -s` -i 0
+hashpipe_redis_gateway.rb -s ${REDISHOST:-redishost}# -D atasnap -g `hostname -s` -i 0

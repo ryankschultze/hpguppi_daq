@@ -49,7 +49,7 @@ instances=(
   #                bind     NET       OUT
   #  dir     mask  host     CPU       CPU
   "/datax   $MASK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
-  #"/datax2  $MASK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
+  "/datax2  $MASK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
 )
 
 function init() {
@@ -192,7 +192,7 @@ then
   # net_thread="hpguppi_ibvpkt_thread -c 11 hpguppi_atasnap_voltage_thread"
   # net_thread="hpguppi_net_thread -c 11 hpguppi_atasnap_voltage_thread"
   # net_thread="hpguppi_net_thread"
-  net_thread="hpguppi_atasnap_pktsock_thread"
+  net_thread="hpguppi_atasnap_pktsock_thread -c 11 hpguppi_atasnap_pkt_to_FTP_transpose"
   # options="-o IBVPKTSZ=42,8,8192"
   instances[0]="${instances[0]/eth4/enp134s0d1}"
   bindport=4015
