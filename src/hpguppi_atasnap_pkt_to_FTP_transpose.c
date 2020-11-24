@@ -81,6 +81,8 @@ static void *run(hashpipe_thread_args_t *args)
 
   db_transpose_t ctx;
 
+  //size_t NTHREADS = 2;
+
   while (run_threads())
   {
     hashpipe_status_lock_safe(&st);
@@ -154,7 +156,6 @@ static void *run(hashpipe_thread_args_t *args)
 #endif
 
     hashpipe_status_unlock_safe(&st);
-  
     // create context
   
     // copy across the header

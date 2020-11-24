@@ -438,11 +438,8 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
       obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
       obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
       // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
-
-      hputs(st->buf, "OBSINFO", "VALID");
     } else {
       rc = 0;
-      hputs(st->buf, "OBSINFO", "INVALID");
     }
   }
   hashpipe_status_unlock_safe(st);
@@ -479,10 +476,9 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
-    hputu4(st->buf, "OBSNCHAN", obsnchan);
+    hputi4(st->buf, "BLOCSIZE", ata_snap_block_size(BLOCK_DATA_SIZE, *obs_info));
     hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
-    hputu4(st->buf, "PKTSIZE", obs_info->pkt_data_size);
-    // hputi4(st->buf, "BLKESIZE", eff_block_size);
+    hputu4(st->buf, "PKTSIZE",  obs_info->pkt_data_size);
   }
   hashpipe_status_unlock_safe(st);
   return rc;
@@ -657,6 +653,8 @@ static void *run(hashpipe_thread_args_t * args)
         init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
         hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*obs_info.pktidx_per_block);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk_idx*obs_info.pktidx_per_block);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk_idx+1)*obs_info.pktidx_per_block);
     }
 
     /* Misc counters, etc */

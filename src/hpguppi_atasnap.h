@@ -332,7 +332,7 @@ calc_ata_snap_pkt_payload_bytes(uint32_t nchan,
                                uint32_t pkt_ntime, uint32_t pkt_npol,
                                uint32_t time_nbits)
 { // each time sample is real
-  return nchan * pkt_ntime * pkt_npol * 2 / (8/time_nbits);
+  return (nchan * pkt_ntime * pkt_npol * 2 * time_nbits) / 8;
 }
 
 static inline
@@ -452,11 +452,15 @@ ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 // if nchan and/or pkt_ntime do not evenly divide the max block size.
 static inline
 uint32_t
-calc_ata_snap_block_size(size_t block_size, uint32_t nchan, uint32_t pkt_ntime,
-                         uint32_t pkt_npol, uint32_t time_nbits)
+calc_ata_snap_block_size(size_t block_size, uint32_t pkt_nchan, uint32_t pkt_ntime,
+                         uint32_t pkt_npol, uint32_t time_nbits, uint32_t nants, uint32_t nstrm)
 {
-  return 2*(8/time_nbits) * nchan * pkt_ntime
-            * calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits);
+  return    calc_ata_snap_pkt_payload_bytes(pkt_nchan, pkt_ntime,
+                                            pkt_npol, time_nbits)
+            * calc_ata_snap_eff_pkt_per_block(
+                  block_size, pkt_nchan, pkt_ntime,
+                  pkt_npol, time_nbits,
+                  nants, nstrm);
 }
 
 static inline
@@ -464,7 +468,8 @@ uint32_t
 ata_snap_block_size(size_t block_size, const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_block_size(block_size, oi.pkt_nchan,
-                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
+                                     oi.pkt_ntime, oi.pkt_npol, oi.time_nbits,
+                                     oi.nants, oi.nstrm);
 }
 
 // Parses a ATA SNAP F Engine packet that is in the format of a "struct
