@@ -683,6 +683,8 @@ static void *run(hashpipe_thread_args_t * args)
         init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
         hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*obs_info.pktidx_per_block);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk_idx*obs_info.pktidx_per_block);
+        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk_idx+1)*obs_info.pktidx_per_block);
     }
 
     /* Misc counters, etc */
