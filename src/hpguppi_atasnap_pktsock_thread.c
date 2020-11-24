@@ -468,11 +468,8 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
       obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
       obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
       // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
-
-      hputs(st->buf, "OBSINFO", "VALID");
     } else {
       rc = 0;
-      hputs(st->buf, "OBSINFO", "INVALID");
     }
   }
   hashpipe_status_unlock_safe(st);
@@ -509,10 +506,9 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
-    hputu4(st->buf, "OBSNCHAN", obsnchan);
+    hputi4(st->buf, "BLOCSIZE", ata_snap_block_size(BLOCK_DATA_SIZE, *obs_info));
     hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
-    hputu4(st->buf, "PKTSIZE", obs_info->pkt_data_size);
-    // hputi4(st->buf, "BLKESIZE", eff_block_size);
+    hputu4(st->buf, "PKTSIZE",  obs_info->pkt_data_size);
   }
   hashpipe_status_unlock_safe(st);
   return rc;
@@ -693,7 +689,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0;
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
-    uint64_t pkt_seq_num, last_pkt_seq_num=-1;
+    uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
     uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
@@ -983,7 +979,7 @@ static void *run(hashpipe_thread_args_t * args)
             wblk[wblk_idx].npacket++;
         }
 
-        last_pkt_seq_num = pkt_seq_num;
+        // last_pkt_seq_num = pkt_seq_num;
         // Release frame back to ring buffer
         hashpipe_pktsock_release_frame(p_frame);
 
