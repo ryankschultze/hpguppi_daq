@@ -8,6 +8,12 @@
 #include "hashpipe.h"
 #include "hpguppi_databuf.h"
 
+// Packet content constants
+#define NPOL  2
+#define NTIME 16
+#define TIME_WIDTH_T uint8_t // this is the total width of the complex sample (4+4i = 8bit)
+typedef struct {TIME_WIDTH_T num[NPOL*NTIME];} CP_DTYPE;
+
 #define USE_MULTI_THREAD
 
 typedef struct
@@ -20,27 +26,30 @@ typedef struct
   int piperblk;
 } db_transpose_t;
 
-
 int transpose(db_transpose_t * ctx, const void* in, void* out)
 {
   // To be used in pointer arithmetic
-  const char* inbuf;
-  char* outbuf;
+  const CP_DTYPE* inbuf;
+  CP_DTYPE* outbuf;
 
-  const char* baseinbuf = in;
-  char* baseoutbuf      = out;
+  const CP_DTYPE* baseinbuf = in;
+  CP_DTYPE* baseoutbuf      = out;
 
   // number of packets that span the entire data block, in time
   size_t itime_packets = ctx->piperblk / ctx->ntime;
+  size_t nchan = ctx->obsnchan;
 
   // bytes to stride within a packet in input buffer
   // and also amount to copy at a time
-  size_t istride = (ctx->npol * ctx->ndim * ctx->nbits * ctx->ntime)/8;
+  //size_t istride = (ctx->npol * ctx->ndim * ctx->nbits * ctx->ntime)/8/sizeof *inbuf;
+  size_t istride = NPOL*NTIME/sizeof *inbuf;//istride should work out to 1 with a correct CP_DTYPE
+  //size_t istride_m = istride*sizeof *inbuf;
 
 #ifdef USE_MULTI_THREAD
   size_t tstride = ctx->obsnchan * istride;
 #endif
   size_t ostride = itime_packets * istride;
+  size_t nstride = ostride - istride;
 
   // Loop over entire spectrum-packets over all the chans
 #ifdef USE_MULTI_THREAD
@@ -53,12 +62,15 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
 #ifdef USE_MULTI_THREAD
     inbuf  = baseinbuf + iptime*tstride;
 #endif
-    outbuf = baseoutbuf + iptime*istride; 
-    for (size_t ichan=0; ichan < ctx->obsnchan; ichan++)
+    outbuf = baseoutbuf + iptime*istride;
+    for (size_t ichan=0; ichan < nchan; ichan+=1)
     {
-      memcpy(outbuf, inbuf, istride);
-      inbuf += istride; 
-      outbuf += ostride;
+      //memcpy(outbuf, inbuf, istride_m);
+      //inbuf += istride;
+      //outbuf += ostride;
+      for (size_t t=0; t<istride; t++)
+        *outbuf++ = *inbuf++;// benchmarks show this to be faster than memcpy
+      outbuf += nstride;
     }
   }
   return 0;
@@ -81,7 +93,14 @@ static void *run(hashpipe_thread_args_t *args)
 
   db_transpose_t ctx;
 
-  //size_t NTHREADS = 2;
+  
+#ifdef USE_MULTI_THREAD
+    // Each thread processes about 11.62 Gbits/s
+    const int nthreads = 3;// Reach for 32  Gbits/s
+
+    hputi4(st.buf, "TRNTHRDS", nthreads);
+    omp_set_num_threads(nthreads);
+#endif
 
   while (run_threads())
   {
@@ -90,12 +109,7 @@ static void *run(hashpipe_thread_args_t *args)
     hputs(st.buf, status_key, "waiting");
     hputi4(st.buf, "TRBLKOUT", curblock_out);
 
-    hgeti4(st.buf, "PKTNTIME", &ctx.ntime);
     hgeti4(st.buf, "OBSNCHAN", &ctx.obsnchan);
-    hgeti4(st.buf, "NBITS", &ctx.nbits);
-    ctx.ndim = 2; //hardcode for now
-    //hgeti4(st.buf, "NDIM", &ctx.ndim);
-    hgeti4(st.buf, "NPOL", &ctx.npol);
     hgeti4(st.buf, "PIPERBLK", &ctx.piperblk);
     hashpipe_status_unlock_safe(&st);
 
@@ -140,20 +154,6 @@ static void *run(hashpipe_thread_args_t *args)
 
     hashpipe_status_lock_safe(&st);
     hputs(st.buf, status_key, "transposing");
-  
-#ifdef USE_MULTI_THREAD
-    float phys_gbps;
-    hgetr4(st.buf, "PHYSGBPS", &phys_gbps);
-    int nthreads = 1;
-
-    if (phys_gbps > 1.5)
-      nthreads += 1;
-    if (phys_gbps > 3)
-      nthreads += 1;
-
-    hputi4(st.buf, "TRNTHRDS", nthreads);
-    omp_set_num_threads(nthreads);
-#endif
 
     hashpipe_status_unlock_safe(&st);
     // create context

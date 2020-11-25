@@ -33,8 +33,8 @@ numactl --cpunodebind=1 --membind=1 \
   $perf \
 hashpipe -p /usr/local/lib/hpguppi_daq.so -I 0 \
 -o BINDHOST=enp134s0d1 \
--o BINDPORT=4015 \
--c 9 hpguppi_atasnap_pktsock_thread -c 10 hpguppi_atasnap_pkt_to_FTP_transpose -c 11 hpguppi_rawdisk_only_thread #null_output_thread
+-o BINDPORT=10000 \
+-c 9 hpguppi_atasnap_pktsock_thread -m 57344 hpguppi_atasnap_pkt_to_FTP_transpose -c 11 hpguppi_rawdisk_only_thread #null_output_thread
 # -c 9 hpguppi_atasnap_pktsock_thread -c 10 hpguppi_rawdisk_only_thread #null_output_thread
 
 # echo "Starting hashpipe REDIS Gateway"
