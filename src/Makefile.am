@@ -33,6 +33,7 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_atasnap_voltage_thread.c \
 		  hpguppi_atasnap_pktsock_thread.c \
 		  hpguppi_atasnap_pkt_to_FTP_transpose.c \
+		  hpguppi_atasnap_rawdisk_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
