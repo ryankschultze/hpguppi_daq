@@ -777,12 +777,7 @@ static void *run(hashpipe_thread_args_t * args)
             break;
         }
 
-        // fprintf(stderr, "Packet received with size %d expecting size %ld\r", PKT_UDP_SIZE(p_frame) - 8, p_ps_params->packet_size);
         /* Check packet size */
-        // if(p_ps_params->packet_size == 0) {
-        //     p_ps_params->packet_size = PKT_UDP_SIZE(p_frame) - 8;
-        // } else 
-        // if(p_ps_params->packet_size != PKT_UDP_SIZE(p_frame) - 8) {
         if(obs_info.pkt_data_size != PKT_UDP_SIZE(p_frame) - 8) {
             /* Unexpected packet size, ignore */
             hashpipe_status_lock_safe(st);
