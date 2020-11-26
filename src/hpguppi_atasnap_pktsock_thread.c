@@ -674,7 +674,7 @@ static void *run(hashpipe_thread_args_t * args)
     }
 
     /* Misc counters, etc */
-    uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0;
+    uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, lastnpacket_total=0;
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
     uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
@@ -696,10 +696,6 @@ static void *run(hashpipe_thread_args_t * args)
     time_t curtime = 0;
     char timestr[32] = {0};
     
-    const int packets_per_second_buf_length = 5;
-    unsigned int packets_per_second = 0;
-    unsigned int packets_per_second_buf[packets_per_second_buf_length];
-    float average_packets_per_second = 0.0;
     float blocks_per_second = 0.0;
 
     // Drop all packets to date
@@ -727,16 +723,6 @@ static void *run(hashpipe_thread_args_t * args)
                 flag_state_update = 0;
                 lasttime = curtime;
 
-                // Calculate the packets per second average over the last seconds
-                average_packets_per_second = 0.0;
-                for (int pps = 1; pps < packets_per_second_buf_length; pps++){
-                    packets_per_second_buf[pps-1] = packets_per_second_buf[pps];
-                    average_packets_per_second += packets_per_second_buf[pps];
-                }
-                packets_per_second_buf[packets_per_second_buf_length-1] = packets_per_second;
-                average_packets_per_second = (packets_per_second + average_packets_per_second)/packets_per_second_buf_length;
-                packets_per_second = 0;
-
                 ctime_r(&curtime, timestr);
                 timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
                 hashpipe_status_lock_safe(st);
@@ -746,8 +732,8 @@ static void *run(hashpipe_thread_args_t * args)
                     hputi8(st->buf, "OBSNDROP", obs_ndrop_total);
                     hputi8(st->buf, "NDROP", ndrop_total);
                     hputr4(st->buf, "BLKSPS", blocks_per_second);
-                    hputr4(st->buf, "PHYSPKPS", average_packets_per_second);
-                    hputr4(st->buf, "PHYSGBPS", (average_packets_per_second*obs_info.pkt_data_size)/1e9);
+                    hputr4(st->buf, "PHYSPKPS", npacket_total-lastnpacket_total);
+                    hputr4(st->buf, "PHYSGBPS", ((npacket_total-lastnpacket_total)*obs_info.pkt_data_size)/1e9);
                     hputs(st->buf, "DAQPULSE", timestr);
                     HPUT_DAQ_STATE(st, state);
 
@@ -756,6 +742,7 @@ static void *run(hashpipe_thread_args_t * args)
                     hputi4(st->buf, "BINDPORT", p_ps_params->port);
                 }
                 hashpipe_status_unlock_safe(st);
+                lastnpacket_total = npacket_total;
             }
 
             p_frame = hashpipe_pktsock_recv_udp_frame(
@@ -796,7 +783,6 @@ static void *run(hashpipe_thread_args_t * args)
             hashpipe_status_unlock_safe(st);
             waiting=0;
         }
-        packets_per_second++;
 
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
@@ -849,19 +835,14 @@ static void *run(hashpipe_thread_args_t * args)
           }
         }
 
-        if (state != RECORD && flag_obs_end != 1){ //causes a block to be missed
+        // Tally npacket_totals
+        npacket_total += 1;
+        obs_npacket_total += (state == RECORD ? 1 : 0);
+        // count ndrop only when a block is finalised, lest it is filled out of order.
+        
+        if (state != RECORD && flag_obs_end != 1){
           hashpipe_pktsock_release_frame(p_frame);
           continue;
-        }
-
-        // Tally npacket_totals
-        if(npacket_total == 0) {
-            npacket_total = 1;
-            ndrop_total = 0;
-        } else {
-          // count ndrop only when a block is finalised, lest it is filled out of order.
-          npacket_total += 1;
-          obs_npacket_total += 1;
         }
 
         // Manage blocks based on pkt_blk_num
