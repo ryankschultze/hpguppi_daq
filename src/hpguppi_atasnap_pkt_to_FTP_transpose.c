@@ -18,11 +18,11 @@ typedef struct {TIME_WIDTH_T num[NPOL*NTIME];} CP_DTYPE;
 
 typedef struct
 {
-  int ntime;
+  // int ntime; // Static per hashpipe for memcpy performance gains
   int obsnchan;
   int nbits;
   int ndim;
-  int npol;
+  // int npol; // Static per hashpipe for memcpy performance gains
   int piperblk;
 } db_transpose_t;
 
@@ -36,7 +36,7 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
   CP_DTYPE* baseoutbuf      = out;
 
   // number of packets that span the entire data block, in time
-  size_t itime_packets = ctx->piperblk / ctx->ntime;
+  size_t itime_packets = ctx->piperblk / NTIME;
   size_t nchan = ctx->obsnchan;
 
   // bytes to stride within a packet in input buffer
