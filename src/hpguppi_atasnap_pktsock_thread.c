@@ -839,9 +839,6 @@ static void *run(hashpipe_thread_args_t * args)
               break;
             case RECORD:// If should RECORD, and not recording, flag obs_start
               if (state != RECORD){
-                nbogus_total = 0;
-                hputi4(st->buf, "NBOGUS", nbogus_total);
-                hputi4(st->buf, "BOGUSIZE", 0);
                 flag_state_update = 1;
                 // flag_obs_start = flag_state_update;
                 state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
@@ -872,10 +869,6 @@ static void *run(hashpipe_thread_args_t * args)
           obs_npacket_total += 1;
         }
 
-        // // Ignore packets with FID >= NANTS
-        // if(ata_snap_pkt->feng_id >= obs_info.nants) {
-        //     continue;
-        // }
         // Manage blocks based on pkt_blk_num
         // fprintf(stderr, "%010ld\r", pkt_blk_num);
         if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
@@ -929,12 +922,6 @@ static void *run(hashpipe_thread_args_t * args)
             update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
             // it.
-        } else if(pkt_blk_num == wblk[0].block_num - 1) {
-            // Ignore late packet, continue on to next one
-            // TODO Move this check above the "once per block" status buffer
-            // update (so we don't accidentally update status buffer based on a
-            // late packet)?
-            // nlate++;
         }
 
         // Check observation state
