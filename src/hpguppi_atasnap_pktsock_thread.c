@@ -844,7 +844,7 @@ static void *run(hashpipe_thread_args_t * args)
                 hputi4(st->buf, "BOGUSIZE", 0);
                 flag_state_update = 1;
                 // flag_obs_start = flag_state_update;
-                state = RECORD;
+                state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
                 obs_npacket_total = 0;
                 obs_ndrop_total = 0;
               }
