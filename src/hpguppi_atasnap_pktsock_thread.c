@@ -461,6 +461,7 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
       obsnchan = ata_snap_obsnchan(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
+      obsnchan = 1;
       rc = 0;
       hputs(st->buf, "OBSINFO", "INVALID");
     }
@@ -493,6 +494,9 @@ static int init(hashpipe_thread_args_t *args)
     int directio=1;
     int nbits=4;
     int npol=2;
+    int pktnchan=256;
+    int nstrm=1;
+    int nant=1;
     double obsbw=187.5;
     int obsnchan=64;
     int obsschan=0;
@@ -520,11 +524,20 @@ static int init(hashpipe_thread_args_t *args)
     hgeti4(st->buf, "DIRECTIO", &directio);
     hgeti4(st->buf, "NBITS", &nbits);
     hgeti4(st->buf, "NPOL", &npol);
+    hgeti4(st->buf, "PKTNCHAN", &pktnchan);
+    hgeti4(st->buf, "NSTRM", &nstrm);
+    hgeti4(st->buf, "NANTS", &nant);
     hgetr8(st->buf, "OBSBW", &obsbw);
-    hgeti4(st->buf, "OBSNCHAN", &obsnchan);
     hgeti4(st->buf, "OBSSCHAN", &obsschan);
     hgeti4(st->buf, "OVERLAP", &overlap);
     hgets(st->buf, "OBS_MODE", sizeof(obs_mode), obs_mode);
+
+    // Clean any inappropriate values 
+    pktnchan = (pktnchan == 0 ? 256 : pktnchan);
+    nstrm = (nstrm == 0 ? 1 : nstrm);
+    nant = (nant == 0 ? 1 : nant);
+    obsnchan = pktnchan*nstrm*nant;
+
     // Calculate TBIN
     tbin = obsnchan / obsbw / 1e6;
     // Store bind host/port info etc in status buffer
@@ -535,6 +548,9 @@ static int init(hashpipe_thread_args_t *args)
     hputi4(st->buf, "DIRECTIO", directio);
     hputi4(st->buf, "NBITS", nbits);
     hputi4(st->buf, "NPOL", npol);
+    hputi4(st->buf, "PKTNCHAN", pktnchan);
+    hputi4(st->buf, "NSTRM", nstrm);
+    hputi4(st->buf, "NANTS", nant);
     hputr8(st->buf, "OBSBW", obsbw);
     hputi4(st->buf, "OBSNCHAN", obsnchan);
     hputi4(st->buf, "OBSSCHAN", obsschan);
