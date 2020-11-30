@@ -252,6 +252,8 @@ struct ata_snap_obs_info {
   uint32_t pkt_per_block;
   // The number of packet timestamps per block
   uint32_t pktidx_per_block;
+  // The Bandwidth of the observation in MHz
+  double obs_bw;
 };
 
 #define ATASNAP_DEFAULT_FENCHAN         (  4096)
@@ -470,6 +472,20 @@ ata_snap_block_size(size_t block_size, const struct ata_snap_obs_info oi)
   return calc_ata_snap_block_size(block_size, oi.pkt_nchan,
                                      oi.pkt_ntime, oi.pkt_npol, oi.time_nbits,
                                      oi.nants, oi.nstrm);
+}
+
+static inline
+double
+calc_ata_snap_tbin(uint32_t obsnchan, double obsbw_mhz)
+{
+  return ((double)obsnchan) / obsbw_mhz / 1e6;
+}
+
+static inline
+double
+ata_snap_tbin(const struct ata_snap_obs_info oi)
+{
+  return calc_ata_snap_tbin(ata_snap_obsnchan(oi), oi.obs_bw);
 }
 
 // Parses a ATA SNAP F Engine packet that is in the format of a "struct
