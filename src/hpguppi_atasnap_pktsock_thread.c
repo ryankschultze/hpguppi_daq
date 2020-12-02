@@ -683,7 +683,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
     uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
-    uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
+    uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
     char waiting=-1, check_obs_start_stop=1;
@@ -855,12 +855,15 @@ static void *run(hashpipe_thread_args_t * args)
         if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
             // Time to advance the blocks!!!
             // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
-            // Finalize first working block
-            finalize_block(wblk);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
-            // Update ndrop counter
-            obs_ndrop_total += wblk->ndrop;
-            ndrop_total += wblk->ndrop;
+            if(state == RECORD || flag_obs_end){
+              // Finalize first working block
+              finalize_block(wblk);
+              // Update ndrop counter
+              obs_ndrop_total += wblk->ndrop;
+              obs_npacket_total += wblk->npacket;
+              ndrop_total += wblk->ndrop;
+            }
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
             // Check start/stop
@@ -878,8 +881,8 @@ static void *run(hashpipe_thread_args_t * args)
             //     ELAPSED_NS(ts_start_wait,ts_stop_wait), 
             //     (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
             blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
-            flag_obs_end = 0;
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
+            flag_obs_end = 0;
         }
         // Check for PKTIDX discontinuity
         else if(pkt_blk_num + 1 < wblk[0].block_num
@@ -898,7 +901,7 @@ static void *run(hashpipe_thread_args_t * args)
                   pkt_blk_num+wblk_idx + (pkt_seq_num % obs_info.pktidx_per_block == 0 ? 0 : 1),
                   obs_info.pkt_per_block);
             }
-            fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
+            // fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
             update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
@@ -906,7 +909,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         // Check observation state
-        if(state == IDLE){// Only possible if transitioning RECORD->IDLE
+        if(state != RECORD){// Either ARMED or transitioning RECORD->IDLE
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }

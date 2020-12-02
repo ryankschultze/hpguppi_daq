@@ -32,8 +32,10 @@ case $cores_per_cpu in
     # 1111 1110 0000 0000 = 0xfe00
     NET0CPU=9
     OUT0CPU=10
-    NET1CPU=11
-    OUT1CPU=12
+    TPS0MSK=49152 #3072
+    NET1CPU=12
+    OUT1CPU=13
+    TPS1MSK=49152
     MASK=0xfe00
     ;;
   *)
@@ -46,10 +48,10 @@ instances=(
   # Setup parameters for two instances.
   #
   #
-  #                bind     NET       OUT
-  #  dir     mask  host     CPU       CPU
-  "/datax   $MASK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
-  "/datax2  $MASK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
+  #                   bind     NET       OUT
+  #  dir    mask     host     CPU       CPU
+  "/tmp   $TPS0MSK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
+  "/tmp   $TPS1MSK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
 )
 
 function init() {
@@ -95,6 +97,7 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
+    -m $mask $work_thread \
     -c $outcpu $out_thread
 
   numactl --cpunodebind=1 --membind=1 \
@@ -105,6 +108,7 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
+    -m $mask $work_thread \
     -c $outcpu $out_thread \
      < /dev/null \
     1> ${hostname}.$instance.out \
@@ -115,10 +119,15 @@ perf=
 redis_sync_key=sync_time
 net_thread=hpguppi_net_thread
 out_thread=hpguppi_rawdisk_thread
+work_thread=
 bindport=60000
 vlan=
 use_fifo=yes
 options=
+instance_ports=(
+  ""
+  ""
+)
 
 if [ "$1" = 'perf' ]
 then
@@ -192,11 +201,17 @@ then
   # net_thread="hpguppi_ibvpkt_thread -c 11 hpguppi_atasnap_voltage_thread"
   # net_thread="hpguppi_net_thread -c 11 hpguppi_atasnap_voltage_thread"
   # net_thread="hpguppi_net_thread"
-  net_thread="hpguppi_atasnap_pktsock_thread -c 11 hpguppi_atasnap_pkt_to_FTP_transpose"
+
+  net_thread=hpguppi_atasnap_pktsock_thread
+  work_thread=hpguppi_atasnap_pkt_to_FTP_transpose
   # options="-o IBVPKTSZ=42,8,8192"
   instances[0]="${instances[0]/eth4/enp134s0d1}"
-  bindport=4015
-  instances[0]="${instances[0]/datax/mnt/buf0}"
+  instances[1]="${instances[1]/eth5/enp134s0d1}"
+  bindport=0
+  instance_ports[0]=10000
+
+  instance_ports[1]=9000
+  # instances[1]="${instances[0]/datax/mnt/buf0}"
   # instances[1]="${instances[1]/datax2/mnt/buf1}"
   # For initial testing...
   # hpguppi_plugin=/homelocal/sonata/davidm/src/hpguppi_daq/src/.libs/hpguppi_daq.so
@@ -248,6 +263,7 @@ do
   if [ -n "${args}" ]
   then
     echo Starting instance $hostname/$instidx
+    bindport=${instance_ports[$instidx]}
     if init $instidx $args $options "${@}"
     then
       echo Instance $hostname/$instidx pid $!
