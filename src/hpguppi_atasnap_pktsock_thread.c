@@ -465,6 +465,7 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
       obsnchan = 1;
+      tbin = 1.0;
       rc = 0;
       hputs(st->buf, "OBSINFO", "INVALID");
     }
