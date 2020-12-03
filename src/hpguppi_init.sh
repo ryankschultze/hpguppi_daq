@@ -89,7 +89,7 @@ function init() {
 
   echo numactl --cpunodebind=1 --membind=1 \
   $perf \
-  hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
+  /opt/mnt/bin/hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
     ${bindport:+-o BINDPORT=$bindport} \
     -o DATADIR=$dir \
@@ -99,7 +99,7 @@ function init() {
 
   numactl --cpunodebind=1 --membind=1 \
   $perf \
-  hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
+  /opt/mnt/bin/hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
     ${bindport:+-o BINDPORT=$bindport} \
     -o DATADIR=$dir \

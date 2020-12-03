@@ -4,14 +4,13 @@ AM_CPPFLAGS     =
 AM_CPPFLAGS += -I"@HASHPIPE_INCDIR@"
 
 # AM_CFLAGS is used for all C compiles
-AM_CFLAGS = -fopenmp -ggdb -fPIC -O3 -Wall -Werror -Wno-error=cpp -fno-strict-aliasing @X86_FEATURE_CFLAGS@
+AM_CFLAGS = -fopenmp -ggdb -fPIC -O3 -Wall -Wno-error=cpp -fno-strict-aliasing @X86_FEATURE_CFLAGS@
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
 		  hpguppi_databuf.c
 
-hpguppi_support = hpguppi_ibverbs_pkt_thread.h \
-		  hpguppi_atasnap.h \
+hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_params.c \
 		  hpguppi_mkfeng.h \
 		  hpguppi_pksuwl.h \
@@ -29,19 +28,11 @@ hpguppi_support = hpguppi_ibverbs_pkt_thread.h \
 
 libsla_support = slalib.h sla.c f77.h
 
-hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
-		  hpguppi_atasnap_voltage_thread.c \
-		  hpguppi_atasnap_pktsock_thread.c \
+hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
 		  hpguppi_atasnap_pkt_to_FTP_transpose.c \
 		  hpguppi_atasnap_rawdisk_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
-		  hpguppi_mb128ch_net_thread.c \
-		  hpguppi_meerkat_net_thread.c \
-		  hpguppi_meerkat_pkt_thread.c \
-		  hpguppi_meerkat_spead_thread.c \
-		  hpguppi_pksuwl_net_thread.c \
-		  hpguppi_pksuwl_vdif_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
 		  hpguppi_fildisk_only_thread.c
@@ -49,7 +40,7 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
 hpguppi_daq_la_SOURCES  = $(hpguppi_databuf) $(hpguppi_support) $(libsla_support) $(hpguppi_threads)
-hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
+hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec 
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
