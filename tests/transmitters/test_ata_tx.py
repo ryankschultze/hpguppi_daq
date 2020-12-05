@@ -31,6 +31,8 @@ parser.add_argument('-c', '--nchan', type=int, default=256,
                     help='Number of frequency channels to send')
 parser.add_argument('-t', '--starttime', type=int, default=0,
                     help='Timestamp of first packet sent')
+parser.add_argument('-C', '--startchan', type=int, default=0,
+                    help='Start channel of first packet sent')
 parser.add_argument('--ntime', type=int, default=None,
                     help='If set, generate (or send) `ntime` time samples of data')
 parser.add_argument('--outfile', type=str, default=None,
@@ -129,7 +131,7 @@ while(True):
                     #skip this packet
                     pkt_count += 1
                     continue
-            header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, c*nchan_per_block, f, t)
+            header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, args.startchan + c*nchan_per_block, f, t)
             if args.infile:
                 payload = d[tn, f, c, :, :, :].tobytes()
             sock.sendto(header + payload, (args.ip, args.port))
