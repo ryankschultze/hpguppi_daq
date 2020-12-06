@@ -432,13 +432,7 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
-      // Capture expected step change in ATA SNAP packet's sequential timestamps
-      // int pkt_seq_step = obs_info.pkt_ntime;
-
-      obs_info->pkt_data_size = ata_snap_pkt_bytes(*obs_info);
-      obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
-      obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
-      // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
+      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
     } else {
       rc = 0;
     }
@@ -478,7 +472,7 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
-    hputi4(st->buf, "BLOCSIZE", ata_snap_block_size(BLOCK_DATA_SIZE, *obs_info));
+    hputi4(st->buf, "BLOCSIZE", obs_info->eff_block_size);
     hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
     hputu4(st->buf, "PKTSIZE",  obs_info->pkt_data_size);
   }
