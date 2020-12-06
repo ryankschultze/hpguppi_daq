@@ -15,7 +15,7 @@
 typedef struct {TIME_WIDTH_T num[NPOL*NTIME];} CP_DTYPE;
 
 #define USE_MULTI_THREAD
-#define MULTI_THREAD_COUNT 3
+#define MULTI_THREAD_COUNT 4
 
 typedef struct
 {
