@@ -432,13 +432,7 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
-      // Capture expected step change in ATA SNAP packet's sequential timestamps
-      // int pkt_seq_step = obs_info.pkt_ntime;
-
-      obs_info->pkt_data_size = ata_snap_pkt_bytes(*obs_info);
-      obs_info->pkt_per_block = ata_snap_eff_pkt_per_block(BLOCK_DATA_SIZE, *obs_info);
-      obs_info->pktidx_per_block = ata_snap_pktidx_per_block(BLOCK_DATA_SIZE, *obs_info);//inherently effective 
-      // eff_block_size = ata_snap_block_size(BLOCK_DATA_SIZE, obs_info);
+      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
     } else {
       rc = 0;
     }
@@ -453,7 +447,6 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
 {
   int rc = 1;//obsinfo valid
   uint32_t obsnchan = 0;
-  double tbin = 0.0;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -461,18 +454,15 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
       obsnchan = ata_snap_obsnchan(*obs_info);
-      tbin = ata_snap_tbin(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
       obsnchan = 1;
-      tbin = 1.0;
       rc = 0;
       hputs(st->buf, "OBSINFO", "INVALID");
     }
 
     // Write (store default/invalid values if not present)
     hputu4(st->buf, "OBSNCHAN", obsnchan);
-    hputr8(st->buf, "TBIN", tbin);
     hputu4(st->buf, "FENCHAN",  obs_info->fenchan);
     hputu4(st->buf, "NANTS",    obs_info->nants);
     hputu4(st->buf, "NSTRM",    obs_info->nstrm);
@@ -482,7 +472,7 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     hputu4(st->buf, "PKTNCHAN", obs_info->pkt_nchan);
     hputi4(st->buf, "SCHAN",    obs_info->schan);
 
-    hputi4(st->buf, "BLOCSIZE", ata_snap_block_size(BLOCK_DATA_SIZE, *obs_info));
+    hputi4(st->buf, "BLOCSIZE", obs_info->eff_block_size);
     hputu4(st->buf, "PIPERBLK", obs_info->pktidx_per_block);
     hputu4(st->buf, "PKTSIZE",  obs_info->pkt_data_size);
   }
@@ -641,7 +631,7 @@ static void *run(hashpipe_thread_args_t * args)
     ata_snap_obs_info_write(st, &obs_info);
     
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
-    unsigned long pkt_blk_num, last_pkt_blk_num;
+    unsigned long pkt_blk_num, last_pkt_blk_num = ~0;
 
 
     // The incoming packets are taken from blocks of the input databuf and then
@@ -670,12 +660,11 @@ static void *run(hashpipe_thread_args_t * args)
     struct datablock_stats wblk[n_wblock];
     // Initialize working blocks
     for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-        //important to initialise the blocks with unique block idx an block_num values
-        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, obs_info.pkt_per_block);
+        // important to initialise the blocks with unique block idx
+        // and to set the block_num < -1 so the first observation packet causes a 
+        // discontinuity and so a contemporary re-init of the working blocks
+        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, -10, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*obs_info.pktidx_per_block);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk_idx*obs_info.pktidx_per_block);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk_idx+1)*obs_info.pktidx_per_block);
     }
 
     /* Misc counters, etc */
@@ -683,10 +672,10 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
     uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
-    uint64_t blk_start_pkt_seq, blk_stop_pkt_seq;
+    uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
-    char waiting=-1, check_obs_start_stop=1;
+    char waiting=-1;
     enum run_states state = IDLE;
     char flag_state_update = 0;
     char flag_obs_end = 0;
@@ -696,6 +685,7 @@ static void *run(hashpipe_thread_args_t * args)
     // double stt_offs=0.0;
     struct timespec ts_start_wait = {0}, ts_stop_wait = {0};
     struct timespec ts_start_block = {0}, ts_stop_block = {0};
+    struct timespec ts_checked_obs_startstop = {0}, ts_now = {0};
     // Heartbeat variables
     time_t lasttime = 0;
     time_t curtime = 0;
@@ -792,28 +782,10 @@ static void *run(hashpipe_thread_args_t * args)
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
         pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
-        pkt_blk_num = pkt_seq_num / obs_info.pktidx_per_block;
-        // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
-        // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
-        // and read PKTSTART, DWELL to calculate start/stop seq numbers.
-        if(pkt_blk_num != last_pkt_blk_num){
-          check_obs_start_stop = 1;
-
-          last_pkt_blk_num = pkt_blk_num;
-          blk_start_pkt_seq = pkt_seq_num;
-          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
-
-          hashpipe_status_lock_safe(st);
-          hputi8(st->buf, "PKTIDX", pkt_seq_num);
-          hputi8(st->buf, "BLKIDX", pkt_blk_num);
-          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
-          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
-          hashpipe_status_unlock_safe(st);
-        }
-
-        if (check_obs_start_stop){
-          check_obs_start_stop = 0;
+        clock_gettime(CLOCK_MONOTONIC, &ts_now);
+        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 250*1000*1000){
+          memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
           switch(status_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
             case IDLE:// If should IDLE, 
               flag_state_update = (state != IDLE ? 1 : 0);// flag state update
@@ -840,6 +812,25 @@ static void *run(hashpipe_thread_args_t * args)
           }
         }
 
+        pkt_blk_num = (pkt_seq_num - obs_start_pktidx) / obs_info.pktidx_per_block;
+        // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
+
+        // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
+        // and read PKTSTART, DWELL to calculate start/stop seq numbers.
+        if(pkt_blk_num != last_pkt_blk_num){
+
+          last_pkt_blk_num = pkt_blk_num;
+          blk_start_pkt_seq = pkt_seq_num;
+          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
+
+          hashpipe_status_lock_safe(st);
+          hputi8(st->buf, "PKTIDX", pkt_seq_num);
+          hputi8(st->buf, "BLKIDX", pkt_blk_num);
+          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
+          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
+          hashpipe_status_unlock_safe(st);
+        }
+
         // Tally npacket_totals
         npacket_total += 1;
         obs_npacket_total += (state == RECORD ? 1 : 0);
@@ -855,12 +846,15 @@ static void *run(hashpipe_thread_args_t * args)
         if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
             // Time to advance the blocks!!!
             // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
-            // Finalize first working block
-            finalize_block(wblk);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
-            // Update ndrop counter
-            obs_ndrop_total += wblk->ndrop;
-            ndrop_total += wblk->ndrop;
+            if(state == RECORD || flag_obs_end){
+              // Finalize first working block
+              finalize_block(wblk);
+              // Update ndrop counter
+              obs_ndrop_total += wblk->ndrop;
+              obs_npacket_total += wblk->npacket;
+              ndrop_total += wblk->ndrop;
+            }
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
             // Check start/stop
@@ -878,8 +872,8 @@ static void *run(hashpipe_thread_args_t * args)
             //     ELAPSED_NS(ts_start_wait,ts_stop_wait), 
             //     (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
             blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
-            flag_obs_end = 0;
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
+            flag_obs_end = 0;
         }
         // Check for PKTIDX discontinuity
         else if(pkt_blk_num + 1 < wblk[0].block_num
@@ -889,16 +883,20 @@ static void *run(hashpipe_thread_args_t * args)
                 "working blocks reinit due to packet discontinuity (PKTIDX %lu) [%ld, %lu  <> %lu]",
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
-            // If the pkt_idx is the first of the block re-init
-            // working blocks for block number of current packet's block
-            // otherwise for the block number *after* the current packet's block
+            // Re-init working blocks for block number of current packet's block,
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
               init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx + (pkt_seq_num % obs_info.pktidx_per_block == 0 ? 0 : 1),
+                  pkt_blk_num+wblk_idx,
                   obs_info.pkt_per_block);
+
+              // also update the working blocks' headers
+              memcpy(datablock_stats_header(wblk+wblk_idx), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
-            fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
+            // fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
             update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
@@ -906,7 +904,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         // Check observation state
-        if(state == IDLE){// Only possible if transitioning RECORD->IDLE
+        if(state != RECORD){// Either ARMED or transitioning RECORD->IDLE
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }

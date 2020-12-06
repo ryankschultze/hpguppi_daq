@@ -3,6 +3,9 @@
 # Add directory containing this script to PATH
 PATH="$(dirname $0):${PATH}"
 
+PREFIX_EXEC="/opt/mnt/bin/"
+PREFIX_LIB="/opt/mnt/lib/"
+
 hostname=`hostname -s`
 
 cores_per_cpu=`grep cpu.cores /proc/cpuinfo | awk 'NR==1{print $NF}'`
@@ -30,12 +33,12 @@ case $cores_per_cpu in
     # 5432 1098 7654 3210
     # ---- ---- ---- ----
     # 1111 1110 0000 0000 = 0xfe00
-    NET0CPU=9
-    OUT0CPU=10
-    TPS0MSK=49152 #3072
-    NET1CPU=12
-    OUT1CPU=13
-    TPS1MSK=49152
+    NET0CPU=8
+    OUT0CPU=9
+    TPS0MSK=61440 #49152 #3072
+    NET1CPU=13
+    OUT1CPU=14
+    TPS1MSK=61440
     MASK=0xfe00
     ;;
   *)
@@ -48,10 +51,10 @@ instances=(
   # Setup parameters for two instances.
   #
   #
-  #                   bind     NET       OUT
-  #  dir    mask     host     CPU       CPU
-  "/tmp   $TPS0MSK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
-  "/tmp   $TPS1MSK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
+  #                             bind     NET       OUT
+  #  dir                mask    host     CPU       CPU
+  "/home/sonata/logs  $TPS0MSK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
+  "/home/sonata/logs  $TPS1MSK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
 )
 
 function init() {
@@ -91,7 +94,7 @@ function init() {
 
   echo numactl --cpunodebind=1 --membind=1 \
   $perf \
-  /opt/mnt/bin/hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
+  ${PREFIX_EXEC}hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
     ${bindport:+-o BINDPORT=$bindport} \
     -o DATADIR=$dir \
@@ -102,17 +105,14 @@ function init() {
 
   numactl --cpunodebind=1 --membind=1 \
   $perf \
-  /opt/mnt/bin/hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
+  ${PREFIX_EXEC}hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
     ${bindport:+-o BINDPORT=$bindport} \
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
     -m $mask $work_thread \
-    -c $outcpu $out_thread \
-     < /dev/null \
-    1> ${hostname}.$instance.out \
-    2> ${hostname}.$instance.err &
+    -c $outcpu $out_thread < /dev/null 1>> "${workdir}/${hostname}.$instance.out" 2>> "${workdir}/${hostname}.$instance.err" &
 }
 
 perf=
@@ -205,8 +205,8 @@ then
   net_thread=hpguppi_atasnap_pktsock_thread
   work_thread=hpguppi_atasnap_pkt_to_FTP_transpose
   # options="-o IBVPKTSZ=42,8,8192"
-  instances[0]="${instances[0]/eth4/enp134s0d1}"
-  instances[1]="${instances[1]/eth5/enp134s0d1}"
+  instances[0]="${instances[0]/eth4/ens6d1}"
+  instances[1]="${instances[1]/eth5/ens6d1}"
   bindport=0
   instance_ports[0]=10000
 
@@ -215,10 +215,10 @@ then
   # instances[1]="${instances[1]/datax2/mnt/buf1}"
   # For initial testing...
   # hpguppi_plugin=/homelocal/sonata/davidm/src/hpguppi_daq/src/.libs/hpguppi_daq.so
-  #hpguppi_plugin=/usr/local/lib/hpguppi_daq.so
-  hpguppi_plugin=/opt/mnt/lib/hpguppi_daq.so
+  hpguppi_plugin=${PREFIX_LIB}hpguppi_daq.so
   # out_thread=null_output_thread
-  out_thread=hpguppi_rawdisk_only_thread
+  # out_thread=hpguppi_rawdisk_only_thread
+  out_thread=hpguppi_atasnap_rawdisk_thread
   shift
 elif echo "$1" | grep -q 'thread'
 then
@@ -268,7 +268,7 @@ do
     if init $instidx $args $options "${@}"
     then
       echo Instance $hostname/$instidx pid $!
-      /opt/mnt/bin/hashpipe_check_status -I $instidx -k SYNCTIME -i ${sync_time:-0}
+      ${PREFIX_EXEC}hashpipe_check_status -I $instidx -k SYNCTIME -i ${sync_time:-0}
 
       test "$use_fifo" == "yes" || continue
 

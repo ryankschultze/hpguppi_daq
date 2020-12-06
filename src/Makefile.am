@@ -33,9 +33,11 @@ hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
 		  hpguppi_atasnap_rawdisk_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
+		  hpguppi_mb128ch_net_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
-		  hpguppi_fildisk_only_thread.c
+		  hpguppi_fildisk_only_thread.c \
+		  hpguppi_db_to_disk.c
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la

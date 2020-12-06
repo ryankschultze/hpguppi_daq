@@ -252,6 +252,8 @@ struct ata_snap_obs_info {
   uint32_t pkt_per_block;
   // The number of packet timestamps per block
   uint32_t pktidx_per_block;
+  // The effective size of the block
+  uint32_t eff_block_size;
   // The Bandwidth of the observation in MHz
   double obs_bw;
 };
@@ -486,6 +488,16 @@ double
 ata_snap_tbin(const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_tbin(ata_snap_obsnchan(oi), oi.obs_bw);
+}
+
+static inline
+void
+ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_info *oi)
+{
+  oi->pkt_data_size = ata_snap_pkt_bytes(*oi);
+  oi->pkt_per_block = ata_snap_eff_pkt_per_block(block_size, *oi);
+  oi->pktidx_per_block = ata_snap_pktidx_per_block(block_size, *oi);//inherently effective 
+  oi->eff_block_size = oi->pkt_per_block*(oi->pkt_data_size-16);
 }
 
 // Parses a ATA SNAP F Engine packet that is in the format of a "struct

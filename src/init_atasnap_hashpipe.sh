@@ -6,26 +6,26 @@
 # Set high performance mode
 for i in `ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`; do echo performance > $i; done
 
-#interface="enp134s0d1"
-interface="ens6d1"
+INTERFACE=ens6d1
+PREFIX_EXEC_RB="/home/sonata/.rvm/gems/ruby-2.1.10/bin/"
 
 # Set mtu
-#ifconfig ${interface} mtu 9000
+ifconfig ${INTERFACE} mtu 9000
 
 # Kernel buffer sizes
 sysctl net.core.rmem_max=1073741824 #1G
 sysctl net.core.rmem_default=1073741824 #1G
 
 # Kill packets before the IP stack, applicable to hashpipe_pktsock
-iptables -t raw -A PREROUTING -i ${interface} -p udp -j DROP
+iptables -t raw -A PREROUTING -i ${INTERFACE} -p udp -j DROP
 
 # Set interrupt coalescing
-ethtool -C ${interface} adaptive-rx on
-ethtool -C ${interface} rx-frames 8
-ethtool -C ${interface} rx-usecs 0
+ethtool -C ${INTERFACE} adaptive-rx on
+ethtool -C ${INTERFACE} rx-frames 8
+ethtool -C ${INTERFACE} rx-usecs 0
 
 # Set ring sizes to max
-ethtool -G ${interface} rx 8192
+ethtool -G ${INTERFACE} rx 8192
 
 perf=
 if [ "$1" = 'perf' ]
@@ -43,12 +43,11 @@ fi
 export HASHPIPE_KEYFILE=/home/sonata 
 
 $(dirname $0)/hpguppi_init.sh $perf atasnap 0 \
-	-o BINDHOST=${interface} \
+	-o BINDHOST=${INTERFACE} \
   "${@}"
 
 # sleep 2 
 
-# echo "Starting hashpipe REDIS Gateway"
-# # hashpipe_redis_gateway.rb -s ${REDISHOST:-redishost}# -D hashpipe -g `hostname -s` -i 0 -f &
+#echo "Starting hashpipe REDIS Gateway"
+#pkill -e -f ".*hashpipe_redis_gateway\.rb.*"
 # hashpipe_redis_gateway.rb -s ${REDISHOST:-redishost} -f -i 0 & # -D hashpipe -g `hostname -s` -i 0 -f &
-# hashpipe_redis_gateway.rb -s ${REDISHOST:-redishost} -f -i 1 & # -D hashpipe -g `hostname -s` -i 0 -f &

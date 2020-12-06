@@ -57,33 +57,6 @@ static int safe_close(int *pfd) {
     return close(*pfd);
 }
 
-#if 0
-static int init(hashpipe_thread_args_t * args)
-{
-    int i;
-    uint32_t Nc = 0;
-    uint32_t Nbps = 8;
-
-    hpguppi_input_databuf_t *db = (hpguppi_input_databuf_t *)args->ibuf;
-    hashpipe_status_t *st = &args->st;
-
-    hashpipe_status_lock_safe(st);
-    // Get Nc from OBSNCHAN
-    hgetu4(st->buf, "OBSNCHAN", &Nc);
-    // Get Nbps from NBITS
-    hgetu4(st->buf, "NBITS", &Nbps);
-    hashpipe_status_unlock_safe(st);
-
-    if(Nc == 0) {
-      hashpipe_error("hpguppi_rawdisk_thread",
-	  "OBSNCHAN not found in status buffer");
-      return HASHPIPE_ERR_PARAM;
-    }
-
-    return HASHPIPE_OK;
-}
-#endif // 0
-
 static void *run(hashpipe_thread_args_t * args)
 {
     // Local aliases to shorten access to args fields

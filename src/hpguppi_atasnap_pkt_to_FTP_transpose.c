@@ -15,6 +15,7 @@
 typedef struct {TIME_WIDTH_T num[NPOL*NTIME];} CP_DTYPE;
 
 #define USE_MULTI_THREAD
+#define MULTI_THREAD_COUNT 4
 
 typedef struct
 {
@@ -96,7 +97,7 @@ static void *run(hashpipe_thread_args_t *args)
   
 #ifdef USE_MULTI_THREAD
     // Each thread processes about 11.62 Gbits/s
-    const int nthreads = 3;// Reach for 32  Gbits/s
+    const int nthreads = MULTI_THREAD_COUNT;// Reach for 32  Gbits/s
 
     hputi4(st.buf, "TRNTHRDS", nthreads);
     omp_set_num_threads(nthreads);
@@ -126,9 +127,10 @@ static void *run(hashpipe_thread_args_t *args)
       }
       else
       {
-        hashpipe_error(thread_name, "error waiting for input buffer");
-	      pthread_exit(NULL);
-	      break;
+        hashpipe_error(thread_name, "error waiting for input buffer, rv: %i", rv);
+	      //pthread_exit(NULL);
+	      //break;
+	continue;
       }
     }
 
@@ -145,9 +147,10 @@ static void *run(hashpipe_thread_args_t *args)
       }
       else
       {
-        hashpipe_error(thread_name, "error waiting for output buffer");
-        pthread_exit(NULL);
-	      break;
+        hashpipe_error(thread_name, "error waiting for output buffer, rv: %i", rv);
+        //pthread_exit(NULL);
+	      //break;
+	continue;
       }
         
     }
