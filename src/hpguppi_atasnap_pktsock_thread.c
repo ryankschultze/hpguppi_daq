@@ -889,13 +889,19 @@ static void *run(hashpipe_thread_args_t * args)
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
             // If the pkt_idx is the first of the block re-init
-            // working blocks for block number of current packet's block
+            // working blocks for block number of current packet's block,
             // otherwise for the block number *after* the current packet's block
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
               init_datablock_stats(wblk+wblk_idx, NULL, -1,
                   pkt_blk_num+wblk_idx + (pkt_seq_num % obs_info.pktidx_per_block == 0 ? 0 : 1),
                   obs_info.pkt_per_block);
+
+              // also update the working blocks' headers
+              memcpy(datablock_stats_header(wblk+wblk_idx), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk[wblk_idx].block_num * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk[wblk_idx].block_num * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk[wblk_idx].block_num + 1) * obs_info.pktidx_per_block);
             }
             // fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
