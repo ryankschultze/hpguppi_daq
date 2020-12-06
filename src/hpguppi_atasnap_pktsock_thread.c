@@ -933,7 +933,7 @@ static void *run(hashpipe_thread_args_t * args)
             // Copy packet data to data buffer of working block
             if (1){
               copy_packet_data_to_databuf(wblk+wblk_idx,
-                  &obs_info, ata_snap_pkt, obs_start_pktidx);
+                  &obs_info, ata_snap_pkt, 0);
             }
 
             // Count packet for block and for processing stats
