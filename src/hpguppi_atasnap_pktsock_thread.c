@@ -453,7 +453,6 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
 {
   int rc = 1;//obsinfo valid
   uint32_t obsnchan = 0;
-  double tbin = 0.0;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -461,18 +460,15 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     // If obs_info is valid
     if(ata_snap_obs_info_valid(*obs_info)) {
       obsnchan = ata_snap_obsnchan(*obs_info);
-      tbin = ata_snap_tbin(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
       obsnchan = 1;
-      tbin = 1.0;
       rc = 0;
       hputs(st->buf, "OBSINFO", "INVALID");
     }
 
     // Write (store default/invalid values if not present)
     hputu4(st->buf, "OBSNCHAN", obsnchan);
-    hputr8(st->buf, "TBIN", tbin);
     hputu4(st->buf, "FENCHAN",  obs_info->fenchan);
     hputu4(st->buf, "NANTS",    obs_info->nants);
     hputu4(st->buf, "NSTRM",    obs_info->nstrm);
