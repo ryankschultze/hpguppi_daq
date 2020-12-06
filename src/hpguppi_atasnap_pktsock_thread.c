@@ -682,7 +682,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
-    char waiting=-1, check_obs_start_stop=1;
+    char waiting=-1;
     enum run_states state = IDLE;
     char flag_state_update = 0;
     char flag_obs_end = 0;
@@ -692,6 +692,7 @@ static void *run(hashpipe_thread_args_t * args)
     // double stt_offs=0.0;
     struct timespec ts_start_wait = {0}, ts_stop_wait = {0};
     struct timespec ts_start_block = {0}, ts_stop_block = {0};
+    struct timespec ts_checked_obs_startstop = {0}, ts_now = {0};
     // Heartbeat variables
     time_t lasttime = 0;
     time_t curtime = 0;
@@ -794,7 +795,6 @@ static void *run(hashpipe_thread_args_t * args)
         // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
         // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
-          check_obs_start_stop = 1;
 
           last_pkt_blk_num = pkt_blk_num;
           blk_start_pkt_seq = pkt_seq_num;
@@ -808,8 +808,9 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_unlock_safe(st);
         }
 
-        if (check_obs_start_stop){
-          check_obs_start_stop = 0;
+        clock_gettime(CLOCK_MONOTONIC, &ts_now);
+        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 250*1000*1000){
+          memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
           switch(status_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
             case IDLE:// If should IDLE, 
               flag_state_update = (state != IDLE ? 1 : 0);// flag state update
