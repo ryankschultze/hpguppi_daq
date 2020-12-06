@@ -637,7 +637,7 @@ static void *run(hashpipe_thread_args_t * args)
     ata_snap_obs_info_write(st, &obs_info);
     
     fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
-    unsigned long pkt_blk_num, last_pkt_blk_num;
+    unsigned long pkt_blk_num, last_pkt_blk_num = ~0;
 
 
     // The incoming packets are taken from blocks of the input databuf and then
@@ -666,12 +666,11 @@ static void *run(hashpipe_thread_args_t * args)
     struct datablock_stats wblk[n_wblock];
     // Initialize working blocks
     for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-        //important to initialise the blocks with unique block idx an block_num values
-        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, wblk_idx, obs_info.pkt_per_block);
+        // important to initialise the blocks with unique block idx
+        // and to set the block_num < -1 so the first observation packet causes a 
+        // discontinuity and so a contemporary re-init of the working blocks
+        init_datablock_stats(wblk+wblk_idx, db, wblk_idx, -10, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk_idx*obs_info.pktidx_per_block);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk_idx*obs_info.pktidx_per_block);
-        hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk_idx+1)*obs_info.pktidx_per_block);
     }
 
     /* Misc counters, etc */
@@ -789,24 +788,6 @@ static void *run(hashpipe_thread_args_t * args)
         ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
         // Get packet's sequence number
         pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
-        pkt_blk_num = pkt_seq_num / obs_info.pktidx_per_block;
-        // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
-
-        // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
-        // and read PKTSTART, DWELL to calculate start/stop seq numbers.
-        if(pkt_blk_num != last_pkt_blk_num){
-
-          last_pkt_blk_num = pkt_blk_num;
-          blk_start_pkt_seq = pkt_seq_num;
-          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
-
-          hashpipe_status_lock_safe(st);
-          hputi8(st->buf, "PKTIDX", pkt_seq_num);
-          hputi8(st->buf, "BLKIDX", pkt_blk_num);
-          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
-          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
-          hashpipe_status_unlock_safe(st);
-        }
 
         clock_gettime(CLOCK_MONOTONIC, &ts_now);
         if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 250*1000*1000){
@@ -835,6 +816,25 @@ static void *run(hashpipe_thread_args_t * args)
             default:
               break;
           }
+        }
+
+        pkt_blk_num = (pkt_seq_num - obs_start_pktidx) / obs_info.pktidx_per_block;
+        // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
+
+        // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
+        // and read PKTSTART, DWELL to calculate start/stop seq numbers.
+        if(pkt_blk_num != last_pkt_blk_num){
+
+          last_pkt_blk_num = pkt_blk_num;
+          blk_start_pkt_seq = pkt_seq_num;
+          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
+
+          hashpipe_status_lock_safe(st);
+          hputi8(st->buf, "PKTIDX", pkt_seq_num);
+          hputi8(st->buf, "BLKIDX", pkt_blk_num);
+          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
+          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
+          hashpipe_status_unlock_safe(st);
         }
 
         // Tally npacket_totals
@@ -889,20 +889,18 @@ static void *run(hashpipe_thread_args_t * args)
                 "working blocks reinit due to packet discontinuity (PKTIDX %lu) [%ld, %lu  <> %lu]",
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
-            // If the pkt_idx is the first of the block re-init
-            // working blocks for block number of current packet's block,
-            // otherwise for the block number *after* the current packet's block
+            // Re-init working blocks for block number of current packet's block,
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
               init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx + (pkt_seq_num % obs_info.pktidx_per_block == 0 ? 0 : 1),
+                  pkt_blk_num+wblk_idx,
                   obs_info.pkt_per_block);
 
               // also update the working blocks' headers
               memcpy(datablock_stats_header(wblk+wblk_idx), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", wblk[wblk_idx].block_num * obs_info.pktidx_per_block);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", wblk[wblk_idx].block_num * obs_info.pktidx_per_block);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", (wblk[wblk_idx].block_num + 1) * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
             // fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
@@ -934,7 +932,7 @@ static void *run(hashpipe_thread_args_t * args)
             // Copy packet data to data buffer of working block
             if (1){
               copy_packet_data_to_databuf(wblk+wblk_idx,
-                  &obs_info, ata_snap_pkt, 0);
+                  &obs_info, ata_snap_pkt, obs_start_pktidx);
             }
 
             // Count packet for block and for processing stats
