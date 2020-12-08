@@ -671,7 +671,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, lastnpacket_total=0;
     uint64_t obs_npacket_total=0, obs_ndrop_total=0;
 
-    uint64_t pkt_seq_num;//, last_pkt_seq_num=-1;
+    uint64_t pkt_seq_num, first_pkt_seq_num=0;
     uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
@@ -792,6 +792,7 @@ static void *run(hashpipe_thread_args_t * args)
       
               if(state == RECORD){//and recording, finalise block
                 flag_obs_end = 1;
+                first_pkt_seq_num = 0;
               }
               state = IDLE;
               break;
@@ -799,6 +800,7 @@ static void *run(hashpipe_thread_args_t * args)
               if (state != RECORD){
                 flag_state_update = 1;
                 // flag_obs_start = flag_state_update;
+                first_pkt_seq_num = pkt_seq_num;
                 state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
                 obs_npacket_total = 0;
                 obs_ndrop_total = 0;
@@ -812,7 +814,7 @@ static void *run(hashpipe_thread_args_t * args)
           }
         }
 
-        pkt_blk_num = (pkt_seq_num - obs_start_pktidx) / obs_info.pktidx_per_block;
+        pkt_blk_num = (pkt_seq_num - first_pkt_seq_num) / obs_info.pktidx_per_block;
         // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
         // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
@@ -926,7 +928,7 @@ static void *run(hashpipe_thread_args_t * args)
             // Copy packet data to data buffer of working block
             if (1){
               copy_packet_data_to_databuf(wblk+wblk_idx,
-                  &obs_info, ata_snap_pkt, obs_start_pktidx);
+                  &obs_info, ata_snap_pkt, first_pkt_seq_num);
             }
 
             // Count packet for block and for processing stats
