@@ -683,7 +683,6 @@ static void *run(hashpipe_thread_args_t * args)
     /* Time parameters */
     // int stt_imjd=0, stt_smjd=0;
     // double stt_offs=0.0;
-    struct timespec ts_start_wait = {0}, ts_stop_wait = {0};
     struct timespec ts_start_block = {0}, ts_stop_block = {0};
     struct timespec ts_checked_obs_startstop = {0}, ts_now = {0};
     // Heartbeat variables
@@ -864,16 +863,8 @@ static void *run(hashpipe_thread_args_t * args)
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
             // Wait for new databuf data block to be free
-            clock_gettime(CLOCK_MONOTONIC, &ts_start_wait);
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
-            clock_gettime(CLOCK_MONOTONIC, &ts_stop_wait);
-            // hashpipe_info(thread_name,
-            // fprintf(stderr, "NDROP: %ld\n", ndrop_total);
-            // fprintf(stderr,
-            //     "WAIT: %010luns\t\tBLOCKS: %010luns\t\t\r",
-            //     ELAPSED_NS(ts_start_wait,ts_stop_wait), 
-            //     (ts_start_block.tv_nsec != 0 ? ELAPSED_NS(ts_start_block,ts_stop_block) : 0));
-            blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
+            
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
             flag_obs_end = 0;
         }
