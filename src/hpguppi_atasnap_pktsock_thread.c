@@ -394,16 +394,9 @@ static void update_stt_status_keys( hashpipe_status_t *st,
 //     return IDLE
 //   endif
 static
-enum run_states status_from_start_stop(hashpipe_status_t *st, uint64_t pktidx,
+enum run_states state_from_start_stop(hashpipe_status_t *st, uint64_t pktidx,
                                        uint64_t *obs_start_pktidx, uint64_t *obs_stop_pktidx)
 {
-  hashpipe_status_lock_safe(st);
-  {
-    hgetu8(st->buf, "OBSSTART", obs_start_pktidx);
-    hgetu8(st->buf, "OBSSTOP", obs_stop_pktidx);
-  }
-  hashpipe_status_unlock_safe(st);
-
   if(*obs_start_pktidx <= pktidx && pktidx < *obs_stop_pktidx) {
     return RECORD;
   } else if (pktidx < *obs_start_pktidx && *obs_start_pktidx != *obs_stop_pktidx) {
@@ -782,42 +775,51 @@ static void *run(hashpipe_thread_args_t * args)
         // Get packet's sequence number
         pkt_seq_num =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
 
+        // Catch any changes in OBSSTART/STOP
         clock_gettime(CLOCK_MONOTONIC, &ts_now);
-        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 250*1000*1000){
+        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 50*1000*1000){
           memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
-          switch(status_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
-            case IDLE:// If should IDLE, 
-              flag_state_update = (state != IDLE ? 1 : 0);// flag state update
-      
-              if(state == RECORD){//and recording, finalise block
-                flag_obs_end = 1;
-                first_pkt_seq_num = 0;
-              }
-              state = IDLE;
-              break;
-            case RECORD:// If should RECORD, and not recording, flag obs_start
-              if (state != RECORD){
-                flag_state_update = 1;
-                // flag_obs_start = flag_state_update;
-                first_pkt_seq_num = pkt_seq_num;
-                state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
-                obs_npacket_total = 0;
-                obs_ndrop_total = 0;
-              }
-              break;
-            case ARMED:// If should ARM,
-              flag_state_update = (state != ARMED ? 1 : 0);// flag state update
-              state = ARMED;
-            default:
-              break;
+          hashpipe_status_lock_safe(st);
+          {
+            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
+            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
           }
+          hashpipe_status_unlock_safe(st);
+        }
+          
+        switch(state_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
+          case IDLE:// If should IDLE, 
+            flag_state_update = (state != IDLE ? 1 : 0);// flag state update
+    
+            if(state == RECORD){//and recording, finalise block
+              flag_obs_end = 1;
+              // first_pkt_seq_num = 0; // rather reset after finalisation of block
+            }
+            state = IDLE;
+            break;
+          case RECORD:// If should RECORD, and not recording, flag obs_start
+            if (state != RECORD){
+              flag_state_update = 1;
+              // flag_obs_start = flag_state_update;
+              first_pkt_seq_num = pkt_seq_num;
+              ata_snap_obs_info_read(st, &obs_info);
+              state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
+              obs_npacket_total = 0;
+              obs_ndrop_total = 0;
+              update_stt_status_keys(st, state, pkt_seq_num);
+            }
+            break;
+          case ARMED:// If should ARM,
+            flag_state_update = (state != ARMED ? 1 : 0);// flag state update
+            state = ARMED;
+          default:
+            break;
         }
 
         pkt_blk_num = (pkt_seq_num - first_pkt_seq_num) / obs_info.pktidx_per_block;
         // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
         // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
-        // and read PKTSTART, DWELL to calculate start/stop seq numbers.
         if(pkt_blk_num != last_pkt_blk_num){
 
           last_pkt_blk_num = pkt_blk_num;
@@ -858,7 +860,7 @@ static void *run(hashpipe_thread_args_t * args)
             }
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
-            // Check start/stop
+            // Update STT keys
             update_stt_status_keys(st, state, pkt_seq_num);
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
@@ -873,7 +875,7 @@ static void *run(hashpipe_thread_args_t * args)
                 || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
             // Should only happen when transitioning into ARMED, so warn about it
             hashpipe_warn(thread_name,
-                "working blocks reinit due to packet discontinuity (PKTIDX %lu) [%ld, %lu  <> %lu]",
+                "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
 
             // Re-init working blocks for block number of current packet's block,
@@ -889,7 +891,6 @@ static void *run(hashpipe_thread_args_t * args)
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
-            // fprintf(stderr, "Packet Block Indices captured: %ld-%ld\n", wblk[0].block_num, wblk[n_wblock-1].block_num);
             // Check start/stop
             update_stt_status_keys(st, state, pkt_seq_num);
             // This happens after discontinuities (e.g. on startup), so don't warn about
@@ -898,6 +899,10 @@ static void *run(hashpipe_thread_args_t * args)
 
         // Check observation state
         if(state != RECORD){// Either ARMED or transitioning RECORD->IDLE
+          if(flag_obs_end){
+            flag_obs_end = 0;
+            first_pkt_seq_num = 0;
+          }
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }
