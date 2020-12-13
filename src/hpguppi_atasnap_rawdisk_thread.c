@@ -108,35 +108,36 @@ static void *run(hashpipe_thread_args_t * args)
         /* Wait for buf to have data */
         rv = hpguppi_input_databuf_wait_filled(db, curblock);
         if (rv!=0) continue;
+        
 
         /* Read param struct for this block */
         ptr = hpguppi_databuf_header(db, curblock);
         if (first) {
-            hpguppi_read_obs_params(ptr, &gp, &pf);
-            first = 0;
+          hpguppi_read_obs_params(ptr, &gp, &pf);
+          first = 0;
         } else {
-            hpguppi_read_subint_params(ptr, &gp, &pf);
-            
-            mjd_d = pf.hdr.start_day;
-            mjd_s = 0;
-            mjd_fs = pf.hdr.start_sec;
+          hpguppi_read_subint_params(ptr, &gp, &pf);
+          
+          mjd_d = pf.hdr.start_day;
+          mjd_s = 0;
+          mjd_fs = pf.hdr.start_sec;
 
-            hgeti4(ptr, "STT_IMJD", &mjd_d);
-            hgeti4(ptr, "STT_SMJD", &mjd_s);
-            hgetr8(ptr, "STT_OFFS", &mjd_fs);
-            
-            if ( pf.hdr.start_day != mjd_d 
+          hgeti4(ptr, "STT_IMJD", &mjd_d);
+          hgeti4(ptr, "STT_SMJD", &mjd_s);
+          hgetr8(ptr, "STT_OFFS", &mjd_fs);
+          
+          if ( pf.hdr.start_day != mjd_d 
               || pf.hdr.start_sec != mjd_s + mjd_fs){// Observation timestamp has changed. Start new stem.
-                if(fdraw != -1) {
-                  fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
-                  close(fdraw);
-                  // Reset fdraw, got_packet_0, filenum, block_count
-                  fdraw = -1;
-                  got_packet_0 = 0;
-                  filenum = 0;
-                  block_count=0;
-                }
-              }
+            if(fdraw != -1) {
+              fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
+              close(fdraw);
+              // Reset fdraw, got_packet_0, filenum, block_count
+              fdraw = -1;
+              got_packet_0 = 0;
+              filenum = 0;
+              block_count=0;
+            }
+          }
         }
 
         /* Read pktidx, pktstart, pktstop from header */
@@ -144,88 +145,93 @@ static void *run(hashpipe_thread_args_t * args)
         hgeti8(ptr, "PKTSTART", &pktstart);
         hgeti8(ptr, "PKTSTOP", &pktstop);
 
-	// If packet idx is NOT within start/stop range
-	if(pktidx < pktstart || pktstop <= pktidx) {
-	    // If file open, close it
-	    if(fdraw != -1) {
-		// Close file
-		close(fdraw);
-		// Reset fdraw, got_packet_0, filenum, block_count
-		fdraw = -1;
-		got_packet_0 = 0;
-		filenum = 0;
-		block_count=0;
+        // If packet idx is NOT within start/stop range
+        if(pktidx < pktstart || pktstop <= pktidx) {
+            // If file open, close it
+            if(fdraw != -1) {
+              // Close file
+              close(fdraw);
+              // Reset fdraw, got_packet_0, filenum, block_count
+              fdraw = -1;
+              got_packet_0 = 0;
+              filenum = 0;
+              block_count=0;
 
-		// Print end of recording conditions
-		hashpipe_info(thread_name, "recording stopped: "
-		    "pktstart %lu pktstop %lu pktidx %lu",
-		    pktstart, pktstop, pktidx);
-	    }
-	    /* Mark as free */
-	    hpguppi_input_databuf_set_free(db, curblock);
+              // Print end of recording conditions
+              hashpipe_info(thread_name, "recording stopped: "
+                "pktstart %lu pktstop %lu pktidx %lu",
+                pktstart, pktstop, pktidx);
+            }
+            else{
+              hashpipe_info(thread_name, "Block not recorded: "
+                "pktstart %lu pktstop %lu pktidx %lu",
+                pktstart, pktstop, pktidx);
+            }
+            /* Mark as free */
+            hpguppi_input_databuf_set_free(db, curblock);
 
-	    /* Go to next block */
-	    curblock = (curblock + 1) % db->header.n_block;
+            /* Go to next block */
+            curblock = (curblock + 1) % db->header.n_block;
 
-	    continue;
-	}
+            continue;
+        }
 
         /* Set up data ptr for quant routines */
         pf.sub.data = (unsigned char *)hpguppi_databuf_data(db, curblock);
 
         // Wait for packet 0 before starting write
-	// "packet 0" is the first packet/block of the new recording,
-	// it is not necessarily pktidx == 0.
+        // "packet 0" is the first packet/block of the new recording,
+        // it is not necessarily pktidx == 0.
         if (got_packet_0==0 && gp.stt_valid==1) {
-            got_packet_0 = 1;
-            hpguppi_read_obs_params(ptr, &gp, &pf);
-            directio = hpguppi_read_directio_mode(ptr);
-            char fname[256];
-            sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
-            fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
-            // Create the output directory if needed
-            char datadir[1024];
-            strncpy(datadir, pf.basefilename, 1023);
-            char *last_slash = strrchr(datadir, '/');
-            if (last_slash!=NULL && last_slash!=datadir) {
-                *last_slash = '\0';
-                printf("Using directory '%s' for output.\n", datadir);
-		if(mkdir_p(datadir, 0755) == -1) {
-		  hashpipe_error(thread_name, "mkdir_p(%s)", datadir);
-		  break;
-		}
+          got_packet_0 = 1;
+          hpguppi_read_obs_params(ptr, &gp, &pf);
+          directio = hpguppi_read_directio_mode(ptr);
+          char fname[256];
+          sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
+          fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
+          // Create the output directory if needed
+          char datadir[1024];
+          strncpy(datadir, pf.basefilename, 1023);
+          char *last_slash = strrchr(datadir, '/');
+          if (last_slash!=NULL && last_slash!=datadir) {
+            *last_slash = '\0';
+            printf("Using directory '%s' for output.\n", datadir);
+            if(mkdir_p(datadir, 0755) == -1) {
+              hashpipe_error(thread_name, "mkdir_p(%s)", datadir);
+              break;
             }
-            // TODO: check for file exist.
-            open_flags = O_CREAT|O_RDWR|O_SYNC;
-            if(directio) {
-              open_flags |= O_DIRECT;
-            }
-            fdraw = open(fname, open_flags, 0644);
-            if (fdraw==-1) {
-                hashpipe_error(thread_name, "Error opening file.");
-                pthread_exit(NULL);
-            }
+          }
+          // TODO: check for file exist.
+          open_flags = O_CREAT|O_RDWR|O_SYNC;
+          if(directio) {
+            open_flags |= O_DIRECT;
+          }
+          fdraw = open(fname, open_flags, 0644);
+          if (fdraw==-1) {
+            hashpipe_error(thread_name, "Error opening file.");
+            pthread_exit(NULL);
+          }
 
         }
 
         /* See if we need to open next file */
         if (block_count >= blocks_per_file) {
-            close(fdraw);
-            filenum++;
-            char fname[256];
-            sprintf(fname, "%s.%4.4d.raw", pf.basefilename, filenum);
-            directio = hpguppi_read_directio_mode(ptr);
-            open_flags = O_CREAT|O_RDWR|O_SYNC;
-            if(directio) {
-              open_flags |= O_DIRECT;
-            }
-            fprintf(stderr, "Opening next raw file '%s' (directio=%d)\n", fname, directio);
-            fdraw = open(fname, open_flags, 0644);
-            if (fdraw==-1) {
-                hashpipe_error(thread_name, "Error opening file.");
-                pthread_exit(NULL);
-            }
-            block_count=0;
+          close(fdraw);
+          filenum++;
+          char fname[256];
+          sprintf(fname, "%s.%4.4d.raw", pf.basefilename, filenum);
+          directio = hpguppi_read_directio_mode(ptr);
+          open_flags = O_CREAT|O_RDWR|O_SYNC;
+          if(directio) {
+            open_flags |= O_DIRECT;
+          }
+          fprintf(stderr, "Opening next raw file '%s' (directio=%d)\n", fname, directio);
+          fdraw = open(fname, open_flags, 0644);
+          if (fdraw==-1) {
+            hashpipe_error(thread_name, "Error opening file.");
+            pthread_exit(NULL);
+          }
+          block_count=0;
         }
 
         /* See how full databuf is */
@@ -237,63 +243,63 @@ static void *run(hashpipe_thread_args_t * args)
         /* If we got packet 0, write data to disk */
         if (got_packet_0) {
 
-            /* Note writing status */
-            hashpipe_status_lock_safe(st);
-            hputs(st->buf, status_key, "writing");
-            hashpipe_status_unlock_safe(st);
+          /* Note writing status */
+          hashpipe_status_lock_safe(st);
+          hputs(st->buf, status_key, "writing");
+          hashpipe_status_unlock_safe(st);
 
-            /* Write header to file */
-            hend = ksearch(ptr, "END");
-            len = (hend-ptr)+80;
+          /* Write header to file */
+          hend = ksearch(ptr, "END");
+          len = (hend-ptr)+80;
 
-            // If BACKEND record is not present, insert it as first record.
-            // TODO: Verify that we have room to insert the record.
-            if(!ksearch(ptr, "BACKEND")) {
-                // Move exsiting records to make room for new first record
-                memmove(ptr+80, ptr, len);
-                // Copy in BACKEND_RECORD string
-                strncpy(ptr, BACKEND_RECORD, 80);
-                // Increase len by 80 to account for the added record
-                len += 80;
-            }
+          // If BACKEND record is not present, insert it as first record.
+          // TODO: Verify that we have room to insert the record.
+          if(!ksearch(ptr, "BACKEND")) {
+              // Move exsiting records to make room for new first record
+              memmove(ptr+80, ptr, len);
+              // Copy in BACKEND_RECORD string
+              strncpy(ptr, BACKEND_RECORD, 80);
+              // Increase len by 80 to account for the added record
+              len += 80;
+          }
 
-            // Adjust length for any padding required for DirectIO
-            if(directio) {
-                // Round up to next multiple of 512
-                len = (len+511) & ~511;
-            }
+          // Adjust length for any padding required for DirectIO
+          if(directio) {
+              // Round up to next multiple of 512
+              len = (len+511) & ~511;
+          }
 
-            /* Write header (and padding, if any) */
-            rv = write_all(fdraw, ptr, len);
-            if (rv != len) {
-                char msg[100];
-                perror(thread_name);
-                sprintf(msg, "Error writing data (ptr=%p, len=%d, rv=%d)", ptr, len, rv);
-                hashpipe_error(thread_name, msg);
-            }
+          /* Write header (and padding, if any) */
+          rv = write_all(fdraw, ptr, len);
+          if (rv != len) {
+              char msg[100];
+              perror(thread_name);
+              sprintf(msg, "Error writing data (ptr=%p, len=%d, rv=%d)", ptr, len, rv);
+              hashpipe_error(thread_name, msg);
+          }
 
-            /* Write data */
-            ptr = hpguppi_databuf_data(db, curblock);
-            len = blocksize;
-            if(directio) {
-                // Round up to next multiple of 512
-                len = (len+511) & ~511;
-            }
-            rv = write_all(fdraw, ptr, (size_t)len);
-            if (rv != len) {
-                char msg[100];
-                perror(thread_name);
-                sprintf(msg, "Error writing data (ptr=%p, len=%d, rv=%d)", ptr, len, rv);
-                hashpipe_error(thread_name, msg);
-            }
+          /* Write data */
+          ptr = hpguppi_databuf_data(db, curblock);
+          len = blocksize;
+          if(directio) {
+              // Round up to next multiple of 512
+              len = (len+511) & ~511;
+          }
+          rv = write_all(fdraw, ptr, (size_t)len);
+          if (rv != len) {
+              char msg[100];
+              perror(thread_name);
+              sprintf(msg, "Error writing data (ptr=%p, len=%d, rv=%d)", ptr, len, rv);
+              hashpipe_error(thread_name, msg);
+          }
 
-	    if(!directio) {
-	      /* flush output */
-	      fsync(fdraw);
-	    }
+          if(!directio) {
+            /* flush output */
+            fsync(fdraw);
+          }
 
-            /* Increment counter */
-            block_count++;
+          /* Increment counter */
+          block_count++;
         }
 
         /* Mark as free */
