@@ -867,8 +867,8 @@ static void *run(hashpipe_thread_args_t * args)
             // Wait for new databuf data block to be free
             wait_for_block_free(&wblk[n_wblock-1], st, status_key);
             
+            blocks_per_second = 1000.0*1000.0*1000.0/ELAPSED_NS(ts_start_block,ts_stop_block);
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
-            flag_obs_end = 0;
         }
         // Check for PKTIDX discontinuity
         else if(pkt_blk_num + 1 < wblk[0].block_num
