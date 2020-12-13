@@ -38,7 +38,6 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
 
   // number of packets that span the entire data block, in time
   size_t itime_packets = ctx->piperblk / NTIME;
-  size_t nchan = ctx->obsnchan;
 
   // bytes to stride within a packet in input buffer
   // and also amount to copy at a time
@@ -64,7 +63,7 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
     inbuf  = baseinbuf + iptime*tstride;
 #endif
     outbuf = baseoutbuf + iptime*istride;
-    for (size_t ichan=0; ichan < nchan; ichan+=1)
+    for (size_t ichan=0; ichan < ctx->obsnchan; ichan+=1)
     {
       //memcpy(outbuf, inbuf, istride_m);
       //inbuf += istride;
@@ -81,7 +80,9 @@ int transpose(db_transpose_t * ctx, const void* in, void* out)
 static void *run(hashpipe_thread_args_t *args)
 {
   hpguppi_input_databuf_t *indb  = (hpguppi_input_databuf_t *)args->ibuf;
+  unsigned char in_n_block = indb->header.n_block;
   hpguppi_input_databuf_t *outdb = (hpguppi_input_databuf_t *)args->obuf;
+  unsigned char out_n_block = outdb->header.n_block;
 
   hashpipe_status_t st = args->st;
   const char* status_key = args->thread_desc->skey;
@@ -107,11 +108,7 @@ static void *run(hashpipe_thread_args_t *args)
   {
     hashpipe_status_lock_safe(&st);
     hputi4(st.buf, "TRBLKIN", curblock_in);
-    hputs(st.buf, status_key, "waiting");
     hputi4(st.buf, "TRBLKOUT", curblock_out);
-
-    hgeti4(st.buf, "OBSNCHAN", &ctx.obsnchan);
-    hgeti4(st.buf, "PIPERBLK", &ctx.piperblk);
     hashpipe_status_unlock_safe(&st);
 
     // Waiting for input
@@ -123,14 +120,13 @@ static void *run(hashpipe_thread_args_t *args)
         hashpipe_status_lock_safe(&st);
 	      hputs(st.buf, status_key, "inblocked");
     	  hashpipe_status_unlock_safe(&st);
-	      continue;
       }
       else
       {
-        hashpipe_error(thread_name, "error waiting for input buffer, rv: %i", rv);
-	      //pthread_exit(NULL);
-	      //break;
-	continue;
+        hashpipe_error(thread_name, "error waiting for input buffer, rv: %i"
+                      "\t curblock_in: %d", rv, curblock_in);
+	      pthread_exit(NULL);
+	      break;
       }
     }
 
@@ -143,23 +139,24 @@ static void *run(hashpipe_thread_args_t *args)
         hashpipe_status_lock_safe(&st);
 	      hputs(st.buf, status_key, "outblocked");
        	hashpipe_status_unlock_safe(&st);
-	      continue;
       }
       else
       {
-        hashpipe_error(thread_name, "error waiting for output buffer, rv: %i", rv);
-        //pthread_exit(NULL);
-	      //break;
-	continue;
+        hashpipe_error(thread_name, "error waiting for output buffer, rv: %i"
+                      "\t curblock_out: %d", rv, curblock_out);
+        pthread_exit(NULL);
+	      break;
       }
         
     }
 
     hashpipe_status_lock_safe(&st);
     hputs(st.buf, status_key, "transposing");
-
     hashpipe_status_unlock_safe(&st);
+
     // create context
+    hgeti4(hpguppi_databuf_header(indb, curblock_in), "OBSNCHAN", &ctx.obsnchan);
+    hgeti4(hpguppi_databuf_header(indb, curblock_in), "PIPERBLK", &ctx.piperblk);
   
     // copy across the header
     memcpy(hpguppi_databuf_header(outdb, curblock_out), 
@@ -170,10 +167,10 @@ static void *run(hashpipe_thread_args_t *args)
 		    hpguppi_databuf_data(outdb, curblock_out));
     
     hpguppi_input_databuf_set_free(indb, curblock_in);
-    curblock_in  = (curblock_in + 1) % indb->header.n_block;
+    curblock_in  = (curblock_in + 1) % in_n_block;
 
     hpguppi_input_databuf_set_filled(outdb, curblock_out);
-    curblock_out = (curblock_out + 1) % outdb->header.n_block;
+    curblock_out = (curblock_out + 1) % out_n_block;
   }
 
   hashpipe_info(thread_name, "returning");
