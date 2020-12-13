@@ -836,7 +836,6 @@ static void *run(hashpipe_thread_args_t * args)
 
         // Tally npacket_totals
         npacket_total += 1;
-        obs_npacket_total += (state == RECORD ? 1 : 0);
         // count ndrop only when a block is finalised, lest it is filled out of order.
         
         if (state != RECORD && flag_obs_end != 1){
