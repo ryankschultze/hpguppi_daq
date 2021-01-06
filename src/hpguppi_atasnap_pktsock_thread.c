@@ -670,6 +670,7 @@ static void *run(hashpipe_thread_args_t * args)
 
     char waiting=-1;
     enum run_states state = IDLE;
+    uint32_t subsequent_state_idle_count = 0;
     char flag_state_update = 0;
     char flag_obs_end = 0;
 
@@ -790,26 +791,31 @@ static void *run(hashpipe_thread_args_t * args)
         switch(state_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
           case IDLE:// If should IDLE, 
             flag_state_update = (state != IDLE ? 1 : 0);// flag state update
-    
-            if(state == RECORD){//and recording, finalise block
+            subsequent_state_idle_count += (state == RECORD ? 1 : 0);
+            if(state == RECORD && subsequent_state_idle_count > 100){//and recording, finalise block
               flag_obs_end = 1;
-              // first_pkt_seq_num = 0; // rather reset after finalisation of block
+              // first_pkt_seq_num = 0; // reset after finalisation of block
+              state = IDLE;
             }
-            state = IDLE;
+            else if(state == ARMED){
+              state = IDLE;
+            }
             break;
           case RECORD:// If should RECORD, and not recording, flag obs_start
-            if (state != RECORD){
+            subsequent_state_idle_count = 0;
+            if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
               flag_state_update = 1;
               // flag_obs_start = flag_state_update;
               first_pkt_seq_num = pkt_seq_num;
               ata_snap_obs_info_read(st, &obs_info);
-              state = (ata_snap_obs_info_valid(obs_info) ? RECORD : IDLE);// Only enter recording mode if obs_params are valid
               obs_npacket_total = 0;
               obs_ndrop_total = 0;
               update_stt_status_keys(st, state, pkt_seq_num);
+              state = RECORD;
             }
             break;
           case ARMED:// If should ARM,
+            subsequent_state_idle_count = 0;
             flag_state_update = (state != ARMED ? 1 : 0);// flag state update
             state = ARMED;
           default:
@@ -852,6 +858,8 @@ static void *run(hashpipe_thread_args_t * args)
             if(state == RECORD || flag_obs_end){
               // Finalize first working block
               finalize_block(wblk);
+            }
+            if(!flag_obs_end){
               // Update ndrop counter
               obs_ndrop_total += wblk->ndrop;
               obs_npacket_total += wblk->npacket;
