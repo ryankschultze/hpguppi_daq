@@ -83,6 +83,12 @@
 // to disk).
 
 enum run_states {IDLE, ARMED, RECORD};
+enum pkt_obs_code { PKT_OBS_OK=0,
+                    PKT_OBS_IDX,
+                    PKT_OBS_FENG,
+                    PKT_OBS_SCHAN,
+                    PKT_OBS_STREAM
+                  };
 
 // These can be re-enabled once they are used
 #if 0
@@ -237,6 +243,33 @@ static void wait_for_block_free(const struct datablock_stats * d,
     memcpy(datablock_stats_header(d), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
   }
   hashpipe_status_unlock_safe(st);
+}
+
+unsigned check_pkt_observability(
+    const struct ata_snap_obs_info * ata_oi,
+    struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
+{
+  const uint64_t pkt_idx = ATA_SNAP_PKT_NUMBER(ata_pkt);
+  if(pkt_idx < obs_start_pktidx){
+    hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx\n", pkt_idx, obs_start_pktidx);
+    return PKT_OBS_IDX;
+  }
+  const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
+  if(feng_id >= ata_oi->nants){
+    hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants\n", feng_id, ata_oi->nants);
+    return PKT_OBS_FENG;
+  }
+  const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
+  if(pkt_schan < ata_oi->schan){
+    hashpipe_error(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan\n", pkt_schan, ata_oi->schan);
+    return PKT_OBS_SCHAN;
+  }
+  const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan; 
+  if(stream >= ata_oi->nstrm){
+    hashpipe_error(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm\n", stream, ata_oi->nstrm);
+    return PKT_OBS_STREAM;
+  }
+  return PKT_OBS_OK;
 }
 
 // The copy_packet_data_to_databuf() function does what it says: copies packet
@@ -929,9 +962,27 @@ static void *run(hashpipe_thread_args_t * args)
             wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
 
             // Copy packet data to data buffer of working block
-            if (1){
-              copy_packet_data_to_databuf(wblk+wblk_idx,
-                  &obs_info, ata_snap_pkt, first_pkt_seq_num);
+            switch(check_pkt_observability(&obs_info, ata_snap_pkt, first_pkt_seq_num)){
+              case PKT_OBS_OK:
+                copy_packet_data_to_databuf(wblk+wblk_idx,
+                    &obs_info, ata_snap_pkt, first_pkt_seq_num);
+                break;
+              case PKT_OBS_IDX:
+                break;
+              case PKT_OBS_FENG:
+                break;
+              case PKT_OBS_SCHAN:
+                hashpipe_status_lock_safe(st);
+                hputs(st->buf, "OBSINFO", "INVALID SCHAN");
+                hashpipe_status_unlock_safe(st);
+                break;
+              case PKT_OBS_STREAM:
+                hashpipe_status_lock_safe(st);
+                hputs(st->buf, "OBSINFO", "INVALID NSTRM");
+                hashpipe_status_unlock_safe(st);
+                break;
+              default:
+                break;
             }
 
             // Count packet for block and for processing stats
