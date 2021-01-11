@@ -19,11 +19,18 @@ case $cores_per_cpu in
     # 5432 1098 7654 3210
     # ---- ---- ---- ----
     # 0000 1110 1100 0000 = 0x0ec0
+    NUMABIND0=1
+    DATADIR0=/mnt/buf0
+    NUMABIND1=1
+    DATADIR0=/mnt/buf0
     NET0CPU=9
     OUT0CPU=10
+    TSP0MSK=63
+    BINDHOST0=eth4
     NET1CPU=6
     OUT1CPU=7
-    MASK=0x0ec0
+    TSP1MSK=63
+    BINDHOST1=eth5
     ;;
   8)
     # We use a dual octa-core CPU system with everything on the second socket (CPUs 8-15),
@@ -33,13 +40,42 @@ case $cores_per_cpu in
     # 5432 1098 7654 3210
     # ---- ---- ---- ----
     # 1111 1110 0000 0000 = 0xfe00
+    NUMABIND0=1
+    DATADIR0=/mnt/buf0
+    NUMABIND1=1
+    DATADIR0=/mnt/buf0
     NET0CPU=8
     OUT0CPU=9
-    TPS0MSK=61440 #49152 #3072
+    TPS0MSK=30720 #59392 #30720 #61440 #57344 #49152
+    BINDHOST0=ens6d1
     NET1CPU=13
     OUT1CPU=14
     TPS1MSK=61440
-    MASK=0xfe00
+    BINDHOST1=ens6d0
+    ;;
+  16)
+    # We use a dual 16-core CPU system with each socket having dedicated
+    # NICs and mounts.  This leads to the following CPU mask
+    # (0s for instance 0, 1s for instance 1):
+    #
+    # 3322 2222 2222 2222 1111 1100 0000 0000
+    # 1098 7654 3210 9876 5432 1098 7654 3210
+    # ---- ---- ---- ---- ---- ---- ---- ----
+    # 1111 1111 1111 1111 0000 0000 0000 0000 = 0xffff0000
+    NUMABIND0=1
+    DATADIR0=/mnt/buf0
+    NET0CPU=16
+    OUT0CPU=17
+    # TPS0MSK=3932160
+    TPS0MSK=133693440
+    BINDHOST0=enp97s0f1
+    NUMABIND1=0
+    DATADIR1=/mnt/buf1
+    NET1CPU=1
+    OUT1CPU=2
+    # TPS1MSK=120
+    TPS1MSK=2040
+    BINDHOST1=enp225s0f1
     ;;
   *)
     echo "$cores_per_cpu cores per cpu is not yet supported by $0"
@@ -51,33 +87,38 @@ instances=(
   # Setup parameters for two instances.
   #
   #
-  #                             bind     NET       OUT
-  #  dir                mask    host     CPU       CPU
-  "/home/sonata/logs  $TPS0MSK  eth4  $NET0CPU  $OUT0CPU"  # Instance 0, eth4
-  "/home/sonata/logs  $TPS1MSK  eth5  $NET1CPU  $OUT1CPU"  # Instance 1, eth5
+  #              cpu                bind          NET       OUT     log
+  #  dir        socket    mask      host          CPU       CPU     dir
+  "$DATADIR0  $NUMABIND0 $TPS0MSK  $BINDHOST0  $NET0CPU  $OUT0CPU  /home/sonata/logs"  # Instance 0
+  "$DATADIR1  $NUMABIND1 $TPS1MSK  $BINDHOST1  $NET1CPU  $OUT1CPU  /home/sonata/logs"  # Instance 1
 )
 
 function init() {
   instance=$1
   dir=$2
-  mask=$3
-  bindhost=$4
-  netcpu=$5
-  outcpu=$6
-  shift 6
+  numabind=$3
+  mask=$4
+  bindhost=$5
+  netcpu=$6
+  outcpu=$7
+  workdir=$8
+  shift 8
 
-  workdir="${dir}"
+  if [ $numabind -lt 0 ]
+  then
+    numabind=$instance
+  fi
 
   if [ -z "${dir}" ]
   then
     echo "Invalid instance number '${instance:-[unspecified]}' (ignored)"
     return 1
   #elif [ "${dir}" == "/buf0" ]
-  elif [ "${dir%/buf?}" != "${dir}" ]
-  then
-    # Don't want to output messages to NVMe directory
-    echo "setting workdir to /tmp"
-    workdir=/tmp
+  # elif [ "${dir%/buf?}" != "${dir}" ]
+  # then
+  #   # Don't want to output messages to NVMe directory
+  #   echo "setting workdir to /tmp"
+  #   workdir=/tmp
   fi
 
   if [ -z "$outcpu" ]
@@ -92,7 +133,16 @@ function init() {
     return 1
   fi
 
-  echo numactl --cpunodebind=1 --membind=1 \
+  if test -f "${workdir}/${hostname}.$instance.out"; then
+    echo "Trimming log ${workdir}/${hostname}.$instance.out"
+    tail -n 100000 ${workdir}/${hostname}.$instance.out > ${workdir}/${hostname}.$instance.out
+  fi
+  if test -f "${workdir}/${hostname}.$instance.err"; then
+    echo "Trimming log ${workdir}/${hostname}.$instance.err"
+    tail -n 100000 ${workdir}/${hostname}.$instance.err > ${workdir}/${hostname}.$instance.err
+  fi
+
+  echo numactl --cpunodebind=$numabind --membind=$numabind \
   $perf \
   ${PREFIX_EXEC}hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
@@ -103,7 +153,7 @@ function init() {
     -m $mask $work_thread \
     -c $outcpu $out_thread
 
-  numactl --cpunodebind=1 --membind=1 \
+  numactl --cpunodebind=$numabind --membind=$numabind \
   $perf \
   ${PREFIX_EXEC}hashpipe -p ${hpguppi_plugin:-hpguppi_daq} -I $instance \
     -o BINDHOST=${bindhost}${vlan} \
@@ -209,8 +259,7 @@ then
   instances[1]="${instances[1]/eth5/ens6d1}"
   bindport=0
   instance_ports[0]=10000
-
-  instance_ports[1]=9000
+  instance_ports[1]=10000
   # instances[1]="${instances[0]/datax/mnt/buf0}"
   # instances[1]="${instances[1]/datax2/mnt/buf1}"
   # For initial testing...
