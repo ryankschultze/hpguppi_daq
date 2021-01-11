@@ -5,33 +5,35 @@ import os
 import glob
 import re
 
-def get_hashpipe_key_value(key):
-	return subprocess.run(['hashpipe_check_status', '--query='+key], capture_output=True).stdout
+def get_hashpipe_key_value(key, instance=0):
+	return subprocess.run(['hashpipe_check_status', '--instance='+str(instance), '--query='+key], capture_output=True).stdout
 
-def get_hashpipe_pulse():
-	return get_hashpipe_key_value('DAQPULSE')
+def get_hashpipe_pulse(instance=0):
+	return get_hashpipe_key_value('DAQPULSE', instance)
 
-def block_until_pulse_change(maxstale=20, silent=False):
+def block_until_pulse_change(instance=0, maxstale=20, silent=False):
 	stalecount = 0
-	stalepulse = get_hashpipe_pulse()
+	stalepulse = get_hashpipe_pulse(instance)
 	while True:
 		try:
-			stalepulse.decode()
-			break
+			pulse_string = stalepulse.decode()
+			# Validate a pulse that is decoded to UTF
+			if pulse_string[0:3] in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+				break
 		except:
 			stalecount += 1
 		if not silent:
 			print('\rDAQPULSE not a UTF-8 string'+'.'*(stalecount%5), end=' '*5)
 		time.sleep(2)
-		if stalecount > 10:
+		if stalecount > 5:
 			if not silent:
-				print('\rExiting after excessive waiting for DAQPULSE to be set. (20 seconds)')
+				print('\rExiting after excessive waiting for DAQPULSE to be set. (10 seconds)')
 			return False
-		stalepulse = get_hashpipe_pulse()
+		stalepulse = get_hashpipe_pulse(instance)
 
 	stalecount = 0
 
-	while get_hashpipe_pulse() == stalepulse:
+	while get_hashpipe_pulse(instance) == stalepulse:
 		if not silent:
 			print('\rwaiting for DAQPULSE to change'+'.'*(stalecount%5), end=' '*5)
 		time.sleep(1)
@@ -46,19 +48,22 @@ def block_until_pulse_change(maxstale=20, silent=False):
 		return False
 	return True
 
-def start_hashpipe(bindhost):
+def start_hashpipe(instance=0, bindhost=None):
 	"""Does not directly kill existing hashpipes"""
 	print('\nStarting hashpipe (', bindhost, ')', sep='')
-	subprocess.run(['sudo', '../src/init_atasnap_hashpipe.sh', '-o', 'BINDHOST='+bindhost]) 
+	cmd = ['sudo', '../src/init_atasnap_hashpipe.sh', str(instance)]
+	if bindhost is not None:
+		cmd.append(bindhost) 
+	subprocess.run(cmd) 
 
 def kill_hashpipes():
 	print('\nKilling existing hashpipes')
 	subprocess.run(['sudo', 'pkill', '-e', '-f', '.*/hashpipe\s.*'])
 
-def start_redis_gateway():
-	subprocess.run(['../src/init_redis_gateway.sh']) # assume it will kill existing gateways
+def start_redis_gateway(instance=0):
+	subprocess.run(['../src/init_redis_gateway.sh', str(instance)]) # assume it will kill existing gateways
 
-def kill_hashpipe_relevant():
+def kill_hashpipe_related():
 	print('\nKilling existing hashpipe-related processes')
 	subprocess.run(['sudo', 'pkill', '-e', '-f', '.*hashpipe.*'])
 

@@ -15,6 +15,8 @@ parser = argparse.ArgumentParser(description='Starts up a hashpipe, emulated loc
 # hashpipe status arguments
 parser.add_argument('-P', '--projid', type=str, default='tx_test',
                     help='The PROJID hashpipe status value')
+parser.add_argument('-I', '--instance', type=int, default=0,
+                    help='Instance ID of the hashpipe.')
 # transmission arguments
 parser.add_argument('-p', '--port', type=int, default=10000,
                     help='UDP port to which data should be sent')
@@ -66,11 +68,11 @@ for hashpipe_start_count in range(2):
     if not args.reusehashpipe:
         ##### Start Hashpipe ##### 
         print('\n######Starting Hashpipe#####\n')
-        start_hashpipe('lo') # assume it will kill existing hashpipes
+        start_hashpipe(args.instance, 'lo') # assume it will kill existing hashpipes
         time.sleep(2)
 
     ##### Start Hashpipe Gateway #####
-    start_redis_gateway()
+    start_redis_gateway(args.instance)
     time.sleep(3)
 
     if not block_until_pulse_change(20):
