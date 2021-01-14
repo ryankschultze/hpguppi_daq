@@ -843,7 +843,7 @@ static void *run(hashpipe_thread_args_t * args)
               ata_snap_obs_info_read(st, &obs_info);
               obs_npacket_total = 0;
               obs_ndrop_total = 0;
-              update_stt_status_keys(st, state, pkt_seq_num);
+              update_stt_status_keys(st, state, obs_start_pktidx);
               state = RECORD;
             }
             break;
