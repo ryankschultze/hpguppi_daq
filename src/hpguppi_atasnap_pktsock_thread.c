@@ -695,7 +695,7 @@ static void *run(hashpipe_thread_args_t * args)
 
     /* Misc counters, etc */
     uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, lastnpacket_total=0;
-    uint64_t obs_npacket_total=0, obs_ndrop_total=0;
+    uint64_t obs_npacket_total=0, obs_ndrop_total=0, obs_block_discontinuities=0;
 
     uint64_t pkt_seq_num, first_pkt_seq_num=0;
     uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
@@ -749,6 +749,7 @@ static void *run(hashpipe_thread_args_t * args)
                 hashpipe_status_lock_safe(st);
                 {
                     hputi8(st->buf, "NPKTS", npacket_total);
+                    hputi8(st->buf, "OBSDSCNT", obs_block_discontinuities);
                     hputi8(st->buf, "OBSNPKTS", obs_npacket_total);
                     hputi8(st->buf, "OBSNDROP", obs_ndrop_total);
                     hputi8(st->buf, "NDROP", ndrop_total);
@@ -843,6 +844,7 @@ static void *run(hashpipe_thread_args_t * args)
               ata_snap_obs_info_read(st, &obs_info);
               obs_npacket_total = 0;
               obs_ndrop_total = 0;
+              obs_block_discontinuities = 0;
               update_stt_status_keys(st, state, obs_start_pktidx);
               state = RECORD;
             }
@@ -917,7 +919,7 @@ static void *run(hashpipe_thread_args_t * args)
             hashpipe_warn(thread_name,
                 "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
                 pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
-
+            obs_block_discontinuities++;
             // Re-init working blocks for block number of current packet's block,
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
