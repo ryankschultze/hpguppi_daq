@@ -931,10 +931,6 @@ static void *run(hashpipe_thread_args_t * args)
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
-            // Check start/stop
-            update_stt_status_keys(st, state, pkt_seq_num);
-            // This happens after discontinuities (e.g. on startup), so don't warn about
-            // it.
         }
 
         // Check observation state
