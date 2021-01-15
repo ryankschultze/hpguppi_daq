@@ -964,15 +964,19 @@ static void *run(hashpipe_thread_args_t * args)
                     &obs_info, ata_snap_pkt, first_pkt_seq_num);
                 break;
               case PKT_OBS_IDX:
+                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_IDX");
                 break;
               case PKT_OBS_FENG:
+                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_FENG");
                 break;
               case PKT_OBS_SCHAN:
+                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_SCHAN");
                 hashpipe_status_lock_safe(st);
                 hputs(st->buf, "OBSINFO", "INVALID SCHAN");
                 hashpipe_status_unlock_safe(st);
                 break;
               case PKT_OBS_STREAM:
+                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_STREAM");
                 hashpipe_status_lock_safe(st);
                 hputs(st->buf, "OBSINFO", "INVALID NSTRM");
                 hashpipe_status_unlock_safe(st);
@@ -983,6 +987,9 @@ static void *run(hashpipe_thread_args_t * args)
 
             // Count packet for block and for processing stats
             wblk[wblk_idx].npacket++;
+        }
+        else{
+          hashpipe_info(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
         }
 
         // last_pkt_seq_num = pkt_seq_num;
