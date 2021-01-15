@@ -50,6 +50,7 @@ hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
 # Installed scripts
 dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \
 		   hpguppi_init.sh           \
+		   init_atasnap_hashpipe.sh           \
 		   kill_hpguppi.sh           \
 		   start_hpguppi.sh
 
