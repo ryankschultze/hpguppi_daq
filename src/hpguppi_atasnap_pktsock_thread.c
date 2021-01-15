@@ -839,7 +839,7 @@ static void *run(hashpipe_thread_args_t * args)
             if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
               flag_state_update = 1;
               // flag_obs_start = flag_state_update;
-              first_pkt_seq_num = pkt_seq_num;
+              first_pkt_seq_num = obs_start_pktidx;
               ata_snap_obs_info_read(st, &obs_info);
               obs_npacket_total = 0;
               obs_ndrop_total = 0;
@@ -931,10 +931,6 @@ static void *run(hashpipe_thread_args_t * args)
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
-            // Check start/stop
-            update_stt_status_keys(st, state, pkt_seq_num);
-            // This happens after discontinuities (e.g. on startup), so don't warn about
-            // it.
         }
 
         // Check observation state
