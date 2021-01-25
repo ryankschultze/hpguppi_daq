@@ -274,17 +274,14 @@ unsigned check_pkt_observability(
 
 // The copy_packet_data_to_databuf() function does what it says: copies packet
 // data into a data buffer. This data buffer ought to be passed on to a transposition
-// thread, that produces the GUPPI RAW blockk layout.
+// thread, that produces the GUPPI RAW block layout.
 //
 // The data buffer block is identified by the datablock_stats structure pointed to
-// by the bi parameter.
+// by the 'd' parameter.
 //
-// The p_oi parameter points to the observation's obs_info data.
+// The 'ata_oi' parameter points to the observation's obs_info data.
 //
-// The p_fei parameter points to an ata_snap_feng_info structure containing the
-// packet's metadata.
-//
-// The p_payload parameter points to the payload of the packet.
+// The ata_pkt parameter points to the packet.
 //
 // This is for packets in [channel (slowest), time, pol (fastest)] order.  In
 // other words:
@@ -296,7 +293,7 @@ unsigned check_pkt_observability(
 //
 // Each packet is copied as whole, and thusly the databuf has no contiguity across
 // the time samples.
-// The packet sequence iterates through OBSNCHAN/PKTNCHAN first, then PKT_IDX, 
+// The packet sequence iterates through OBSNCHAN//PKTNCHAN first, then PKT_IDX, 
 // which is to say that packet P+1 typically has the same time
 //
 // static char copy_packet_printed = 0;
@@ -933,6 +930,8 @@ static void *run(hashpipe_thread_args_t * args)
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
+            // Immediately update STT keys to ensure that the rawdisk thread uses a new stem
+            update_stt_status_keys(st, state, obs_start_pktidx);
         }
 
         // Check observation state
