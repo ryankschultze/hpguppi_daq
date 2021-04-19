@@ -831,6 +831,7 @@ static void *run(hashpipe_thread_args_t * args)
               flag_obs_end = 1;
               // first_pkt_seq_num = 0; // reset after finalisation of block
               state = IDLE;
+              update_stt_status_keys(st, state, pkt_seq_num);
             }
             else if(state == ARMED){
               state = IDLE;
@@ -850,8 +851,8 @@ static void *run(hashpipe_thread_args_t * args)
               obs_npacket_total = 0;
               obs_ndrop_total = 0;
               obs_block_discontinuities = 0;
-              update_stt_status_keys(st, state, obs_start_pktidx);
               state = RECORD;
+              update_stt_status_keys(st, state, obs_start_pktidx);
             }
             break;
           case ARMED:// If should ARM,
@@ -907,8 +908,6 @@ static void *run(hashpipe_thread_args_t * args)
             }
             // Shift working blocks
             block_stack_push(wblk, n_wblock);
-            // Update STT keys
-            update_stt_status_keys(st, state, pkt_seq_num);
             // Increment last working block
             increment_block(&wblk[n_wblock-1], pkt_blk_num);
             // Wait for new databuf data block to be free
