@@ -702,6 +702,8 @@ static void *run(hashpipe_thread_args_t * args)
     enum run_states state = IDLE;
     uint32_t subsequent_state_idle_count = 0;
     char flag_state_update = 0;
+    char  PKT_OBS_IDX_flagged, PKT_OBS_FENG_flagged, 
+          PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged;
     char flag_obs_end = 0;
 
     /* Time parameters */
@@ -836,6 +838,10 @@ static void *run(hashpipe_thread_args_t * args)
             subsequent_state_idle_count = 0;
             if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
               flag_state_update = 1;
+              PKT_OBS_IDX_flagged = 0;
+              PKT_OBS_FENG_flagged = 0;
+              PKT_OBS_SCHAN_flagged = 0;
+              PKT_OBS_STREAM_flagged = 0;
               // flag_obs_start = flag_state_update;
               first_pkt_seq_num = obs_start_pktidx;
               ata_snap_obs_info_read(st, &obs_info);
@@ -965,19 +971,31 @@ static void *run(hashpipe_thread_args_t * args)
                     &obs_info, ata_snap_pkt, first_pkt_seq_num);
                 break;
               case PKT_OBS_IDX:
-                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_IDX");
+                if(!PKT_OBS_IDX_flagged){
+                  PKT_OBS_IDX_flagged = 1;
+                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_IDX");
+                }
                 break;
               case PKT_OBS_FENG:
-                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_FENG");
+                if(!PKT_OBS_FENG_flagged){
+                  PKT_OBS_FENG_flagged = 1;
+                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_FENG");
+                }
                 break;
               case PKT_OBS_SCHAN:
-                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_SCHAN");
+                if(!PKT_OBS_SCHAN_flagged){
+                  PKT_OBS_SCHAN_flagged = 1;
+                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_SCHAN");
+                }
                 hashpipe_status_lock_safe(st);
                 hputs(st->buf, "OBSINFO", "INVALID SCHAN");
                 hashpipe_status_unlock_safe(st);
                 break;
               case PKT_OBS_STREAM:
-                hashpipe_info(thread_name, "Packet ignored: PKT_OBS_STREAM");
+                if(!PKT_OBS_STREAM_flagged){
+                  PKT_OBS_STREAM_flagged = 1;
+                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_STREAM");
+                }
                 hashpipe_status_lock_safe(st);
                 hputs(st->buf, "OBSINFO", "INVALID NSTRM");
                 hashpipe_status_unlock_safe(st);
