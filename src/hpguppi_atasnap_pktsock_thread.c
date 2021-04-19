@@ -535,49 +535,51 @@ static int init(hashpipe_thread_args_t *args)
     hashpipe_status_t *st = &args->st;
 
     hashpipe_status_lock_safe(st);
-    // Get network parameters (BINDHOST, BINDPORT, PKTFMT)
-    hpguppi_read_pktsock_params(st->buf, p_psp);
-    // Get info from status buffer if present (no change if not present)
-    hgeti4(st->buf, "BLOCSIZE", &blocsize);
-    hgeti4(st->buf, "DIRECTIO", &directio);
-    hgeti4(st->buf, "NBITS", &nbits);
-    hgeti4(st->buf, "NPOL", &npol);
-    hgeti4(st->buf, "PKTNCHAN", &pktnchan);
-    hgeti4(st->buf, "NSTRM", &nstrm);
-    hgeti4(st->buf, "NANTS", &nant);
-    hgetr8(st->buf, "OBSBW", &obsbw);
-    hgeti4(st->buf, "OBSSCHAN", &obsschan);
-    hgeti4(st->buf, "OVERLAP", &overlap);
-    hgets(st->buf, "OBS_MODE", sizeof(obs_mode), obs_mode);
+    {
+      // Get network parameters (BINDHOST, BINDPORT, PKTFMT)
+      hpguppi_read_pktsock_params(st->buf, p_psp);
+      // Get info from status buffer if present (no change if not present)
+      hgeti4(st->buf, "BLOCSIZE", &blocsize);
+      hgeti4(st->buf, "DIRECTIO", &directio);
+      hgeti4(st->buf, "NBITS", &nbits);
+      hgeti4(st->buf, "NPOL", &npol);
+      hgeti4(st->buf, "PKTNCHAN", &pktnchan);
+      hgeti4(st->buf, "NSTRM", &nstrm);
+      hgeti4(st->buf, "NANTS", &nant);
+      hgetr8(st->buf, "OBSBW", &obsbw);
+      hgeti4(st->buf, "OBSSCHAN", &obsschan);
+      hgeti4(st->buf, "OVERLAP", &overlap);
+      hgets(st->buf, "OBS_MODE", sizeof(obs_mode), obs_mode);
 
-    // Clean any inappropriate values 
-    pktnchan = (pktnchan == 0 ? 256 : pktnchan);
-    nstrm = (nstrm == 0 ? 1 : nstrm);
-    nant = (nant == 0 ? 1 : nant);
-    obsnchan = pktnchan*nstrm*nant;
+      // Clean any inappropriate values 
+      pktnchan = (pktnchan == 0 ? 256 : pktnchan);
+      nstrm = (nstrm == 0 ? 1 : nstrm);
+      nant = (nant == 0 ? 1 : nant);
+      obsnchan = pktnchan*nstrm*nant;
 
-    // Calculate TBIN
-    tbin = obsnchan / obsbw / 1e6;
-    // Store bind host/port info etc in status buffer
-    hputs(st->buf, "BINDHOST", p_psp->ifname);
-    hputi4(st->buf, "BINDPORT", p_psp->port);
-    hputs(st->buf, "PKTFMT", p_psp->packet_format);
-    hputi4(st->buf, "BLOCSIZE", blocsize);
-    hputi4(st->buf, "DIRECTIO", directio);
-    hputi4(st->buf, "NBITS", nbits);
-    hputi4(st->buf, "NPOL", npol);
-    hputi4(st->buf, "PKTNCHAN", pktnchan);
-    hputi4(st->buf, "NSTRM", nstrm);
-    hputi4(st->buf, "NANTS", nant);
-    hputr8(st->buf, "OBSBW", obsbw);
-    hputi4(st->buf, "OBSNCHAN", obsnchan);
-    hputi4(st->buf, "OBSSCHAN", obsschan);
-    hputi4(st->buf, "OVERLAP", overlap);
-    hputr8(st->buf, "TBIN", tbin);
-    hputs(st->buf, "OBS_MODE", obs_mode);
-    // Data are in time-major order (i.e. time dimension changes faster than
-    // channel dimension), so specify that data are NOT in channel major order.
-    hputi4(st->buf, "CHANMAJ", 0);
+      // Calculate TBIN
+      tbin = obsnchan / obsbw / 1e6;
+      // Store bind host/port info etc in status buffer
+      hputs(st->buf, "BINDHOST", p_psp->ifname);
+      hputi4(st->buf, "BINDPORT", p_psp->port);
+      hputs(st->buf, "PKTFMT", p_psp->packet_format);
+      hputi4(st->buf, "BLOCSIZE", blocsize);
+      hputi4(st->buf, "DIRECTIO", directio);
+      hputi4(st->buf, "NBITS", nbits);
+      hputi4(st->buf, "NPOL", npol);
+      hputi4(st->buf, "PKTNCHAN", pktnchan);
+      hputi4(st->buf, "NSTRM", nstrm);
+      hputi4(st->buf, "NANTS", nant);
+      hputr8(st->buf, "OBSBW", obsbw);
+      hputi4(st->buf, "OBSNCHAN", obsnchan);
+      hputi4(st->buf, "OBSSCHAN", obsschan);
+      hputi4(st->buf, "OVERLAP", overlap);
+      hputr8(st->buf, "TBIN", tbin);
+      hputs(st->buf, "OBS_MODE", obs_mode);
+      // Data are in time-major order (i.e. time dimension changes faster than
+      // channel dimension), so specify that data are NOT in channel major order.
+      hputi4(st->buf, "CHANMAJ", 0);
+    }
     hashpipe_status_unlock_safe(st);
 
     // Set up pktsock.  Make frame_size be a divisor of block size so that
@@ -622,7 +624,7 @@ static void *run(hashpipe_thread_args_t * args)
     pf.sub.dat_scales = NULL;
     char status_buf[HASHPIPE_STATUS_TOTAL_SIZE];
     hashpipe_status_lock_safe(st);
-    memcpy(status_buf, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+      memcpy(status_buf, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
     hashpipe_status_unlock_safe(st);
     hpguppi_read_obs_params(status_buf, &gp, &pf);
     // Structure to hold observation info, init all fields to invalid values
