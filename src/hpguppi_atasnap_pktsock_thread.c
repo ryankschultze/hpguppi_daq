@@ -697,7 +697,6 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t obs_npacket_total=0, obs_ndrop_total=0, obs_block_discontinuities=0;
 
     uint64_t pkt_seq_num, first_pkt_seq_num=0;
-    uint64_t blk_start_pkt_seq = 0, blk_stop_pkt_seq = 0;
     uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
     char waiting=-1;
@@ -870,14 +869,22 @@ static void *run(hashpipe_thread_args_t * args)
         if(pkt_blk_num != last_pkt_blk_num){
 
           last_pkt_blk_num = pkt_blk_num;
-          blk_start_pkt_seq = pkt_seq_num;
-          blk_stop_pkt_seq = pkt_seq_num + obs_info.pktidx_per_block;
 
           hashpipe_status_lock_safe(st);
-          hputi8(st->buf, "PKTIDX", pkt_seq_num);
           hputi8(st->buf, "BLKIDX", pkt_blk_num);
-          hputi8(st->buf, "PKTSTART", blk_start_pkt_seq);
-          hputi8(st->buf, "PKTSTOP", blk_stop_pkt_seq);
+          hputi8(st->buf, "PKTIDX", pkt_seq_num);
+          if(flag_state_update && state == RECORD){
+            hputi8(st->buf, "PKTSTART", first_pkt_seq_num);
+            for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+              init_datablock_stats(wblk+wblk_idx, NULL, -1,
+                  pkt_blk_num+wblk_idx,
+                  obs_info.pkt_per_block);
+            }
+          }
+          else{
+            hputi8(st->buf, "PKTSTART", pkt_seq_num);
+          }
+          hputi8(st->buf, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
           hashpipe_status_unlock_safe(st);
         }
 
