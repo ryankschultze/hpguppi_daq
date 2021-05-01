@@ -691,6 +691,7 @@ static void *run(hashpipe_thread_args_t * args)
         init_datablock_stats(wblk+wblk_idx, db, wblk_idx, -10, obs_info.pkt_per_block);
         wait_for_block_free(wblk+wblk_idx, st, status_key);
     }
+    char *datablock_header;
 
     /* Misc counters, etc */
     uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, lastnpacket_total=0;
@@ -939,10 +940,11 @@ static void *run(hashpipe_thread_args_t * args)
                   obs_info.pkt_per_block);
 
               // also update the working blocks' headers
-              memcpy(datablock_stats_header(wblk+wblk_idx), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputi8(datablock_stats_header(wblk+wblk_idx), "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
+              datablock_header = datablock_stats_header(wblk+wblk_idx);
+              memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hputi8(datablock_header, "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_header, "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(datablock_header, "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
             // Immediately update STT keys to ensure that the rawdisk thread uses a new stem
             update_stt_status_keys(st, state, obs_start_pktidx);
