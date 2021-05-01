@@ -5,7 +5,11 @@
 #ifndef _HPGUPPI_TIME_H
 #define _HPGUPPI_TIME_H
 
+#include <stdio.h>
+#include <time.h>
 #include <sys/time.h>
+#include <hashpipe.h>
+#include "slalib.h"
 
 /* Compute PSRFITS-style integer MJD, integer second time of day, and
  * fractional second offset corresponding to the given timespec. */
