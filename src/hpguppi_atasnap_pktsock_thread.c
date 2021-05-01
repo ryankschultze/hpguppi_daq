@@ -366,17 +366,14 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
 //  endif
 static void update_stt_status_keys( hashpipe_status_t *st,
                                     enum run_states state,
-                                    uint64_t pktidx){
+                                    uint64_t pktidx,
+                                    struct mjd_t *mjd){
   // uint32_t pktntime = ATASNAP_DEFAULT_PKTNTIME;
   uint64_t synctime = 0;
   double chan_bw = 1.0;
 
   double realtime_secs = 0.0;
   struct timespec ts;
-
-  int    stt_imjd = 0;
-  int    stt_smjd = 0;
-  double stt_offs = 0;
 
   uint32_t sttvalid = 0;
   hashpipe_status_lock_safe(st);
@@ -401,11 +398,11 @@ static void update_stt_status_keys( hashpipe_status_t *st,
       ts.tv_sec = (time_t)(synctime + rint(realtime_secs));
       ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
 
-      get_mjd_from_timespec(&ts, &stt_imjd, &stt_smjd, &stt_offs);
+      get_mjd_from_timespec(&ts, &(mjd->stt_imjd), &(mjd->stt_smjd), &(mjd->stt_offs));
 
-      hputu4(st->buf, "STT_IMJD", stt_imjd);
-      hputu4(st->buf, "STT_SMJD", stt_smjd);
-      hputr8(st->buf, "STT_OFFS", stt_offs);
+      hputu4(st->buf, "STT_IMJD", mjd->stt_imjd);
+      hputu4(st->buf, "STT_SMJD", mjd->stt_smjd);
+      hputr8(st->buf, "STT_OFFS", mjd->stt_offs);
     }
     else if(state != RECORD && sttvalid != 0) {
       hputu4(st->buf, "STTVALID", 0);
@@ -633,6 +630,7 @@ static void *run(hashpipe_thread_args_t * args)
     struct ata_snap_obs_info obs_info;
     ata_snap_obs_info_init(&obs_info);
 
+    struct mjd_t *mjd = malloc(sizeof(struct mjd_t));
 
     int block_size = BLOCK_DATA_SIZE;
 
@@ -831,7 +829,7 @@ static void *run(hashpipe_thread_args_t * args)
               flag_obs_end = 1;
               // first_pkt_seq_num = 0; // reset after finalisation of block
               state = IDLE;
-              update_stt_status_keys(st, state, pkt_seq_num);
+              update_stt_status_keys(st, state, pkt_seq_num, mjd);
             }
             else if(state == ARMED){
               state = IDLE;
@@ -852,7 +850,7 @@ static void *run(hashpipe_thread_args_t * args)
               obs_ndrop_total = 0;
               obs_block_discontinuities = 0;
               state = RECORD;
-              update_stt_status_keys(st, state, obs_start_pktidx);
+              update_stt_status_keys(st, state, obs_start_pktidx, mjd);
             }
             break;
           case ARMED:// If should ARM,
@@ -947,7 +945,7 @@ static void *run(hashpipe_thread_args_t * args)
               hputi8(datablock_header, "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
             // Immediately update STT keys to ensure that the rawdisk thread uses a new stem
-            update_stt_status_keys(st, state, obs_start_pktidx);
+            update_stt_status_keys(st, state, obs_start_pktidx, mjd);
         }
 
         // Check observation state
