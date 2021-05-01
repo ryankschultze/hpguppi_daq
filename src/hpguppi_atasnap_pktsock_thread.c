@@ -851,6 +851,24 @@ static void *run(hashpipe_thread_args_t * args)
               obs_block_discontinuities = 0;
               state = RECORD;
               update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+
+              for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+                init_datablock_stats(wblk+wblk_idx, NULL, -1,
+                    pkt_blk_num+wblk_idx,
+                    obs_info.pkt_per_block);
+
+                // also update the working blocks' headers
+                datablock_header = datablock_stats_header(wblk+wblk_idx);
+                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+                hputi8(datablock_header, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+                hputi8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+                hputi8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
+                hputi8(datablock_header, "OBSSTART", obs_start_pktidx);
+                hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
+                hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
+                hputu4(datablock_header, "STT_SMJD", mjd->stt_smjd);
+                hputr8(datablock_header, "STT_OFFS", mjd->stt_offs);
+              }
             }
             break;
           case ARMED:// If should ARM,
