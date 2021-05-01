@@ -920,10 +920,8 @@ static void *run(hashpipe_thread_args_t * args)
             // Time to advance the blocks!!!
             // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
-            if(state == RECORD || flag_obs_end){
-              // Finalize first working block
-              finalize_block(wblk);
-            }
+            // Finalize first working block
+            finalize_block(wblk);
             if(!flag_obs_end){
               // Update ndrop counter
               obs_ndrop_total += wblk->ndrop;
