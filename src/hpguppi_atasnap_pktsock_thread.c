@@ -830,6 +830,8 @@ static void *run(hashpipe_thread_args_t * args)
               // first_pkt_seq_num = 0; // reset after finalisation of block
               state = IDLE;
               update_stt_status_keys(st, state, pkt_seq_num, mjd);
+              // update PKTIDX triggering rawdisk to close fd when this last block gets finalised.
+              hputi8(datablock_stats_header(wblk), "PKTIDX", pkt_seq_num);
             }
             else if(state == ARMED){
               state = IDLE;
