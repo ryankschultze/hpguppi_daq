@@ -27,6 +27,33 @@ typedef struct
   int piperblk;
 } db_transpose_t;
 
+//
+// The transposition is from a block of contiguous ATA SNAP packets,
+// laid out with the order:
+//    PKTIDX[0 ... PIPERBLK]  (Packet-Time)  Slowest
+//    FENG  [0 ... NANT]      (AntennaEnum)  
+//    STREAM[0 ... NSTRM]     (Packet-Freq)  Fastest
+//
+// where each SNAP packet has dimensions:
+//    [Slowest ------> Fastest]
+//    [PKTCHAN, PKTNTIME, NPOL]
+// 
+// to GUPPI RAW:
+//    [Slowest ---> Fastest]
+//    [Frequency, Time, Pol]
+//
+// The transposition takes each packet's [PKTNTIME, NPOL] slice
+// and places it correctly in the overarching block's time
+// and frequency dimension:
+//
+//    [FENG, STREAM, PKTNCHAN, PKTIDX, PKTNTIME, NPOl]
+//    [^------Frequency-----^, ^-----Time-----^, Pol ]
+//
+// This is costly because the largest slice that can be
+// copied to its final position is [PKTNTIME, NPOL],
+// which is [16, 2] = 32 bytes. This has to be repeated
+// for each channel in each packet (PKTNCHAN * PIPERBLK)
+//
 int transpose(db_transpose_t * ctx, const void* in, void* out)
 {
   // To be used in pointer arithmetic
