@@ -247,24 +247,25 @@ static void wait_for_block_free(const struct datablock_stats * d,
 
 unsigned check_pkt_observability(
     const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
+    const uint64_t pkt_idx,
+    const uint64_t obs_start_pktidx,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  )
 {
-  const uint64_t pkt_idx = ATA_SNAP_PKT_NUMBER(ata_pkt);
   if(pkt_idx < obs_start_pktidx){
     hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx\n", pkt_idx, obs_start_pktidx);
     return PKT_OBS_IDX;
   }
-  const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
   if(feng_id >= ata_oi->nants){
     hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants\n", feng_id, ata_oi->nants);
     return PKT_OBS_FENG;
   }
-  const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
   if(pkt_schan < ata_oi->schan){
     hashpipe_error(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan\n", pkt_schan, ata_oi->schan);
     return PKT_OBS_SCHAN;
   }
-  const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan; 
   if(stream >= ata_oi->nstrm){
     hashpipe_error(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm\n", stream, ata_oi->nstrm);
     return PKT_OBS_STREAM;
@@ -296,31 +297,40 @@ unsigned check_pkt_observability(
 // The packet sequence iterates through OBSNCHAN//PKTNCHAN first, then PKT_IDX, 
 // which is to say that packet P+1 typically has the same time
 //
+//  PKIDX [0 ... PIPERBLK]
+//  FENGID[0 ... NANT]
+//  STREAM[0 ... NSTRM]
+//
 // static char copy_packet_printed = 0;
 static void copy_packet_data_to_databuf(const struct datablock_stats *d,
-    const struct ata_snap_obs_info * ata_oi,
-    struct ata_snap_pkt* ata_pkt, const uint64_t obs_start_pktidx)
+    //const struct ata_snap_obs_info * ata_oi,
+    const struct ata_snap_pkt* ata_pkt,// const uint64_t obs_start_pktidx,
+    const uint64_t pkt_obs_relative_idx,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan,
+    const uint32_t fid_stride, 
+    const uint32_t time_stride,
+    const uint64_t pkt_payload_size,
+    const uint32_t pkt_ntime
+    )
 {
     // the pointer's data width means the offset is in terms of bytes
     char *dst_base = datablock_stats_data(d);
-    const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
-    const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
-    // offset pkt_idx so it the first of the observation is at the start of the block
-    const uint64_t pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt) - obs_start_pktidx;
+    // const uint16_t pkt_schan = ATA_SNAP_PKT_CHAN(ata_pkt);
+    // const uint16_t feng_id = ATA_SNAP_PKT_FENG_ID(ata_pkt);
+    // offset pkt_idx so the first of the observation is at the start of the block
+    // const uint64_t pkt_obs_relative_idx =  ATA_SNAP_PKT_NUMBER(ata_pkt) - obs_start_pktidx;
 
     // pktidx_stride is the size of a packet, i.e. pkt_payload_size
-    const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
+    // const uint64_t pkt_payload_size = ata_snap_pkt_payload_bytes(*ata_oi);
 
     // Stream is the "channel chunk" for this FID
-    const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
-
-    const uint32_t fid_stride = ata_oi->nstrm*pkt_payload_size;
-
-    const uint32_t time_stride = ata_oi->nants*fid_stride;
+    // const int32_t stream = (pkt_schan - ata_oi->schan) / ata_oi->pkt_nchan;
 
     // Advance dst_base to... 
     const uint64_t offset = 
-            ((pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime) * time_stride // First to this pktenum (time), then to  [biggest stride]
+            ((pkt_obs_relative_idx%d->pktidx_per_block)/pkt_ntime) * time_stride // First to this pktenum (time), then to  [biggest stride]
             +  feng_id * fid_stride                                         // first location of this FID, then       
             +  stream * pkt_payload_size;                                   // first location of this stream          [smallest stride]
 
@@ -331,9 +341,9 @@ static void copy_packet_data_to_databuf(const struct datablock_stats *d,
     //   printf("pkt_schan        = %d\n", pkt_schan);
     //   printf("schan            = %d\n", ata_oi->schan);
     //   printf("pkt_payload_size = %ld\n", pkt_payload_size);
-    //   printf("pktidx           = %ld\n", pkt_idx);
+    //   printf("pktidx           = %ld\n", pkt_obs_relative_idx);
     //   printf("pktidx_per_block = %u\n", d->pktidx_per_block);
-    //   printf("pkt_enumeration  = %lu\n", (pkt_idx%d->pktidx_per_block)/ata_oi->pkt_ntime);
+    //   printf("pkt_enumeration  = %lu\n", (pkt_obs_relative_idx%d->pktidx_per_block)/ata_oi->pkt_ntime);
     //   printf("time_stride      = %u\n", time_stride);
     //   printf("fid_stride       = %u\n", fid_stride);
     //   printf("stream           = %d\n", stream);
@@ -696,7 +706,11 @@ static void *run(hashpipe_thread_args_t * args)
     uint64_t obs_npacket_total=0, obs_ndrop_total=0, obs_block_discontinuities=0;
 
     uint64_t pkt_seq_num, first_pkt_seq_num=0;
-    uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
+    uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, pkt_obs_relative_idx=0;
+    uint64_t pkt_payload_size;
+    uint32_t fid_stride, time_stride;
+    int32_t stream;
+    uint16_t feng_id, pkt_schan;
 
     char waiting=-1;
     enum run_states state = IDLE;
@@ -854,6 +868,10 @@ static void *run(hashpipe_thread_args_t * args)
               state = RECORD;
               update_stt_status_keys(st, state, obs_start_pktidx, mjd);
 
+              fid_stride = obs_info.nstrm*pkt_payload_size;
+              time_stride = obs_info.nants*fid_stride;
+              pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
+
               for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
                 init_datablock_stats(wblk+wblk_idx, NULL, -1,
                     pkt_blk_num+wblk_idx,
@@ -881,7 +899,8 @@ static void *run(hashpipe_thread_args_t * args)
             break;
         }
 
-        pkt_blk_num = (pkt_seq_num - first_pkt_seq_num) / obs_info.pktidx_per_block;
+        pkt_obs_relative_idx = pkt_seq_num - first_pkt_seq_num;
+        pkt_blk_num = pkt_obs_relative_idx / obs_info.pktidx_per_block;
         // fprintf(stderr, "seq: %012ld\tblk: %06ld\n", pkt_seq_num, pkt_blk_num);
 
         // Update PKTIDX in status buffer if pkt_seq_num % obs_info.pktidx_per_block == 0
@@ -990,11 +1009,17 @@ static void *run(hashpipe_thread_args_t * args)
             wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
             wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
 
+            feng_id = ATA_SNAP_PKT_FENG_ID(ata_snap_pkt);
+            pkt_schan = ATA_SNAP_PKT_CHAN(ata_snap_pkt);
+            stream = (pkt_schan - obs_info.schan) / obs_info.pkt_nchan;
             // Copy packet data to data buffer of working block
-            switch(check_pkt_observability(&obs_info, ata_snap_pkt, first_pkt_seq_num)){
+            switch(check_pkt_observability(&obs_info,// ata_snap_pkt, 
+                    pkt_seq_num, first_pkt_seq_num, feng_id, stream, pkt_schan)){
               case PKT_OBS_OK:
                 copy_packet_data_to_databuf(wblk+wblk_idx,
-                    &obs_info, ata_snap_pkt, first_pkt_seq_num);
+                    ata_snap_pkt, pkt_obs_relative_idx,
+                    feng_id, stream, pkt_schan,
+                    fid_stride, time_stride, pkt_payload_size, obs_info.pkt_ntime);
                 break;
               case PKT_OBS_IDX:
                 if(!PKT_OBS_IDX_flagged){
