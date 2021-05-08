@@ -717,7 +717,7 @@ static void *run(hashpipe_thread_args_t * args)
     uint32_t subsequent_state_idle_count = 0;
     char flag_state_update = 0;
     char  PKT_OBS_IDX_flagged, PKT_OBS_FENG_flagged, 
-          PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged;
+          PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged, pkt_obs_code;
     char flag_obs_end = 0, flag_arm_for_obs = 0;
 
     /* Time parameters */
@@ -937,6 +937,12 @@ static void *run(hashpipe_thread_args_t * args)
           continue;
         }
 
+        feng_id = ATA_SNAP_PKT_FENG_ID(ata_snap_pkt);
+        pkt_schan = ATA_SNAP_PKT_CHAN(ata_snap_pkt);
+        stream = (pkt_schan - obs_info.schan) / obs_info.pkt_nchan;
+        pkt_obs_code = check_pkt_observability(&obs_info,// ata_snap_pkt, 
+                    pkt_seq_num, first_pkt_seq_num, feng_id, stream, pkt_schan);
+
         // Manage blocks based on pkt_blk_num
         // fprintf(stderr, "%010ld\r", pkt_blk_num);
         if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
@@ -962,8 +968,10 @@ static void *run(hashpipe_thread_args_t * args)
             clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
         }
         // Check for PKTIDX discontinuity
-        else if(pkt_blk_num + 1 < wblk[0].block_num
-                || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
+        else if(pkt_obs_code == PKT_OBS_OK && 
+                  (pkt_blk_num + 1 < wblk[0].block_num
+                || pkt_blk_num > wblk[n_wblock-1].block_num + 1)
+                ) {
             // Should only happen when transitioning into ARMED, so warn about it
             hashpipe_warn(thread_name,
                 "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
@@ -997,74 +1005,61 @@ static void *run(hashpipe_thread_args_t * args)
           continue;
         }
 
-        // Once we get here, compute the index of the working block corresponding
-        // to this packet.  The computed index may not correspond to a valid
-        // working block!
-        wblk_idx = pkt_blk_num - wblk[0].block_num;
-
         // Only copy packet data and count packet if its wblk_idx is valid
-        if(0 <= wblk_idx && wblk_idx < n_wblock) {
-            // Update block's packets per block.  Not needed for each packet, but
-            // probably just as fast to do it for each packet rather than
-            // check-and-update-only-if-needed for each packet.
+        switch(pkt_obs_code){
+          case PKT_OBS_OK:
+            // Once we get here, compute the index of the working block corresponding
+            // to this packet.  The computed index may not correspond to a valid
+            // working block!
+            wblk_idx = pkt_blk_num - wblk[0].block_num;
 
-            wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
-            wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
-
-            feng_id = ATA_SNAP_PKT_FENG_ID(ata_snap_pkt);
-            pkt_schan = ATA_SNAP_PKT_CHAN(ata_snap_pkt);
-            stream = (pkt_schan - obs_info.schan) / obs_info.pkt_nchan;
-            // Copy packet data to data buffer of working block
-            switch(check_pkt_observability(&obs_info,// ata_snap_pkt, 
-                    pkt_seq_num, first_pkt_seq_num, feng_id, stream, pkt_schan)){
-              case PKT_OBS_OK:
-                copy_packet_data_to_databuf(wblk+wblk_idx,
-                    ata_snap_pkt, pkt_obs_relative_idx,
-                    feng_id, stream, pkt_schan,
-                    fid_stride, time_stride, pkt_payload_size, obs_info.pkt_ntime);
-                break;
-              case PKT_OBS_IDX:
-                if(!PKT_OBS_IDX_flagged){
-                  PKT_OBS_IDX_flagged = 1;
-                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_IDX");
-                }
-                break;
-              case PKT_OBS_FENG:
-                if(!PKT_OBS_FENG_flagged){
-                  PKT_OBS_FENG_flagged = 1;
-                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_FENG");
-                }
-                break;
-              case PKT_OBS_SCHAN:
-                if(!PKT_OBS_SCHAN_flagged){
-                  PKT_OBS_SCHAN_flagged = 1;
-                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_SCHAN");
-                }
-                hashpipe_status_lock_safe(st);
-                hputs(st->buf, "OBSINFO", "INVALID SCHAN");
-                hashpipe_status_unlock_safe(st);
-                break;
-              case PKT_OBS_STREAM:
-                if(!PKT_OBS_STREAM_flagged){
-                  PKT_OBS_STREAM_flagged = 1;
-                  hashpipe_error(thread_name, "Packet ignored: PKT_OBS_STREAM");
-                }
-                hashpipe_status_lock_safe(st);
-                hputs(st->buf, "OBSINFO", "INVALID NSTRM");
-                hashpipe_status_unlock_safe(st);
-                break;
-              default:
-                break;
+            if(0 <= wblk_idx && wblk_idx < n_wblock) {
+              // Copy packet data to data buffer of working block
+              copy_packet_data_to_databuf(wblk+wblk_idx,
+                  ata_snap_pkt, pkt_obs_relative_idx,
+                  feng_id, stream, pkt_schan,
+                  fid_stride, time_stride, pkt_payload_size, obs_info.pkt_ntime);
+              // Count packet for block and for processing stats
+              wblk[wblk_idx].npacket++;
             }
-
-            // Count packet for block and for processing stats
-            wblk[wblk_idx].npacket++;
+            else{
+              hashpipe_error(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
+            }
+            break;
+          case PKT_OBS_IDX:
+            if(!PKT_OBS_IDX_flagged){
+              PKT_OBS_IDX_flagged = 1;
+              hashpipe_error(thread_name, "Packet ignored: PKT_OBS_IDX %d", pkt_seq_num);
+            }
+            break;
+          case PKT_OBS_FENG:
+            if(!PKT_OBS_FENG_flagged){
+              PKT_OBS_FENG_flagged = 1;
+              hashpipe_error(thread_name, "Packet ignored: PKT_OBS_FENG");
+            }
+            break;
+          case PKT_OBS_SCHAN:
+            if(!PKT_OBS_SCHAN_flagged){
+              PKT_OBS_SCHAN_flagged = 1;
+              hashpipe_error(thread_name, "Packet ignored: PKT_OBS_SCHAN");
+            }
+            hashpipe_status_lock_safe(st);
+            hputs(st->buf, "OBSINFO", "INVALID SCHAN");
+            hashpipe_status_unlock_safe(st);
+            break;
+          case PKT_OBS_STREAM:
+            if(!PKT_OBS_STREAM_flagged){
+              PKT_OBS_STREAM_flagged = 1;
+              hashpipe_error(thread_name, "Packet ignored: PKT_OBS_STREAM");
+            }
+            hashpipe_status_lock_safe(st);
+            hputs(st->buf, "OBSINFO", "INVALID NSTRM");
+            hashpipe_status_unlock_safe(st);
+            break;
+          default:
+            break;
         }
-        else{
-          hashpipe_info(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
-        }
 
-        // last_pkt_seq_num = pkt_seq_num;
         // Release frame back to ring buffer
         hashpipe_pktsock_release_frame(p_frame);
 
