@@ -901,12 +901,12 @@ static void *run(hashpipe_thread_args_t * args)
             datablock_header = datablock_stats_header(wblk+wblk_idx);
             hashpipe_status_lock_safe(st);
             {
-              hputi8(st->buf, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputi8(st->buf, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputi8(st->buf, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
               memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
             }
             hashpipe_status_unlock_safe(st);
+            hputi8(datablock_header, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+            hputi8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+            hputi8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
           }
           hashpipe_info(thread_name, "Armed wblk for observation: first_pkt_seq_num = %d", first_pkt_seq_num);
         }
