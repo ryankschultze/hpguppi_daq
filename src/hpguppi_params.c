@@ -162,20 +162,20 @@ void guppi_read_obs_mode(const char *buf, char *mode) {
 #endif // 0
 
 // Read a status buffer all of the key observation paramters
+// Expectedly called after hpguppi_read_obs_params
 void hpguppi_read_subint_params(char *buf,
                                 struct hpguppi_params *g,
                                 struct psrfits *p)
 {
     // Parse packet size, # of packets, etc.
     get_lon("PKTIDX", g->packetindex, -1L);
-    get_int("PKTSIZE", g->packetsize, 0);
     get_int("NPKT", g->n_packets, 0);
     get_int("NDROP", g->n_dropped, 0);
     get_dbl("DROPAVG", g->drop_frac_avg, 0.0);
     get_dbl("DROPTOT", g->drop_frac_tot, 0.0);
-    get_int("BLOCSIZE", g->packets_per_block, 0);
-    if (g->packetsize>0)
-        g->packets_per_block /= g->packetsize;
+    if (g->packetsize==0)
+        get_int("PKTSIZE", g->packetsize, 0);
+
     if (g->n_packets>0)
         g->drop_frac = (double) g->n_dropped / (double) g->n_packets;
     else
@@ -238,6 +238,8 @@ void hpguppi_read_subint_params(char *buf,
 
 
 // Read a status buffer all of the key observation paramters
+// Call once at observation start, then call lighter-weight 
+// hpguppi_read_subint_params
 void hpguppi_read_obs_params(char *buf,
                              struct hpguppi_params *g,
                              struct psrfits *p)
