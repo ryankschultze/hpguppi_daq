@@ -255,19 +255,19 @@ unsigned check_pkt_observability(
   )
 {
   if(pkt_idx < obs_start_pktidx){
-    hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx\n", pkt_idx, obs_start_pktidx);
+    // hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx", pkt_idx, obs_start_pktidx);
     return PKT_OBS_IDX;
   }
   if(feng_id >= ata_oi->nants){
-    hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants\n", feng_id, ata_oi->nants);
+    hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants", feng_id, ata_oi->nants);
     return PKT_OBS_FENG;
   }
   if(pkt_schan < ata_oi->schan){
-    hashpipe_error(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan\n", pkt_schan, ata_oi->schan);
+    hashpipe_error(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan", pkt_schan, ata_oi->schan);
     return PKT_OBS_SCHAN;
   }
   if(stream >= ata_oi->nstrm){
-    hashpipe_error(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm\n", stream, ata_oi->nstrm);
+    hashpipe_error(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm", stream, ata_oi->nstrm);
     return PKT_OBS_STREAM;
   }
   return PKT_OBS_OK;
