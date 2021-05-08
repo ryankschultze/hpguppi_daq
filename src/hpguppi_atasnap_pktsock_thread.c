@@ -431,12 +431,12 @@ static void update_stt_status_keys( hashpipe_status_t *st,
 //     return IDLE
 //   endif
 static
-enum run_states state_from_start_stop(hashpipe_status_t *st, uint64_t pktidx,
-                                       uint64_t *obs_start_pktidx, uint64_t *obs_stop_pktidx)
+enum run_states state_from_start_stop(const uint64_t pktidx,
+                                       const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx)
 {
-  if(*obs_start_pktidx <= pktidx && pktidx < *obs_stop_pktidx) {
+  if(obs_start_pktidx <= pktidx && pktidx < obs_stop_pktidx) {
     return RECORD;
-  } else if (pktidx < *obs_start_pktidx && *obs_start_pktidx != *obs_stop_pktidx) {
+  } else if (pktidx < obs_start_pktidx && obs_start_pktidx != obs_stop_pktidx) {
     return ARMED;
   } else {// pktstop <= pktidx
     return IDLE;
@@ -835,7 +835,7 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_unlock_safe(st);
         }
           
-        switch(state_from_start_stop(st, pkt_seq_num, &obs_start_pktidx, &obs_stop_pktidx)){
+        switch(state_from_start_stop(pkt_seq_num, obs_start_pktidx, obs_stop_pktidx)){
           case IDLE:// If should IDLE, 
             flag_state_update = (state != IDLE ? 1 : 0);// flag state update
             subsequent_state_idle_count += (state == RECORD ? 1 : 0);
