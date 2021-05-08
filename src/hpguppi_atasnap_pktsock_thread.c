@@ -389,7 +389,7 @@ static void update_stt_status_keys( hashpipe_status_t *st,
   hashpipe_status_lock_safe(st);
   {
     hgetu4(st->buf, "STTVALID", &sttvalid);
-    if(state == RECORD && sttvalid != 1) {
+    if((state == ARMED || state == RECORD) && sttvalid != 1) {
       hputu4(st->buf, "STTVALID", 1);
 
       // hgetu4(st->buf, "PKTNTIME", &pktntime);
@@ -414,7 +414,7 @@ static void update_stt_status_keys( hashpipe_status_t *st,
       hputu4(st->buf, "STT_SMJD", mjd->stt_smjd);
       hputr8(st->buf, "STT_OFFS", mjd->stt_offs);
     }
-    else if(state != RECORD && sttvalid != 0) {
+    else if(state == IDLE && sttvalid != 0) {
       hputu4(st->buf, "STTVALID", 0);
     }
   }
@@ -718,7 +718,7 @@ static void *run(hashpipe_thread_args_t * args)
     char flag_state_update = 0;
     char  PKT_OBS_IDX_flagged, PKT_OBS_FENG_flagged, 
           PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged;
-    char flag_obs_end = 0;
+    char flag_obs_end = 0, flag_arm_for_obs = 0;
 
     /* Time parameters */
     // int stt_imjd=0, stt_smjd=0;
@@ -851,52 +851,64 @@ static void *run(hashpipe_thread_args_t * args)
               state = IDLE;
             }
             break;
-          case RECORD:// If should RECORD, and not recording, flag obs_start
+          case RECORD:// If should RECORD
             subsequent_state_idle_count = 0;
             if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
+              // and not recording, flag obs_start
               flag_state_update = 1;
-              PKT_OBS_IDX_flagged = 0;
-              PKT_OBS_FENG_flagged = 0;
-              PKT_OBS_SCHAN_flagged = 0;
-              PKT_OBS_STREAM_flagged = 0;
-              // flag_obs_start = flag_state_update;
-              first_pkt_seq_num = obs_start_pktidx;
-              ata_snap_obs_info_read(st, &obs_info);
-              obs_npacket_total = 0;
-              obs_ndrop_total = 0;
-              obs_block_discontinuities = 0;
+              flag_arm_for_obs = (state == IDLE ? 1 : 0);
               state = RECORD;
-              update_stt_status_keys(st, state, obs_start_pktidx, mjd);
-
-              fid_stride = obs_info.nstrm*pkt_payload_size;
-              time_stride = obs_info.nants*fid_stride;
-              pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
-
-              for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-                init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                    pkt_blk_num+wblk_idx,
-                    obs_info.pkt_per_block);
-
-                // also update the working blocks' headers
-                datablock_header = datablock_stats_header(wblk+wblk_idx);
-                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-                hputi8(datablock_header, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-                hputi8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-                hputi8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
-                hputi8(datablock_header, "OBSSTART", obs_start_pktidx);
-                hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
-                hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
-                hputu4(datablock_header, "STT_SMJD", mjd->stt_smjd);
-                hputr8(datablock_header, "STT_OFFS", mjd->stt_offs);
-              }
             }
             break;
           case ARMED:// If should ARM,
             subsequent_state_idle_count = 0;
-            flag_state_update = (state != ARMED ? 1 : 0);// flag state update
-            state = ARMED;
+            if(state == IDLE){
+              flag_state_update = 1;// flag state update
+              state = ARMED;
+              flag_arm_for_obs = 1;
+            }
           default:
             break;
+        }
+        
+        if(flag_arm_for_obs == 1){
+          flag_arm_for_obs = 0;
+
+          PKT_OBS_IDX_flagged = 0;
+          PKT_OBS_FENG_flagged = 0;
+          PKT_OBS_SCHAN_flagged = 0;
+          PKT_OBS_STREAM_flagged = 0;
+          
+          first_pkt_seq_num = obs_start_pktidx;
+          ata_snap_obs_info_read(st, &obs_info);
+          obs_npacket_total = 0;
+          obs_ndrop_total = 0;
+          obs_block_discontinuities = 0;
+          update_stt_status_keys(st, state, first_pkt_seq_num, mjd);
+
+          fid_stride = obs_info.nstrm*pkt_payload_size;
+          time_stride = obs_info.nants*fid_stride;
+          pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
+
+          for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+            wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
+            wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
+            init_datablock_stats(wblk+wblk_idx, NULL, -1,
+                0+wblk_idx,
+                obs_info.pkt_per_block);
+
+            // also update the working blocks' headers
+            datablock_header = datablock_stats_header(wblk+wblk_idx);
+            hashpipe_status_lock_safe(st);
+            {
+              hputi8(st->buf, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(st->buf, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputi8(st->buf, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
+              memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+            }
+            hashpipe_status_unlock_safe(st);
+          }
+          hashpipe_info(thread_name, "Armed wblk for observation: first_pkt_seq_num = %d", first_pkt_seq_num);
         }
 
         pkt_obs_relative_idx = pkt_seq_num - first_pkt_seq_num;
@@ -911,17 +923,7 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_lock_safe(st);
           hputi8(st->buf, "BLKIDX", pkt_blk_num);
           hputi8(st->buf, "PKTIDX", pkt_seq_num);
-          if(flag_state_update && state == RECORD){
-            hputi8(st->buf, "PKTSTART", first_pkt_seq_num);
-            for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-              init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx,
-                  obs_info.pkt_per_block);
-            }
-          }
-          else{
-            hputi8(st->buf, "PKTSTART", pkt_seq_num);
-          }
+          hputi8(st->buf, "PKTSTART", pkt_seq_num);
           hputi8(st->buf, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
           hashpipe_status_unlock_safe(st);
         }
