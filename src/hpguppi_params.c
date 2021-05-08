@@ -249,6 +249,16 @@ void hpguppi_read_obs_params(char *buf,
     get_int("DS_FREQ", p->hdr.ds_freq_fact, 1); // Freq down-sampling
     get_int("ONLY_I", p->hdr.onlyI, 0);         // Only output Stokes I
 
+    // PIPERBLK
+    get_int("PIPERBLK", g->packets_per_block, 0);
+    if (g->packets_per_block==0)
+    {
+        get_int("BLOCSIZE", g->packets_per_block, 0);
+        get_int("PKTSIZE", g->packetsize, 0);
+        if (g->packetsize>0)
+            g->packets_per_block /= g->packetsize;
+    }
+
     // Freq, BW, etc.
     get_dbl("OBSFREQ", p->hdr.fctr, 0.0);
     get_dbl("OBSBW", p->hdr.BW, 0.0);
@@ -340,10 +350,9 @@ void hpguppi_read_obs_params(char *buf,
         sprintf(base, "%s_%05d_%s_%04d_cal", backend, p->hdr.start_day,
                 p->hdr.source, p->hdr.scan_number);
     } else {
-        // TODO don't hardcode the 16384 value for packets_per_block.
         // base is BACKEND_MJD_SEC_BLK_SRC_SCAN.
         sprintf(base, "%s_%05d_%05d_%06lld_%s_%04d", backend,
-                p->hdr.start_day, (int)(p->hdr.start_sec), g->start_pkt/16384,
+                p->hdr.start_day, (int)(p->hdr.start_sec), g->start_pkt/g->packets_per_block,
                 p->hdr.source, p->hdr.scan_number);
     }
 #ifdef NO_PROJECT_DIR
