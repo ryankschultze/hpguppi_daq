@@ -322,7 +322,10 @@ void hpguppi_read_obs_params(char *buf,
 
     // Coherent dedispersion params
     get_int("CODD", g->coherent, 0);
-    get_lon("PKTSTART", g->start_pkt, 0);
+    get_lon("OBSSTART", g->start_pkt, -1);
+    if(g->start_pkt == -1){
+        get_lon("PKTSTART", g->start_pkt, 0);
+    }
     get_int("OVERLAP", p->dedisp.overlap, 0);
     get_dbl("CHAN_DM", p->hdr.chan_dm, 0.0);
 
