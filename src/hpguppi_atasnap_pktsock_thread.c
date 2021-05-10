@@ -886,9 +886,9 @@ static void *run(hashpipe_thread_args_t * args)
           obs_block_discontinuities = 0;
           update_stt_status_keys(st, state, first_pkt_seq_num, mjd);
 
+          pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
           fid_stride = obs_info.nstrm*pkt_payload_size;
           time_stride = obs_info.nants*fid_stride;
-          pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
 
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
             wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
