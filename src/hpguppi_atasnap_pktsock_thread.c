@@ -975,7 +975,7 @@ static void *run(hashpipe_thread_args_t * args)
               COPY_PACKET_DATA_TO_DATABUF(((struct datablock_stats*) wblk+wblk_idx),
                   ata_snap_pkt, pkt_obs_relative_idx,
                   feng_id, stream, pkt_schan,
-                  fid_stride, time_stride, pkt_payload_size, obs_info.pkt_ntime);
+                  fid_stride, time_stride, pkt_payload_size, 16);//obs_info.pkt_ntime);
               // Count packet for block and for processing stats
               wblk[wblk_idx].npacket++;
             }
