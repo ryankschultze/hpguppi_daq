@@ -332,9 +332,12 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
         memcpy(&d[i-1], &d[i], sizeof(struct datablock_stats));
 }
 
-static enum obs_info_validity ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
+/**
+ * Updates @param validity and returns 1 if the info seemed valid. 
+ */
+static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
-  char rc = OBS_SEEMS_VALID;//obsinfo valid
+  char rc = 1;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -349,14 +352,18 @@ static enum obs_info_validity ata_snap_obs_info_read(hashpipe_status_t *st, stru
     hgetu4(st->buf, "PKTNCHAN", &obs_info->pkt_nchan);
     hgeti4(st->buf, "SCHAN",    &obs_info->schan);
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
-    // If obs_info is valid
-    if(ata_snap_obs_info_valid(*obs_info)) {
-      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
-    } else {
-      rc = OBS_INVALID;
-    }
   }
   hashpipe_status_unlock_safe(st);
+
+  // If obs_info is valid
+  if(ata_snap_obs_info_valid(*obs_info)) {
+    ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
+    *validity = OBS_SEEMS_VALID;
+  } else {
+    *validity = OBS_INVALID;
+    rc = 0;
+  }
+
   return rc;
 }
 
@@ -545,7 +552,7 @@ static void *run(hashpipe_thread_args_t * args)
     * when hashpipe is idling.
     */
   enum obs_info_validity obs_info_validity;
-  obs_info_validity = ata_snap_obs_info_read(st, &obs_info);
+  ata_snap_obs_info_read(st, &obs_info, &obs_info_validity);
   ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
   
   fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
@@ -645,7 +652,7 @@ static void *run(hashpipe_thread_args_t * args)
         // read obs_info
         if (obs_info_validity != OBS_VALID || // if obs_info not valid
             pkt_seq_num < obs_start_pktidx || pkt_seq_num > obs_stop_pktidx){ //or if not observing
-          if((obs_info_validity = ata_snap_obs_info_read(st, &obs_info))){
+          if(ata_snap_obs_info_read(st, &obs_info, &obs_info_validity)){
             // this code executes at least once before valid observation, 
             // for the first packet of the observation's pkt range [start, stop)
             pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
