@@ -333,11 +333,21 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
 }
 
 /**
- * Updates @param validity and returns 1 if the info seemed valid. 
+ * Updates @param validity and returns 1 if the info seemed valid, else 0. 
  */
 static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
   char rc = 1;
+
+  uint32_t fenchan = obs_info->fenchan;
+  uint32_t nants = obs_info->nants;
+  uint32_t nstrm = obs_info->nstrm;
+  uint32_t pkt_npol = obs_info->pkt_npol;
+  uint32_t time_nbits = obs_info->time_nbits;
+  uint32_t pkt_ntime = obs_info->pkt_ntime;
+  uint32_t pkt_nchan = obs_info->pkt_nchan;
+  int schan = obs_info->schan;
+  float obs_bw = obs_info->obs_bw;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -355,15 +365,31 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
   }
   hashpipe_status_unlock_safe(st);
 
-  // If obs_info is valid
-  if(ata_snap_obs_info_valid(*obs_info)) {
-    ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
-    *validity = OBS_SEEMS_VALID;
-  } else {
-    *validity = OBS_INVALID;
-    rc = 0;
+  if(*validity < OBS_SEEMS_VALID){ // obs so far is invalid
+    // if no change in obs_info
+    if (fenchan == obs_info->fenchan &&
+        nants == obs_info->nants &&
+        nstrm == obs_info->nstrm &&
+        pkt_npol == obs_info->pkt_npol &&
+        time_nbits == obs_info->time_nbits &&
+        pkt_ntime == obs_info->pkt_ntime &&
+        pkt_nchan == obs_info->pkt_nchan &&
+        schan == obs_info->schan &&
+        obs_bw == obs_info->obs_bw)
+    {
+      // then obs will continue to be invalid
+      rc = 0;
+    }
+    else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
+      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
+      *validity = OBS_SEEMS_VALID;
+    } else { // if change in obs_info and obs_info seems invalid
+      *validity = OBS_INVALID;
+      rc = 0;
+    }
   }
 
+  
   return rc;
 }
 
