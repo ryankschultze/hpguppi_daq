@@ -324,14 +324,12 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
 }
 
 /**
- * Updates @param validity and returns 1 if the info seemed valid, else 0. 
+ * Updates @param validity and returns 1 if the info changed and seems valid, else 0. 
  * 
  * Commented out are fields that are static due to the SNAP's implementation.
  */
 static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
-  char rc = 1;
-
   uint32_t fenchan = obs_info->fenchan;
   uint32_t nants = obs_info->nants;
   uint32_t nstrm = obs_info->nstrm;
@@ -358,32 +356,29 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
   }
   hashpipe_status_unlock_safe(st);
 
-  if(*validity < OBS_SEEMS_VALID){ // obs so far is invalid
-    // if no change in obs_info
-    if (fenchan == obs_info->fenchan &&
-        nants == obs_info->nants &&
-        nstrm == obs_info->nstrm &&
-        // pkt_npol == obs_info->pkt_npol &&
-        // time_nbits == obs_info->time_nbits &&
-        // pkt_ntime == obs_info->pkt_ntime &&
-        pkt_nchan == obs_info->pkt_nchan &&
-        schan == obs_info->schan &&
-        obs_bw == obs_info->obs_bw)
-    {
-      // then obs will continue to be invalid
-      rc = 0;
-    }
-    else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
-      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
-      *validity = OBS_SEEMS_VALID;
-    } else { // if change in obs_info and obs_info seems invalid
-      *validity = OBS_INVALID;
-      rc = 0;
-    }
+  // if no change in obs_info
+  if (*validity != OBS_UNKNOWN &&
+      fenchan == obs_info->fenchan &&
+      nants == obs_info->nants &&
+      nstrm == obs_info->nstrm &&
+      // pkt_npol == obs_info->pkt_npol &&
+      // time_nbits == obs_info->time_nbits &&
+      // pkt_ntime == obs_info->pkt_ntime &&
+      pkt_nchan == obs_info->pkt_nchan &&
+      schan == obs_info->schan &&
+      obs_bw == obs_info->obs_bw)
+  {
+    // then obs will continue to be invalid or valid
+    return 0;
   }
-
-  
-  return rc;
+  else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
+    ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
+    *validity = OBS_SEEMS_VALID;
+    return 1;
+  } else { // if change in obs_info and obs_info seems invalid
+    *validity = OBS_INVALID;
+    return 0;
+  }
 }
 
 // This function overwrites the status values with those of the provided ata_snap_obs_info
@@ -396,7 +391,7 @@ static void ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_i
   hashpipe_status_lock_safe(st);
   {
     // If obs_info is valid
-    if(obs_info_valid == OBS_SEEMS_VALID || obs_info_valid == OBS_VALID) {
+    if(obs_info_valid >= OBS_SEEMS_VALID) {
       obsnchan = ata_snap_obsnchan(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
@@ -570,9 +565,7 @@ static void *run(hashpipe_thread_args_t * args)
     * recommended, so observational flexibility is only possible 
     * when hashpipe is idling.
     */
-  enum obs_info_validity obs_info_validity;
-  ata_snap_obs_info_read(st, &obs_info, &obs_info_validity);
-  ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
+  enum obs_info_validity obs_info_validity = OBS_UNKNOWN;
   
   fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
   unsigned long pkt_blk_num, last_pkt_blk_num = 0;
