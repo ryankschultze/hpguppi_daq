@@ -83,12 +83,13 @@
 // to disk).
 
 enum obs_info_validity { 
-                OBS_INVALID_FENG,   //=-4
-                OBS_INVALID_SCHAN,  //=-3
-                OBS_INVALID_STREAM, //=-2
-                OBS_INVALID,        //=-1
-                OBS_SEEMS_VALID=0,  //=0   sign bit for validity
-                OBS_VALID           //=1
+                OBS_UNKNOWN=-5,       //=-5
+                OBS_INVALID_FENG=-4,  //=-4
+                OBS_INVALID_SCHAN=-3, //=-3
+                OBS_INVALID_STREAM=-2,//=-2
+                OBS_INVALID=-1,       //=-1
+                OBS_SEEMS_VALID=0,    //=0   sign bit for validity
+                OBS_VALID=1           //=1
               };
 enum pkt_obs_code { PKT_OBS_OK=0,
                     PKT_OBS_FENG,
@@ -259,15 +260,12 @@ static unsigned check_pkt_observability(
   )
 {
   if(feng_id >= ata_oi->nants){
-    hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants", feng_id, ata_oi->nants);
     return PKT_OBS_FENG;
   }
   if(pkt_schan < ata_oi->schan){
-    hashpipe_error(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan", pkt_schan, ata_oi->schan);
     return PKT_OBS_SCHAN;
   }
   if(stream >= ata_oi->nstrm){
-    hashpipe_error(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm", stream, ata_oi->nstrm);
     return PKT_OBS_STREAM;
   }
   return PKT_OBS_OK;
@@ -626,6 +624,7 @@ static void *run(hashpipe_thread_args_t * args)
 
   char waiting=-1;
   enum pkt_obs_code pkt_obs_code;
+  char PKT_OBS_FENG_flagged = 0, PKT_OBS_SCHAN_flagged = 0, PKT_OBS_STREAM_flagged = 0;
 
   /* Time parameters */
   struct timespec ts_checked_obs_startstop = {0}, ts_now = {0};
@@ -676,6 +675,10 @@ static void *run(hashpipe_thread_args_t * args)
           if(ata_snap_obs_info_read(st, &obs_info, &obs_info_validity)){
             // this code executes at least once before valid observation, 
             // for the first packet of the observation's pkt range [start, stop)
+            PKT_OBS_FENG_flagged = 0;
+            PKT_OBS_SCHAN_flagged = 0;
+            PKT_OBS_STREAM_flagged = 0;
+
             pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
             fid_stride = obs_info.nstrm*pkt_payload_size;
             time_stride = obs_info.nants*fid_stride;
@@ -839,19 +842,37 @@ static void *run(hashpipe_thread_args_t * args)
         obs_info_validity = OBS_VALID;
         break;
       case PKT_OBS_FENG:
-        obs_info_validity = OBS_INVALID_FENG;
-        hashpipe_error(thread_name, "Packet ignored: PKT_OBS_FENG");
+        if(!PKT_OBS_FENG_flagged){
+          PKT_OBS_FENG_flagged = 1;
+          obs_info_validity = OBS_INVALID_FENG;
+          hashpipe_error(thread_name, 
+            "Packet ignored: PKT_OBS_FENG\n\tfeng_id (%u) >= (%u) obs_info.nants",
+            feng_id, obs_info.nants
+          );
+        }
         break;
       case PKT_OBS_SCHAN:
-        obs_info_validity = OBS_INVALID_SCHAN;
-        hashpipe_error(thread_name, "Packet ignored: PKT_OBS_SCHAN");
+        if(!PKT_OBS_SCHAN_flagged){
+          PKT_OBS_SCHAN_flagged = 1;
+          obs_info_validity = OBS_INVALID_SCHAN;
+          hashpipe_error(thread_name, 
+            "Packet ignored: PKT_OBS_SCHAN\n\tpkt_schan (%d) < (%d) obs_info.schan",
+            pkt_schan, obs_info.schan
+          );
+        }
         hashpipe_status_lock_safe(st);
           hputs(st->buf, "OBSINFO", "INVALID SCHAN");
         hashpipe_status_unlock_safe(st);
         break;
       case PKT_OBS_STREAM:
-        obs_info_validity = OBS_INVALID_STREAM;
-        hashpipe_error(thread_name, "Packet ignored: PKT_OBS_STREAM");
+        if(!PKT_OBS_STREAM_flagged){
+          PKT_OBS_STREAM_flagged = 1;
+          obs_info_validity = OBS_INVALID_STREAM;
+          hashpipe_error(thread_name, 
+            "Packet ignored: PKT_OBS_STREAM\n\tstream (%d) >= (%d) obs_info.nstrm",
+            stream, obs_info.nstrm
+          );
+        }
         hashpipe_status_lock_safe(st);
           hputs(st->buf, "OBSINFO", "INVALID NSTRM");
         hashpipe_status_unlock_safe(st);
