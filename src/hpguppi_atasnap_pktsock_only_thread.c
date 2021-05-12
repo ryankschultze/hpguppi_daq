@@ -616,7 +616,6 @@ static void *run(hashpipe_thread_args_t * args)
   uint16_t feng_id, pkt_schan;
 
   char waiting=-1;
-  enum pkt_obs_code pkt_obs_code;
   char PKT_OBS_FENG_flagged = 0, PKT_OBS_SCHAN_flagged = 0, PKT_OBS_STREAM_flagged = 0;
 
   /* Time parameters */
@@ -755,68 +754,67 @@ static void *run(hashpipe_thread_args_t * args)
     feng_id = ATA_SNAP_PKT_FENG_ID(ata_snap_pkt);
     pkt_schan = ATA_SNAP_PKT_CHAN(ata_snap_pkt);
     stream = (pkt_schan - obs_info.schan) / obs_info.pkt_nchan;
-    pkt_obs_code = check_pkt_observability(&obs_info, feng_id, stream, pkt_schan);
-
-    // Manage blocks based on pkt_blk_num
-    if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
-      // Time to advance the blocks!!!
-      // Finalize first working block
-      finalize_block(wblk);
-      // Update ndrop counter
-      ndrop_total += wblk->ndrop;
-      // Shift working blocks
-      block_stack_push(wblk, n_wblock);
-      // Increment last working block
-      increment_block(&wblk[n_wblock-1], pkt_blk_num);
-      // Wait for new databuf data block to be free
-      wait_for_block_free(&wblk[n_wblock-1], st, status_key);
-    }
-    // Check for PKTIDX discontinuity
-    else if(pkt_obs_code == PKT_OBS_OK && 
-              (pkt_blk_num + 1 < wblk[0].block_num
-            || pkt_blk_num > wblk[n_wblock-1].block_num + 1)
-            ) {
-      // Should only happen when transitioning into ARMED, so warn about it
-      hashpipe_warn(thread_name,
-          "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-          pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
-      // Re-init working blocks for block number of current packet's block,
-      // and clear their data buffers
-      for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-        init_datablock_stats(wblk+wblk_idx, NULL, -1,
-            pkt_blk_num+wblk_idx,
-            obs_info.pkt_per_block);
-
-        // also update the working blocks' headers
-        datablock_header = datablock_stats_header(wblk+wblk_idx);
-        hashpipe_status_lock_safe(st);
-          memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-        hashpipe_status_unlock_safe(st);
-      }
-
-      // trigger noteable difference in last_pkt_blk_num 
-      last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
-    }
-    
-    // Update PKTIDX in status buffer if it is a new pkt_blk_num
-    if(pkt_blk_num > last_pkt_blk_num || pkt_blk_num + n_wblock < last_pkt_blk_num){
-      last_pkt_blk_num = pkt_blk_num;
-
-      wblk_idx = pkt_blk_num - wblk[0].block_num;
-      datablock_header = datablock_stats_header(wblk+wblk_idx);
-      hashpipe_status_lock_safe(st);
-        hputi8(datablock_header, "BLKIDX", pkt_blk_num);
-        hputi8(datablock_header, "PKTIDX", pkt_seq_num);
-        hputi8(datablock_header, "PKTSTART", pkt_seq_num);
-        hputi8(datablock_header, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
-        hputi8(datablock_header, "OBSSTART", obs_start_pktidx);
-        hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
-      hashpipe_status_unlock_safe(st);
-    }
 
     // Only copy packet data and count packet if its wblk_idx is valid
-    switch(pkt_obs_code){
+    switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
+        // Manage blocks based on pkt_blk_num
+        if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
+          // Time to advance the blocks!!!
+          // Finalize first working block
+          finalize_block(wblk);
+          // Update ndrop counter
+          ndrop_total += wblk->ndrop;
+          // Shift working blocks
+          block_stack_push(wblk, n_wblock);
+          // Increment last working block
+          increment_block(&wblk[n_wblock-1], pkt_blk_num);
+          // Wait for new databuf data block to be free
+          wait_for_block_free(&wblk[n_wblock-1], st, status_key);
+        }
+        // Check for PKTIDX discontinuity
+        else if(pkt_blk_num + 1 < wblk[0].block_num
+                || pkt_blk_num > wblk[n_wblock-1].block_num + 1
+                ) {
+          // Should only happen when transitioning into ARMED, so warn about it
+          hashpipe_warn(thread_name,
+              "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+              pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+          // Re-init working blocks for block number of current packet's block,
+          // and clear their data buffers
+          for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+            init_datablock_stats(wblk+wblk_idx, NULL, -1,
+                pkt_blk_num+wblk_idx,
+                obs_info.pkt_per_block);
+
+            // also update the working blocks' headers
+            datablock_header = datablock_stats_header(wblk+wblk_idx);
+            hashpipe_status_lock_safe(st);
+              memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+            hashpipe_status_unlock_safe(st);
+          }
+
+          // trigger noteable difference in last_pkt_blk_num 
+          last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
+        }
+        
+        // Update PKTIDX in status buffer if it is a new pkt_blk_num
+        if(pkt_blk_num > last_pkt_blk_num || pkt_blk_num + n_wblock < last_pkt_blk_num){
+          last_pkt_blk_num = pkt_blk_num;
+
+          wblk_idx = pkt_blk_num - wblk[0].block_num;
+          datablock_header = datablock_stats_header(wblk+wblk_idx);
+          hashpipe_status_lock_safe(st);
+            hputi8(datablock_header, "BLKIDX", pkt_blk_num);
+            hputi8(datablock_header, "PKTIDX", pkt_seq_num);
+            hputi8(datablock_header, "PKTSTART", pkt_seq_num);
+            hputi8(datablock_header, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
+            hputi8(datablock_header, "OBSSTART", obs_start_pktidx);
+            hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
+          hashpipe_status_unlock_safe(st);
+        }
+
+    
         // Once we get here, compute the index of the working block corresponding
         // to this packet.  The computed index may not correspond to a valid
         // working block!
