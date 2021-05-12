@@ -91,7 +91,6 @@ enum obs_info_validity {
                 OBS_VALID           //=1
               };
 enum pkt_obs_code { PKT_OBS_OK=0,
-                    PKT_OBS_IDX,
                     PKT_OBS_FENG,
                     PKT_OBS_SCHAN,
                     PKT_OBS_STREAM
@@ -254,17 +253,11 @@ static void wait_for_block_free(const struct datablock_stats * d,
 
 static unsigned check_pkt_observability(
     const struct ata_snap_obs_info * ata_oi,
-    const uint64_t pkt_idx,
-    const uint64_t obs_start_pktidx,
     const uint16_t feng_id,
     const int32_t stream,
     const uint16_t pkt_schan
   )
 {
-  if(pkt_idx < obs_start_pktidx){
-    // hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx", pkt_idx, obs_start_pktidx);
-    return PKT_OBS_IDX;
-  }
   if(feng_id >= ata_oi->nants){
     hashpipe_error(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants", feng_id, ata_oi->nants);
     return PKT_OBS_FENG;
@@ -624,7 +617,7 @@ static void *run(hashpipe_thread_args_t * args)
   /* Misc counters, etc */
   uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, npacket=0;
 
-  uint64_t pkt_seq_num, first_pkt_seq_num=0;
+  uint64_t pkt_seq_num;
   uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, pkt_obs_relative_idx=0;
   uint64_t pkt_payload_size;
   uint32_t fid_stride, time_stride;
@@ -764,8 +757,7 @@ static void *run(hashpipe_thread_args_t * args)
     feng_id = ATA_SNAP_PKT_FENG_ID(ata_snap_pkt);
     pkt_schan = ATA_SNAP_PKT_CHAN(ata_snap_pkt);
     stream = (pkt_schan - obs_info.schan) / obs_info.pkt_nchan;
-    pkt_obs_code = check_pkt_observability(&obs_info,// ata_snap_pkt, 
-                pkt_seq_num, first_pkt_seq_num, feng_id, stream, pkt_schan);
+    pkt_obs_code = check_pkt_observability(&obs_info, feng_id, stream, pkt_schan);
 
     // Manage blocks based on pkt_blk_num
     if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
@@ -845,10 +837,6 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_error(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
         }
         obs_info_validity = OBS_VALID;
-        break;
-      case PKT_OBS_IDX:
-        obs_info_validity = OBS_SEEMS_VALID;
-        hashpipe_error(thread_name, "Packet ignored: PKT_OBS_IDX %d", pkt_seq_num);
         break;
       case PKT_OBS_FENG:
         obs_info_validity = OBS_INVALID_FENG;
