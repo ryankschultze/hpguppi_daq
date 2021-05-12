@@ -334,6 +334,8 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
 
 /**
  * Updates @param validity and returns 1 if the info seemed valid, else 0. 
+ * 
+ * Commented out are fields that are static due to the SNAP's implementation.
  */
 static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
@@ -342,9 +344,9 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
   uint32_t fenchan = obs_info->fenchan;
   uint32_t nants = obs_info->nants;
   uint32_t nstrm = obs_info->nstrm;
-  uint32_t pkt_npol = obs_info->pkt_npol;
-  uint32_t time_nbits = obs_info->time_nbits;
-  uint32_t pkt_ntime = obs_info->pkt_ntime;
+  // uint32_t pkt_npol = obs_info->pkt_npol;
+  // uint32_t time_nbits = obs_info->time_nbits;
+  // uint32_t pkt_ntime = obs_info->pkt_ntime;
   uint32_t pkt_nchan = obs_info->pkt_nchan;
   int schan = obs_info->schan;
   float obs_bw = obs_info->obs_bw;
@@ -356,9 +358,9 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
     hgetu4(st->buf, "FENCHAN",  &obs_info->fenchan);
     hgetu4(st->buf, "NANTS",    &obs_info->nants);
     hgetu4(st->buf, "NSTRM",    &obs_info->nstrm);
-    hgetu4(st->buf, "NPOL",     &obs_info->pkt_npol);
-    hgetu4(st->buf, "NBITS",    &obs_info->time_nbits);
-    hgetu4(st->buf, "PKTNTIME", &obs_info->pkt_ntime);
+    // hgetu4(st->buf, "NPOL",     &obs_info->pkt_npol);
+    // hgetu4(st->buf, "NBITS",    &obs_info->time_nbits);
+    // hgetu4(st->buf, "PKTNTIME", &obs_info->pkt_ntime);
     hgetu4(st->buf, "PKTNCHAN", &obs_info->pkt_nchan);
     hgeti4(st->buf, "SCHAN",    &obs_info->schan);
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
@@ -370,9 +372,9 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
     if (fenchan == obs_info->fenchan &&
         nants == obs_info->nants &&
         nstrm == obs_info->nstrm &&
-        pkt_npol == obs_info->pkt_npol &&
-        time_nbits == obs_info->time_nbits &&
-        pkt_ntime == obs_info->pkt_ntime &&
+        // pkt_npol == obs_info->pkt_npol &&
+        // time_nbits == obs_info->time_nbits &&
+        // pkt_ntime == obs_info->pkt_ntime &&
         pkt_nchan == obs_info->pkt_nchan &&
         schan == obs_info->schan &&
         obs_bw == obs_info->obs_bw)
