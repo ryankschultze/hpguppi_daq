@@ -662,9 +662,12 @@ static void *run(hashpipe_thread_args_t * args)
       if(ELAPSED_NS(ts_checked_obs_info, ts_now) > 1000*1000*1000){
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
-        // read obs_info
-        if (obs_info_validity != OBS_VALID || // if obs_info not valid
-            pkt_seq_num < obs_start_pktidx || pkt_seq_num > obs_stop_pktidx){ //or if not observing
+        // write obs_info to overwrite any changes
+        if (obs_info_validity == OBS_VALID && // if obs_info not valid
+            pkt_seq_num >= obs_start_pktidx && pkt_seq_num < obs_stop_pktidx){ //and not observing
+            ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
+        }
+        else {//otherwise read obs_info
           if(ata_snap_obs_info_read(st, &obs_info, &obs_info_validity)){
             // this code executes at least once before valid observation, 
             // for the first packet of the observation's pkt range [start, stop)
@@ -677,7 +680,6 @@ static void *run(hashpipe_thread_args_t * args)
             time_stride = obs_info.nants*fid_stride;
           }
         }
-        ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
 
         npacket_total += npacket;
 
