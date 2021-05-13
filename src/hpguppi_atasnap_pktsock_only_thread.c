@@ -659,8 +659,8 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         // write obs_info to overwrite any changes
-        if (obs_info_validity == OBS_VALID && // if obs_info not valid
-            pkt_seq_num >= obs_start_pktidx && pkt_seq_num < obs_stop_pktidx){ //and not observing
+        if (obs_info_validity == OBS_VALID && // if obs_info is valid
+            pkt_seq_num >= obs_start_pktidx && pkt_seq_num < obs_stop_pktidx){ //and observing
             ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
         }
         else {//otherwise read obs_info
@@ -806,7 +806,6 @@ static void *run(hashpipe_thread_args_t * args)
             hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
           hashpipe_status_unlock_safe(st);
         }
-
     
         // Once we get here, compute the index of the working block corresponding
         // to this packet.  The computed index may not correspond to a valid
@@ -823,6 +822,7 @@ static void *run(hashpipe_thread_args_t * args)
           wblk[wblk_idx].npacket++;
         }
         else{
+          // Only happens if a packet arrives late, consider n_wblock++
           hashpipe_error(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
         }
         obs_info_validity = OBS_VALID;
