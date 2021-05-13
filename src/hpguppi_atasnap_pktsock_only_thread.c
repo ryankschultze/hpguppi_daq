@@ -618,8 +618,7 @@ static void *run(hashpipe_thread_args_t * args)
   char waiting=-1;
 
   /* Time parameters */
-  struct timespec ts_checked_obs_startstop = {0}, ts_now = {0};
-  struct timespec ts_checked_obs_info = {0};
+  struct timespec ts_checked_obs_info = {0}, ts_now = {0};
   
   // Drop all packets to date
   unsigned char *p_frame;
@@ -637,28 +636,27 @@ static void *run(hashpipe_thread_args_t * args)
     do {
       // Catch any changes in OBSSTART/STOP
       clock_gettime(CLOCK_MONOTONIC, &ts_now);
-      if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 50*1000*1000){
-        memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
-        hashpipe_status_lock_safe(st);
-        {
-          hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
-          hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
-        }
-        hashpipe_status_unlock_safe(st);
-      }
-
-      if (obs_info_validity <= OBS_INVALID && obs_stop_pktidx > 0){
-        hashpipe_status_lock_safe(st);
-        {
-          hputu8(st->buf, "OBSSTART", 0);
-          hputu8(st->buf, "OBSSTOP", 0);
-        }
-        hashpipe_status_unlock_safe(st);
-      }
-
-      // Heartbeat update?
-      if(ELAPSED_NS(ts_checked_obs_info, ts_now) > 1000*1000*1000){
+      if(ELAPSED_NS(ts_checked_obs_info, ts_now) > 50*1000*1000){
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
+
+        if (obs_info_validity <= OBS_INVALID && obs_stop_pktidx > 0){
+          obs_start_pktidx = 0;
+          obs_stop_pktidx = 0;
+          hashpipe_status_lock_safe(st);
+          {
+            hputu8(st->buf, "OBSSTART", 0);
+            hputu8(st->buf, "OBSSTOP", 0);
+          }
+          hashpipe_status_unlock_safe(st);
+        }
+        else{
+          hashpipe_status_lock_safe(st);
+          {
+            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
+            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
+          }
+          hashpipe_status_unlock_safe(st);
+        }
 
         // write obs_info to overwrite any changes
         if (obs_info_validity == OBS_VALID && // if obs_info not valid
