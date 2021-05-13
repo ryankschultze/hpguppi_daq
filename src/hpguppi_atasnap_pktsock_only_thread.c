@@ -619,6 +619,8 @@ static void *run(hashpipe_thread_args_t * args)
 
   /* Time parameters */
   struct timespec ts_checked_obs_info = {0}, ts_now = {0};
+  const uint64_t obs_info_refresh_period_ns = 50*1000*1000;
+  uint64_t obs_info_refresh_elapsed_ns;
   
   // Drop all packets to date
   unsigned char *p_frame;
@@ -636,7 +638,8 @@ static void *run(hashpipe_thread_args_t * args)
     do {
       // Catch any changes in OBSSTART/STOP
       clock_gettime(CLOCK_MONOTONIC, &ts_now);
-      if(ELAPSED_NS(ts_checked_obs_info, ts_now) > 50*1000*1000){
+      obs_info_refresh_elapsed_ns = ELAPSED_NS(ts_checked_obs_info, ts_now);
+      if(obs_info_refresh_elapsed_ns > obs_info_refresh_period_ns){
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
         if (obs_info_validity <= OBS_INVALID && obs_stop_pktidx > 0){
@@ -681,8 +684,8 @@ static void *run(hashpipe_thread_args_t * args)
         {
           hputi8(st->buf, "NPKTS", npacket_total);
           hputi8(st->buf, "NDROP", ndrop_total);
-          hputr4(st->buf, "PHYSPKPS", npacket);
-          hputr4(st->buf, "PHYSGBPS", (npacket*obs_info.pkt_data_size)/1e9);
+          hputr4(st->buf, "PHYSPKPS", npacket*(1e9/obs_info_refresh_elapsed_ns));
+          hputr4(st->buf, "PHYSGBPS", (npacket*obs_info.pkt_data_size)/((float) obs_info_refresh_elapsed_ns));
 
           // Overwrite any changes to reflect the static nature of these keys
           hputs(st->buf, "BINDHOST", p_ps_params->ifname);
