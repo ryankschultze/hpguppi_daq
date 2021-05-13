@@ -665,8 +665,10 @@ static void *run(hashpipe_thread_args_t * args)
         }
         else {//otherwise read obs_info
           if(ata_snap_obs_info_read(st, &obs_info, &obs_info_validity)){
-            // this code executes at least once before valid observation, 
-            // for the first packet of the observation's pkt range [start, stop)
+            // this code executes if the obs_info has CHANGED to SEEMS_VALID
+            // (ie at least once before valid observation)
+            ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
+            
             pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
             fid_stride = obs_info.nstrm*pkt_payload_size;
             time_stride = obs_info.nants*fid_stride;
