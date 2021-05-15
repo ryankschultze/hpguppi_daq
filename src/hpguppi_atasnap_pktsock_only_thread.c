@@ -835,8 +835,6 @@ static void *run(hashpipe_thread_args_t * args)
             hputu8(st->buf, "PKTIDX", pkt_idx);
             hputu8(st->buf, "PKTSTART", pkt_idx);
             hputu8(st->buf, "PKTSTOP", pkt_idx + obs_info.pktidx_per_block);
-            hputu8(st->buf, "OBSSTART", obs_start_pktidx);
-            hputu8(st->buf, "OBSSTOP", obs_stop_pktidx);
           hashpipe_status_unlock_safe(st);
         }
     
