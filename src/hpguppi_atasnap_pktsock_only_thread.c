@@ -773,7 +773,7 @@ static void *run(hashpipe_thread_args_t * args)
     // Get packet's sequence number
     pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
 
-    if (obs_info_validity < OBS_SEEMS_VALID || pkt_idx < blk0_start_pktidx){
+    if (obs_info_validity < OBS_SEEMS_VALID){
       hashpipe_pktsock_release_frame(p_frame);
       continue;
     }
@@ -800,17 +800,23 @@ static void *run(hashpipe_thread_args_t * args)
     // Only copy packet data and count packet if its wblk_idx is valid
     switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
-        if(!flag_reinit_blks && // dont hijack obs_start alignment reinit
-            (pkt_blk_num + 1 < wblk[0].block_num
-            || pkt_blk_num > wblk[n_wblock-1].block_num + 1)
-          ) {
-          flag_reinit_blks = 1;
-          blk0_start_pktidx = pkt_idx;
-          // Should only happen when seeing first packet when obs_info is valid
-          // warn in case it happens in other scenarios
-          hashpipe_warn(thread_name,
-              "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-              pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+        if(!flag_reinit_blks) {// dont hijack obs_start alignment reinit
+          if (pkt_idx < blk0_start_pktidx && blk0_start_pktidx - pkt_idx < obs_info.pktidx_per_block){
+            hashpipe_info(thread_name, "pkt_idx (%lu) < (%lu) blk0_start_pktidx", pkt_idx, blk0_start_pktidx);
+            hashpipe_pktsock_release_frame(p_frame);
+            continue;
+          }
+          else if(pkt_blk_num + 1 < wblk[0].block_num //TODO dont use pkt_blk_num due to underflow
+              || pkt_blk_num > wblk[n_wblock-1].block_num + 1
+            ) {
+            flag_reinit_blks = 1;
+            blk0_start_pktidx = pkt_idx;
+            // Should only happen when seeing first packet when obs_info is valid
+            // warn in case it happens in other scenarios
+            hashpipe_warn(thread_name,
+                "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+                pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+          }
         }
 
         // Manage blocks based on pkt_blk_num
