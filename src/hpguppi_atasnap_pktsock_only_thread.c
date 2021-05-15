@@ -772,7 +772,9 @@ static void *run(hashpipe_thread_args_t * args)
          || pkt_blk_num > wblk[n_wblock-1].block_num + 1
                 ) {
           flag_reinit_blks = 1;
-          // Should only happen when transitioning into ARMED, so warn about it
+          blk0_start_pktidx = pkt_idx;
+          // Should only happen when seeing first packet when obs_info is valid
+          // warn in case it happens in other scenarios
           hashpipe_warn(thread_name,
               "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
               pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
@@ -797,8 +799,6 @@ static void *run(hashpipe_thread_args_t * args)
           flag_reinit_blks = 0;
           // Re-init working blocks for block number of current packet's block,
           // and clear their data buffers
-          
-          blk0_start_pktidx = pkt_idx;
           pkt_blk_num = (pkt_idx - blk0_start_pktidx) / obs_info.pktidx_per_block;
 
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
