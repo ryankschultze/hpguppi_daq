@@ -33,8 +33,11 @@
 #define PKTSOCK_NBLOCKS (800)
 #define PKTSOCK_NFRAMES (PKTSOCK_FRAMES_PER_BLOCK * PKTSOCK_NBLOCKS)
 
+#define ELAPSED_S(start,stop) \
+  ((int64_t)stop.tv_sec-start.tv_sec)
+
 #define ELAPSED_NS(start,stop) \
-  (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
 #define HPUT_DAQ_STATE(st, state)\
   hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
@@ -619,8 +622,9 @@ static void *run(hashpipe_thread_args_t * args)
   char flag_reinit_blks=1;
 
   /* Time parameters */
-  struct timespec ts_checked_obs_info = {0}, ts_now = {0};
+  struct timespec ts_checked_obs_info = {0}, ts_tried_obs_info = {0}, ts_now = {0};
   const uint64_t obs_info_refresh_period_ns = 50*1000*1000;
+  const uint64_t obs_info_retry_period_s = 5;
   uint64_t obs_info_refresh_elapsed_ns;
   
   // Drop all packets to date
@@ -676,6 +680,12 @@ static void *run(hashpipe_thread_args_t * args)
             pkt_payload_size = ata_snap_pkt_payload_bytes(obs_info);
             fid_stride = obs_info.nstrm*pkt_payload_size;
             time_stride = obs_info.nants*fid_stride;
+
+            memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
+          }
+          else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
+            memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
+            obs_info_validity = OBS_SEEMS_VALID;
           }
         }
 
