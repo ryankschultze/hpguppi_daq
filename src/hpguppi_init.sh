@@ -25,11 +25,11 @@ case $cores_per_cpu in
     DATADIR0=/mnt/buf0
     NET0CPU=9
     OUT0CPU=10
-    TSP0MSK=63
+    TPS0MSK=63
     BINDHOST0=eth4
     NET1CPU=6
     OUT1CPU=7
-    TSP1MSK=63
+    TPS1MSK=63
     BINDHOST1=eth5
     ;;
   8)
@@ -81,26 +81,23 @@ case $cores_per_cpu in
     ;;
 esac
 
+# Setup parameters for two instances.
 instances=(
-  # Setup parameters for two instances.
-  #
-  #
-  #              cpu                bind          NET       OUT     log
-  #  dir        socket    mask      host          CPU       CPU     dir
-  "$DATADIR0  $NUMABIND0 $TPS0MSK  $BINDHOST0  $NET0CPU  $OUT0CPU  /home/sonata/logs"  # Instance 0
-  "$DATADIR1  $NUMABIND1 $TPS1MSK  $BINDHOST1  $NET1CPU  $OUT1CPU  /home/sonata/logs"  # Instance 1
+  #              cpu       bind          NET       OUT     log
+  #  dir        socket     host          CPU       CPU     dir
+  "$DATADIR0  $NUMABIND0  $BINDHOST0  $NET0CPU  $OUT0CPU  /home/sonata/logs"  # Instance 0
+  "$DATADIR1  $NUMABIND1  $BINDHOST1  $NET1CPU  $OUT1CPU  /home/sonata/logs"  # Instance 1
 )
 
 function init() {
   instance=$1
   dir=$2
   numabind=$3
-  mask=$4
-  bindhost=$5
-  netcpu=$6
-  outcpu=$7
-  workdir=$8
-  shift 8
+  bindhost=$4
+  netcpu=$5
+  outcpu=$6
+  workdir=$7
+  shift 7
 
   if [ $numabind -lt 0 ]
   then
@@ -131,15 +128,21 @@ function init() {
     return 1
   fi
 
-  if test -f "${workdir}/${hostname}.$instance.out"; then
-    echo "Trimming log ${workdir}/${hostname}.$instance.out"
-    tail -n 100000 ${workdir}/${hostname}.$instance.out > tmp.out
-    mv tmp.out ${workdir}/${hostname}.$instance.out
+  logstem="${workdir}/${hostname}.$instance"
+
+  if test -f "$logstem.out"; then
+    echo "Trimming log $logstem.out"
+    tail -n 100000 $logstem.out > tmp.out
+    mv tmp.out $logstem.out
+    echo -------------------- >> $logstem.out
+    echo Startup `date` >> $logstem.out
   fi
-  if test -f "${workdir}/${hostname}.$instance.err"; then
-    echo "Trimming log ${workdir}/${hostname}.$instance.err"
-    tail -n 100000 ${workdir}/${hostname}.$instance.err > tmp.err
-    mv tmp.err ${workdir}/${hostname}.$instance.err
+  if test -f "$logstem.err"; then
+    echo "Trimming log $logstem.err"
+    tail -n 100000 $logstem.err > tmp.err
+    mv tmp.err $logstem.err
+    echo -------------------- >> $logstem.err
+    echo Startup `date` >> $logstem.err
   fi
 
   echo numactl --cpunodebind=$numabind --membind=$numabind \
@@ -150,7 +153,8 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
-    -m $mask $work_thread \
+    $control_cpu_and_thread \
+    $work_mask_and_thread \
     -c $outcpu $out_thread
 
   numactl --cpunodebind=$numabind --membind=$numabind \
@@ -161,14 +165,16 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
-    -m $mask $work_thread \
-    -c $outcpu $out_thread < /dev/null 1>> "${workdir}/${hostname}.$instance.out" 2>> "${workdir}/${hostname}.$instance.err" &
+    $control_cpu_and_thread \
+    $work_mask_and_thread \
+    -c $outcpu $out_thread < /dev/null 1>> "$logstem.out" 2>> "$logstem.err" &
 }
 
 perf=
 redis_sync_key=sync_time
 net_thread=hpguppi_net_thread
 out_thread=hpguppi_rawdisk_thread
+control_thread=
 work_thread=
 bindport=60000
 vlan=
@@ -248,25 +254,15 @@ then
 elif [ "$1" = 'atasnap' ]
 then
   use_fifo=no
-  # net_thread="hpguppi_ibvpkt_thread -c 11 hpguppi_atasnap_voltage_thread"
-  # net_thread="hpguppi_net_thread -c 11 hpguppi_atasnap_voltage_thread"
-  # net_thread="hpguppi_net_thread"
 
   net_thread=hpguppi_atasnap_pktsock_thread
   work_thread=hpguppi_atasnap_pkt_to_FTP_transpose
-  # options="-o IBVPKTSZ=42,8,8192"
-  instances[0]="${instances[0]/eth4/ens6d1}"
-  instances[1]="${instances[1]/eth5/ens6d1}"
+
   bindport=0
   instance_ports[0]=10000
   instance_ports[1]=10000
-  # instances[1]="${instances[0]/datax/mnt/buf0}"
-  # instances[1]="${instances[1]/datax2/mnt/buf1}"
   # For initial testing...
-  # hpguppi_plugin=/homelocal/sonata/davidm/src/hpguppi_daq/src/.libs/hpguppi_daq.so
   hpguppi_plugin=${PREFIX_LIB}hpguppi_daq.so
-  # out_thread=null_output_thread
-  # out_thread=hpguppi_rawdisk_only_thread
   out_thread=hpguppi_atasnap_rawdisk_thread
   shift
 elif echo "$1" | grep -q 'thread'
@@ -282,8 +278,32 @@ then
   exit 1
 fi
 
+control_cpu_and_thread_perinst=("" "")
+work_mask_and_thread_perinst=("" "")
+
 echo using net_thread $net_thread
+if [ -z "$control_thread" ]
+then
+  echo no control_thread
+else
+  echo using control_thread $control_thread
+  control_cpu_and_thread_perinst=(
+    "-c $CTR0CPU $control_thread"
+    "-c $CTR1CPU $control_thread"
+  )
+fi
+if [ -z "$work_thread" ]
+then
+  echo no work_thread
+else
+  echo using work_thread $work_thread
+  work_mask_and_thread_perinst=(
+    "-m $TPS0MSK $work_thread"
+    "-m $TPS1MSK $work_thread"
+  )
+fi
 echo using out_thread $out_thread
+echo
 
 instance_ids=''
 
@@ -310,6 +330,10 @@ for instidx in $instance_ids
 do
   fifo="/tmp/hpguppi_daq_control/$instidx"
   args="${instances[$instidx]}"
+
+  control_cpu_and_thread="${control_cpu_and_thread_perinst[$instidx]}"
+  work_mask_and_thread="${work_mask_and_thread_perinst[$instidx]}"
+
   if [ -n "${args}" ]
   then
     echo Starting instance $hostname/$instidx
