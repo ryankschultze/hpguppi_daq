@@ -25,11 +25,11 @@ case $cores_per_cpu in
     DATADIR0=/mnt/buf0
     NET0CPU=9
     OUT0CPU=10
-    TSP0MSK=63
+    TPS0MSK=63
     BINDHOST0=eth4
     NET1CPU=6
     OUT1CPU=7
-    TSP1MSK=63
+    TPS1MSK=63
     BINDHOST1=eth5
     ;;
   8)
@@ -128,19 +128,21 @@ function init() {
     return 1
   fi
 
-  if test -f "${workdir}/${hostname}.$instance.out"; then
-    echo "Trimming log ${workdir}/${hostname}.$instance.out"
-    tail -n 100000 ${workdir}/${hostname}.$instance.out > tmp.out
-    mv tmp.out ${workdir}/${hostname}.$instance.out
-    echo -------------------- >> ${workdir}/${hostname}.$instance.out
-    echo Startup `date` >> ${workdir}/${hostname}.$instance.out
+  logstem="${workdir}/${hostname}.$instance"
+
+  if test -f "$logstem.out"; then
+    echo "Trimming log $logstem.out"
+    tail -n 100000 $logstem.out > tmp.out
+    mv tmp.out $logstem.out
+    echo -------------------- >> $logstem.out
+    echo Startup `date` >> $logstem.out
   fi
-  if test -f "${workdir}/${hostname}.$instance.err"; then
-    echo "Trimming log ${workdir}/${hostname}.$instance.err"
-    tail -n 100000 ${workdir}/${hostname}.$instance.err > tmp.err
-    mv tmp.err ${workdir}/${hostname}.$instance.err
-    echo -------------------- >> ${workdir}/${hostname}.$instance.err
-    echo Startup `date` >> ${workdir}/${hostname}.$instance.err
+  if test -f "$logstem.err"; then
+    echo "Trimming log $logstem.err"
+    tail -n 100000 $logstem.err > tmp.err
+    mv tmp.err $logstem.err
+    echo -------------------- >> $logstem.err
+    echo Startup `date` >> $logstem.err
   fi
 
   echo numactl --cpunodebind=$numabind --membind=$numabind \
