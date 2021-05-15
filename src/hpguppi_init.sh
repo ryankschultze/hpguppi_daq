@@ -135,11 +135,15 @@ function init() {
     echo "Trimming log ${workdir}/${hostname}.$instance.out"
     tail -n 100000 ${workdir}/${hostname}.$instance.out > tmp.out
     mv tmp.out ${workdir}/${hostname}.$instance.out
+    echo -------------------- >> ${workdir}/${hostname}.$instance.out
+    echo Startup `date` >> ${workdir}/${hostname}.$instance.out
   fi
   if test -f "${workdir}/${hostname}.$instance.err"; then
     echo "Trimming log ${workdir}/${hostname}.$instance.err"
     tail -n 100000 ${workdir}/${hostname}.$instance.err > tmp.err
     mv tmp.err ${workdir}/${hostname}.$instance.err
+    echo -------------------- >> ${workdir}/${hostname}.$instance.err
+    echo Startup `date` >> ${workdir}/${hostname}.$instance.err
   fi
 
   echo numactl --cpunodebind=$numabind --membind=$numabind \
