@@ -173,8 +173,8 @@ static void finalize_block(struct datablock_stats *d)
   }
 
   sprintf(dropstat, "%d/%lu", d->ndrop, d->pkts_per_block);
-  hputi4(header, "NPKT", d->npacket);
-  hputi4(header, "NDROP", d->ndrop);
+  hputu4(header, "NPKT", d->npacket);
+  hputu4(header, "NDROP", d->ndrop);
   hputs(header, "DROPSTAT", dropstat);
   hpguppi_input_databuf_set_filled(d->dbout, d->block_idx);
 }
