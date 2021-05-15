@@ -300,7 +300,7 @@ static unsigned check_pkt_observability(
 #define COPY_PACKET_DATA_TO_DATABUF(\
       /*const struct datablock_stats*/    datablock_stats_pointer,\
       /*const struct ata_snap_pkt*/    ata_snap_pkt_pointer,\
-      /*const uint64_t*/  pkt_obs_relative_idx,\
+      /*const uint64_t*/  pkt_blk_relative_idx,\
       /*const uint16_t*/  feng_id,\
       /*const int32_t*/   stream,\
       /*const uint16_t*/  pkt_schan,\
@@ -309,7 +309,7 @@ static unsigned check_pkt_observability(
       /*const uint64_t*/  pkt_payload_size,\
       /*const uint32_t*/  pkt_ntime)\
   memcpy(datablock_stats_data(datablock_stats_pointer)+(\
-        ((pkt_obs_relative_idx%datablock_stats_pointer->pktidx_per_block)/pkt_ntime) * time_stride\
+        (pkt_blk_relative_idx/pkt_ntime) * time_stride\
             +  feng_id * fid_stride\
             +  stream * pkt_payload_size\
       ),\
@@ -609,7 +609,7 @@ static void *run(hashpipe_thread_args_t * args)
   uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, npacket=0;
 
   uint64_t pkt_idx;
-  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, pkt_obs_relative_idx=0;
+  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx;
   uint64_t pkt_payload_size;
   uint32_t fid_stride, time_stride;
   int32_t stream;
@@ -728,7 +728,7 @@ static void *run(hashpipe_thread_args_t * args)
       continue;
     }
     
-    if (obs_info_validity < OBS_SEEMS_VALID){
+    if (obs_info_validity < OBS_SEEMS_VALID || pkt_idx < blk0_start_pktidx){
       hashpipe_pktsock_release_frame(p_frame);
       continue;
     }
@@ -743,8 +743,8 @@ static void *run(hashpipe_thread_args_t * args)
 
     ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
     // Get packet's sequence number
-    pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);    
-    pkt_blk_num = pkt_idx / obs_info.pktidx_per_block;
+    pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
+    pkt_blk_num = (pkt_idx - blk0_start_pktidx) / obs_info.pktidx_per_block;
 
     // Tally npacket between 1 Hz updates
     npacket += 1;
@@ -786,6 +786,10 @@ static void *run(hashpipe_thread_args_t * args)
           flag_reinit_blks = 0;
           // Re-init working blocks for block number of current packet's block,
           // and clear their data buffers
+          
+          blk0_start_pktidx = pkt_idx;
+          pkt_blk_num = (pkt_idx - blk0_start_pktidx) / obs_info.pktidx_per_block;
+
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
             init_datablock_stats(wblk+wblk_idx, NULL, -1,
                 pkt_blk_num+wblk_idx,
@@ -832,7 +836,7 @@ static void *run(hashpipe_thread_args_t * args)
         if(0 <= wblk_idx && wblk_idx < n_wblock) {
           // Copy packet data to data buffer of working block
           COPY_PACKET_DATA_TO_DATABUF(((struct datablock_stats*) wblk+wblk_idx),
-              ata_snap_pkt, pkt_obs_relative_idx,
+              ata_snap_pkt, (pkt_idx - blk0_start_pktidx)%obs_info.pktidx_per_block,
               feng_id, stream, pkt_schan,
               fid_stride, time_stride, pkt_payload_size, 16);//obs_info.pkt_ntime);
           // Count packet for block and for processing stats
