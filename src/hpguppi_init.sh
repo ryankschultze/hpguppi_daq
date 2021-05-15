@@ -81,26 +81,23 @@ case $cores_per_cpu in
     ;;
 esac
 
+# Setup parameters for two instances.
 instances=(
-  # Setup parameters for two instances.
-  #
-  #
-  #              cpu                bind          NET       OUT     log
-  #  dir        socket    mask      host          CPU       CPU     dir
-  "$DATADIR0  $NUMABIND0 $TPS0MSK  $BINDHOST0  $NET0CPU  $OUT0CPU  /home/sonata/logs"  # Instance 0
-  "$DATADIR1  $NUMABIND1 $TPS1MSK  $BINDHOST1  $NET1CPU  $OUT1CPU  /home/sonata/logs"  # Instance 1
+  #              cpu       bind          NET       OUT     log
+  #  dir        socket     host          CPU       CPU     dir
+  "$DATADIR0  $NUMABIND0  $BINDHOST0  $NET0CPU  $OUT0CPU  /home/sonata/logs"  # Instance 0
+  "$DATADIR1  $NUMABIND1  $BINDHOST1  $NET1CPU  $OUT1CPU  /home/sonata/logs"  # Instance 1
 )
 
 function init() {
   instance=$1
   dir=$2
   numabind=$3
-  mask=$4
-  bindhost=$5
-  netcpu=$6
-  outcpu=$7
-  workdir=$8
-  shift 8
+  bindhost=$4
+  netcpu=$5
+  outcpu=$6
+  workdir=$7
+  shift 7
 
   if [ $numabind -lt 0 ]
   then
@@ -154,7 +151,8 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
-    -m $mask $work_thread \
+    $control_cpu_and_thread \
+    $work_mask_and_thread \
     -c $outcpu $out_thread
 
   numactl --cpunodebind=$numabind --membind=$numabind \
@@ -165,14 +163,16 @@ function init() {
     -o DATADIR=$dir \
     ${@} \
     -c $netcpu $net_thread \
-    -m $mask $work_thread \
-    -c $outcpu $out_thread < /dev/null 1>> "${workdir}/${hostname}.$instance.out" 2>> "${workdir}/${hostname}.$instance.err" &
+    $control_cpu_and_thread \
+    $work_mask_and_thread \
+    -c $outcpu $out_thread < /dev/null 1>> "$logstem.out" 2>> "$logstem.err" &
 }
 
 perf=
 redis_sync_key=sync_time
 net_thread=hpguppi_net_thread
 out_thread=hpguppi_rawdisk_thread
+control_thread=
 work_thread=
 bindport=60000
 vlan=
@@ -286,8 +286,32 @@ then
   exit 1
 fi
 
+control_cpu_and_thread_perinst=("" "")
+work_mask_and_thread_perinst=("" "")
+
 echo using net_thread $net_thread
+if [ -z "$control_thread" ]
+then
+  echo no control_thread
+else
+  echo using control_thread $control_thread
+  control_cpu_and_thread_perinst=(
+    "-c $CTR0CPU $control_thread"
+    "-c $CTR1CPU $control_thread"
+  )
+fi
+if [ -z "$work_thread" ]
+then
+  echo no work_thread
+else
+  echo using work_thread $work_thread
+  work_mask_and_thread_perinst=(
+    "-m $TPS0MSK $work_thread"
+    "-m $TPS1MSK $work_thread"
+  )
+fi
 echo using out_thread $out_thread
+echo
 
 instance_ids=''
 
@@ -314,6 +338,10 @@ for instidx in $instance_ids
 do
   fifo="/tmp/hpguppi_daq_control/$instidx"
   args="${instances[$instidx]}"
+
+  control_cpu_and_thread="${control_cpu_and_thread_perinst[$instidx]}"
+  work_mask_and_thread="${work_mask_and_thread_perinst[$instidx]}"
+
   if [ -n "${args}" ]
   then
     echo Starting instance $hostname/$instidx
