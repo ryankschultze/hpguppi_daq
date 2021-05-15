@@ -802,13 +802,19 @@ static void *run(hashpipe_thread_args_t * args)
 
           wblk_idx = pkt_blk_num - wblk[0].block_num;
           datablock_header = datablock_stats_header(wblk+wblk_idx);
+          hputu8(datablock_header, "BLKIDX", pkt_blk_num);
+          hputu8(datablock_header, "PKTIDX", pkt_seq_num);
+          hputu8(datablock_header, "PKTSTART", pkt_seq_num);
+          hputu8(datablock_header, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
+          hputu8(datablock_header, "OBSSTART", obs_start_pktidx);
+          hputu8(datablock_header, "OBSSTOP", obs_stop_pktidx);
           hashpipe_status_lock_safe(st);
-            hputi8(datablock_header, "BLKIDX", pkt_blk_num);
-            hputi8(datablock_header, "PKTIDX", pkt_seq_num);
-            hputi8(datablock_header, "PKTSTART", pkt_seq_num);
-            hputi8(datablock_header, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
-            hputi8(datablock_header, "OBSSTART", obs_start_pktidx);
-            hputi8(datablock_header, "OBSSTOP", obs_stop_pktidx);
+            hputu8(st->buf, "BLKIDX", pkt_blk_num);
+            hputu8(st->buf, "PKTIDX", pkt_seq_num);
+            hputu8(st->buf, "PKTSTART", pkt_seq_num);
+            hputu8(st->buf, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
+            hputu8(st->buf, "OBSSTART", obs_start_pktidx);
+            hputu8(st->buf, "OBSSTOP", obs_stop_pktidx);
           hashpipe_status_unlock_safe(st);
         }
     
