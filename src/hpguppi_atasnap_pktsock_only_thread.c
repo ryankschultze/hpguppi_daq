@@ -569,8 +569,6 @@ static void *run(hashpipe_thread_args_t * args)
     * when hashpipe is idling.
     */
   enum obs_info_validity obs_info_validity = OBS_UNKNOWN;
-  
-  fprintf(stderr, "Packets per block %d, Packet timestamps per block %d\n", obs_info.pkt_per_block, obs_info.pktidx_per_block);
   unsigned long pkt_blk_num, last_pkt_blk_num = 0;
 
 
@@ -647,7 +645,8 @@ static void *run(hashpipe_thread_args_t * args)
       if(obs_info_refresh_elapsed_ns > obs_info_refresh_period_ns){
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
-        if (obs_info_validity <= OBS_INVALID && obs_stop_pktidx > 0){
+        // kill any observations if OBS_info_INVALID
+        if (obs_info_validity < OBS_SEEMS_VALID && obs_stop_pktidx > 0){
           obs_start_pktidx = 0;
           obs_stop_pktidx = 0;
           hashpipe_status_lock_safe(st);
