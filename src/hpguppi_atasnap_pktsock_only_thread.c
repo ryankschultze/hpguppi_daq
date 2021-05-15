@@ -610,14 +610,14 @@ static void *run(hashpipe_thread_args_t * args)
   uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, npacket=0;
 
   uint64_t pkt_idx;
-  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx;
+  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx=0, blk_obsstart_alignment_offset=0;
   uint64_t pkt_payload_size;
   uint32_t fid_stride, time_stride;
   int32_t stream;
   uint16_t feng_id, pkt_schan;
 
   char waiting=-1;
-  char flag_reinit_blks=1;
+  char flag_reinit_blks=0;
 
   /* Time parameters */
   struct timespec ts_checked_obs_info = {0}, ts_tried_obs_info = {0}, ts_now = {0};
@@ -663,6 +663,38 @@ static void *run(hashpipe_thread_args_t * args)
             hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
+          if(obs_start_pktidx > 0 && blk0_start_pktidx > 0 ){
+            //
+            // blk0
+            //  |  blk
+            //  |   |  blk
+            //  |   |   | observation
+            //  |   |   |  |
+            //  0---|---|-->____
+            //          |vv|
+            //    /offset/
+            //  |^^|
+            //  0++0---|--->____
+            //
+            //  observation
+            //      | blk0 
+            //      |  |  blk
+            //      |  |   |  blk
+            //      |  |   |   |
+            //      >__0___|___|
+            //      |^^|offset
+            //      0___|___...
+
+            blk_obsstart_alignment_offset = (obs_start_pktidx - blk0_start_pktidx)%obs_info.pktidx_per_block;
+
+            if(blk_obsstart_alignment_offset != 0){
+              blk0_start_pktidx += blk_obsstart_alignment_offset;
+              flag_reinit_blks = 1;
+              hashpipe_info(thread_name,
+                  "working blocks reinit to align pktstart to obsstart\n\t\toffset of %lu",
+                  blk_obsstart_alignment_offset);
+            }
+          }
         }
 
         // write obs_info to overwrite any changes
@@ -768,9 +800,10 @@ static void *run(hashpipe_thread_args_t * args)
     // Only copy packet data and count packet if its wblk_idx is valid
     switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
-        if( pkt_blk_num + 1 < wblk[0].block_num
-         || pkt_blk_num > wblk[n_wblock-1].block_num + 1
-                ) {
+        if(!flag_reinit_blks && // dont hijack obs_start alignment reinit
+            (pkt_blk_num + 1 < wblk[0].block_num
+            || pkt_blk_num > wblk[n_wblock-1].block_num + 1)
+          ) {
           flag_reinit_blks = 1;
           blk0_start_pktidx = pkt_idx;
           // Should only happen when seeing first packet when obs_info is valid
