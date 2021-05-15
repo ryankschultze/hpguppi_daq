@@ -616,6 +616,7 @@ static void *run(hashpipe_thread_args_t * args)
   uint16_t feng_id, pkt_schan;
 
   char waiting=-1;
+  char flag_reinit_blks=0;
 
   /* Time parameters */
   struct timespec ts_checked_obs_info = {0}, ts_now = {0};
@@ -756,6 +757,16 @@ static void *run(hashpipe_thread_args_t * args)
     // Only copy packet data and count packet if its wblk_idx is valid
     switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
+        if( pkt_blk_num + 1 < wblk[0].block_num
+         || pkt_blk_num > wblk[n_wblock-1].block_num + 1
+                ) {
+          flag_reinit_blks = 1;
+          // Should only happen when transitioning into ARMED, so warn about it
+          hashpipe_warn(thread_name,
+              "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+              pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+        }
+
         // Manage blocks based on pkt_blk_num
         if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
           // Time to advance the blocks!!!
@@ -771,13 +782,8 @@ static void *run(hashpipe_thread_args_t * args)
           wait_for_block_free(&wblk[n_wblock-1], st, status_key);
         }
         // Check for PKTIDX discontinuity
-        else if(pkt_blk_num + 1 < wblk[0].block_num
-                || pkt_blk_num > wblk[n_wblock-1].block_num + 1
-                ) {
-          // Should only happen when transitioning into ARMED, so warn about it
-          hashpipe_warn(thread_name,
-              "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-              pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+        else if(flag_reinit_blks) {
+          flag_reinit_blks = 0;
           // Re-init working blocks for block number of current packet's block,
           // and clear their data buffers
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
