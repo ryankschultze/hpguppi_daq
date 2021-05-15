@@ -150,7 +150,7 @@ enum run_states state_from_start_stop(const uint64_t obs_start_pktidx, const uin
   if(block_start_pktidx >= obs_stop_pktidx){
     return IDLE;
   }
-  else if(block_stop_pktidx < obs_start_pktidx){
+  else if(block_stop_pktidx <= obs_start_pktidx){ //block_stop_pktidx is exclusive
     return ARMED;
   }
   else{// block_start_pktidx < obs_stop_pktidx && block_stop_pktidx >= obs_start_pktidx
