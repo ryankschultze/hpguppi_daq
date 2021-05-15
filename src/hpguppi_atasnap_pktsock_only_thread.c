@@ -616,7 +616,7 @@ static void *run(hashpipe_thread_args_t * args)
   uint16_t feng_id, pkt_schan;
 
   char waiting=-1;
-  char flag_reinit_blks=0;
+  char flag_reinit_blks=1;
 
   /* Time parameters */
   struct timespec ts_checked_obs_info = {0}, ts_now = {0};
