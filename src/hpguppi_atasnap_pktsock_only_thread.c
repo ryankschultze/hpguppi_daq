@@ -727,7 +727,11 @@ static void *run(hashpipe_thread_args_t * args)
       hashpipe_pktsock_release_frame(p_frame);
       continue;
     }
-    
+
+    ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
+    // Get packet's sequence number
+    pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
+
     if (obs_info_validity < OBS_SEEMS_VALID || pkt_idx < blk0_start_pktidx){
       hashpipe_pktsock_release_frame(p_frame);
       continue;
@@ -741,9 +745,7 @@ static void *run(hashpipe_thread_args_t * args)
       waiting=0;
     }
 
-    ata_snap_pkt = (struct ata_snap_pkt*) p_frame;
-    // Get packet's sequence number
-    pkt_idx =  ATA_SNAP_PKT_NUMBER(ata_snap_pkt);
+    // Get packet's block number relative to the first block's starting index.
     pkt_blk_num = (pkt_idx - blk0_start_pktidx) / obs_info.pktidx_per_block;
 
     // Tally npacket between 1 Hz updates
@@ -763,7 +765,7 @@ static void *run(hashpipe_thread_args_t * args)
           flag_reinit_blks = 1;
           // Should only happen when transitioning into ARMED, so warn about it
           hashpipe_warn(thread_name,
-              "working blocks reinit due to packet discontinuity\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+              "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
               pkt_idx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
         }
 
