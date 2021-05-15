@@ -254,25 +254,15 @@ then
 elif [ "$1" = 'atasnap' ]
 then
   use_fifo=no
-  # net_thread="hpguppi_ibvpkt_thread -c 11 hpguppi_atasnap_voltage_thread"
-  # net_thread="hpguppi_net_thread -c 11 hpguppi_atasnap_voltage_thread"
-  # net_thread="hpguppi_net_thread"
 
   net_thread=hpguppi_atasnap_pktsock_thread
   work_thread=hpguppi_atasnap_pkt_to_FTP_transpose
-  # options="-o IBVPKTSZ=42,8,8192"
-  instances[0]="${instances[0]/eth4/ens6d1}"
-  instances[1]="${instances[1]/eth5/ens6d1}"
+
   bindport=0
   instance_ports[0]=10000
   instance_ports[1]=10000
-  # instances[1]="${instances[0]/datax/mnt/buf0}"
-  # instances[1]="${instances[1]/datax2/mnt/buf1}"
   # For initial testing...
-  # hpguppi_plugin=/homelocal/sonata/davidm/src/hpguppi_daq/src/.libs/hpguppi_daq.so
   hpguppi_plugin=${PREFIX_LIB}hpguppi_daq.so
-  # out_thread=null_output_thread
-  # out_thread=hpguppi_rawdisk_only_thread
   out_thread=hpguppi_atasnap_rawdisk_thread
   shift
 elif echo "$1" | grep -q 'thread'
