@@ -324,7 +324,7 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
 }
 
 /**
- * Updates @param validity and returns 1 if the info changed and seems valid, else 0. 
+ * Updates @param validity and returns 1 if the info changed, else 0. 
  * 
  * Commented out are fields that are static due to the SNAP's implementation.
  */
@@ -377,7 +377,7 @@ static char ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_in
     return 1;
   } else { // if change in obs_info and obs_info seems invalid
     *validity = OBS_INVALID;
-    return 0;
+    return 1;
   }
 }
 
@@ -669,7 +669,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
         else {//otherwise read obs_info
           if(ata_snap_obs_info_read(st, &obs_info, &obs_info_validity)){
-            // this code executes if the obs_info has CHANGED to SEEMS_VALID
+            // this code executes if the obs_info has CHANGED
             // (ie at least once before valid observation)
             ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
             
