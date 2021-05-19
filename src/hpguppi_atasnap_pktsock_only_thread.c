@@ -326,6 +326,45 @@ static void block_stack_push(struct datablock_stats *d, int nblock)
         memcpy(&d[i-1], &d[i], sizeof(struct datablock_stats));
 }
 
+// Align the blk0_start index to be integer (preferably positive) 
+// multiples of pktidx_per_block away from obsstart.
+static char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, uint32_t pktidx_per_block){
+  //
+  // blk0
+  //  |  blk
+  //  |   |  blk
+  //  |   |   | observation
+  //  |   |   |  |
+  //  0---|---|-->____
+  //          |vv|
+  //    /offset/
+  //  |^^|
+  //  0++0---|---|>____
+  //
+  //  observation
+  //      | blk0 
+  //      |  |  blk
+  //      |  |   |  blk
+  //      |  |   |   |
+  //      >__0___|___|
+  //      |^^|offset
+  //      0___|___...
+
+  uint32_t blk_obsstart_alignment_offset = (obsstart - *blk0_start_pktidx)%pktidx_per_block;
+
+  if(blk_obsstart_alignment_offset != 0){
+    // Subtract rather, so that the offset motion is more inclusive rather than exclusive
+    // (particularly for the case of blk0 > obsstart)
+    blk_obsstart_alignment_offset = pktidx_per_block - blk_obsstart_alignment_offset;
+    *blk0_start_pktidx -= blk_obsstart_alignment_offset;
+    hashpipe_info(__FUNCTION__,
+        "working blocks reinit to align pktstart to obsstart\n\t\toffset of -%lu",
+        blk_obsstart_alignment_offset);
+    return 1;
+  }
+  return 0;
+}
+
 /**
  * Updates @param validity and returns 1 if the info changed, else 0. 
  * 
@@ -610,7 +649,7 @@ static void *run(hashpipe_thread_args_t * args)
   uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, npacket=0;
 
   uint64_t pkt_idx;
-  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx=0, blk_obsstart_alignment_offset=0;
+  uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx=0;
   uint64_t pkt_payload_size;
   uint32_t fid_stride, time_stride;
   int32_t stream;
@@ -664,36 +703,7 @@ static void *run(hashpipe_thread_args_t * args)
           }
           hashpipe_status_unlock_safe(st);
           if(obs_start_pktidx > 0 && blk0_start_pktidx > 0 ){
-            //
-            // blk0
-            //  |  blk
-            //  |   |  blk
-            //  |   |   | observation
-            //  |   |   |  |
-            //  0---|---|-->____
-            //          |vv|
-            //    /offset/
-            //  |^^|
-            //  0++0---|--->____
-            //
-            //  observation
-            //      | blk0 
-            //      |  |  blk
-            //      |  |   |  blk
-            //      |  |   |   |
-            //      >__0___|___|
-            //      |^^|offset
-            //      0___|___...
-
-            blk_obsstart_alignment_offset = (obs_start_pktidx - blk0_start_pktidx)%obs_info.pktidx_per_block;
-
-            if(blk_obsstart_alignment_offset != 0){
-              blk0_start_pktidx += blk_obsstart_alignment_offset;
-              flag_reinit_blks = 1;
-              hashpipe_info(thread_name,
-                  "working blocks reinit to align pktstart to obsstart\n\t\toffset of %lu",
-                  blk_obsstart_alignment_offset);
-            }
+            flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
           }
         }
 
@@ -811,6 +821,7 @@ static void *run(hashpipe_thread_args_t * args)
             ) {
             flag_reinit_blks = 1;
             blk0_start_pktidx = pkt_idx;
+            align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
             // Should only happen when seeing first packet when obs_info is valid
             // warn in case it happens in other scenarios
             hashpipe_warn(thread_name,
