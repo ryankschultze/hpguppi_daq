@@ -184,7 +184,7 @@ int wait_out_free_transfer_in_and_set_filled(
 
   memcpy(hpguppi_databuf_header(outdb, *blk_out_idx),
     hpguppi_databuf_header(indb, *blk_in_idx),
-    BLOCK_HDR_SIZE
+    HASHPIPE_STATUS_TOTAL_SIZE
   );
   memcpy(hpguppi_databuf_data(outdb, *blk_out_idx),
     hpguppi_databuf_data(indb, *blk_in_idx),
@@ -249,8 +249,8 @@ static void *run(hashpipe_thread_args_t * args)
           timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
           hashpipe_status_lock_safe(st);
           {
-              hputi8(st->buf, "OBSNPKTS", obs_npacket_total);
-              hputi8(st->buf, "OBSNDROP", obs_ndrop_total);
+              hputu8(st->buf, "OBSNPKTS", obs_npacket_total);
+              hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
               hputu4(st->buf, "BLKSPS", blocks_per_second);
               hputs(st->buf, "DAQPULSE", timestr);
               HPUT_DAQ_STATE(st, state);
