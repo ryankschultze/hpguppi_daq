@@ -355,8 +355,13 @@ static char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obss
   if(blk_obsstart_alignment_offset != 0){
     // Subtract rather, so that the offset motion is more inclusive rather than exclusive
     // (particularly for the case of blk0 > obsstart)
-    blk_obsstart_alignment_offset = pktidx_per_block - blk_obsstart_alignment_offset;
-    *blk0_start_pktidx -= blk_obsstart_alignment_offset;
+    if(*blk0_start_pktidx > blk_obsstart_alignment_offset){
+      blk_obsstart_alignment_offset = pktidx_per_block - blk_obsstart_alignment_offset;
+      *blk0_start_pktidx -= blk_obsstart_alignment_offset;
+    }
+    else{
+      *blk0_start_pktidx += blk_obsstart_alignment_offset;
+    }
     hashpipe_info(__FUNCTION__,
         "working blocks reinit to align pktstart to obsstart\n\t\toffset of -%lu",
         blk_obsstart_alignment_offset);
