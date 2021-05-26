@@ -907,6 +907,10 @@ static void *run(hashpipe_thread_args_t * args)
             // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
             // Finalize first working block
+            datablock_header = datablock_stats_header(&wblk[0]);
+            hputu8(datablock_header, "PKTIDX", first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
             finalize_block(wblk);
             if(!flag_obs_end){
               // Update ndrop counter
