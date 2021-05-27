@@ -782,7 +782,7 @@ static void *run(hashpipe_thread_args_t * args)
 
         // Catch any changes in OBSSTART/STOP
         clock_gettime(CLOCK_MONOTONIC, &ts_now);
-        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 50*1000*1000){
+        if(ELAPSED_NS(ts_checked_obs_startstop, ts_now) > 200*1000*1000){
           memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
           hashpipe_status_lock_safe(st);
           {
