@@ -98,6 +98,8 @@ static void *run(hashpipe_thread_args_t * args)
     int mjd_d, mjd_s;
     double mjd_fs;
 
+    unsigned char base_filename_stem_start;
+
     while (run_threads()) {
 
         /* Note waiting status */
@@ -189,6 +191,17 @@ static void *run(hashpipe_thread_args_t * args)
           char fname[256];
           sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
           fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
+          
+          // finds last '/'
+          base_filename_stem_start = strlen(pf.basefilename);
+          while(base_filename_stem_start > 0 && pf.basefilename[base_filename_stem_start-1] != '/'){
+            base_filename_stem_start--;
+          }
+
+          hashpipe_status_lock_safe(st);
+            hputs(st->buf, "OBSSTEM", pf.basefilename+base_filename_stem_start);
+          hashpipe_status_unlock_safe(st);
+
           // Create the output directory if needed
           char datadir[1024];
           strncpy(datadir, pf.basefilename, 1023);
