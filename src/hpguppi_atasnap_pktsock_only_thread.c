@@ -814,8 +814,30 @@ static void *run(hashpipe_thread_args_t * args)
     switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
 
-        if(!flag_reinit_blks) {// dont hijack obs_start alignment reinit
-          if (pkt_idx < blk0_start_pktidx && blk0_start_pktidx - pkt_idx < obs_info.pktidx_per_block){
+        if(!flag_reinit_blks) {
+          // Manage blocks based on pkt_blk_num
+          if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
+            // Time to advance the blocks!!!
+            wblk[0].pkts_per_block = obs_info.pkt_per_block;
+            wblk[0].pktidx_per_block = obs_info.pktidx_per_block;
+            
+            datablock_header = datablock_stats_header(&wblk[0]);
+            hputu8(datablock_header, "PKTIDX", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTSTART", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTSTOP", blk0_start_pktidx + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
+            // Finalize first working block
+            finalize_block(wblk);
+            // Update ndrop counter
+            ndrop_total += wblk->ndrop;
+            // hashpipe_info(thread_name, "Block dropped %d packets.", wblk->ndrop);
+            // Shift working blocks
+            block_stack_push(wblk, n_wblock);
+            // Increment last working block
+            increment_block(&wblk[n_wblock-1], pkt_blk_num);
+            // Wait for new databuf data block to be free
+            wait_for_block_free(&wblk[n_wblock-1], st, status_key);
+          }
+          else if (pkt_idx < blk0_start_pktidx && blk0_start_pktidx - pkt_idx < obs_info.pktidx_per_block){
             hashpipe_info(thread_name, "pkt_idx (%lu) < (%lu) blk0_start_pktidx", pkt_idx, blk0_start_pktidx);
             hashpipe_pktsock_release_frame(p_frame);
             continue;
@@ -834,8 +856,7 @@ static void *run(hashpipe_thread_args_t * args)
           }
         }
 
-        // Check for PKTIDX discontinuity
-        if(flag_reinit_blks) {
+        if(flag_reinit_blks) { // Reinitialise working blocks
           flag_reinit_blks = 0;
           // Re-init working blocks for block number of current packet's block,
           // and clear their data buffers
@@ -855,28 +876,6 @@ static void *run(hashpipe_thread_args_t * args)
 
           // trigger noteable difference in last_pkt_blk_num 
           last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
-        }
-        // Manage blocks based on pkt_blk_num
-        else if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
-          // Time to advance the blocks!!!
-          wblk[0].pkts_per_block = obs_info.pkt_per_block;
-          wblk[0].pktidx_per_block = obs_info.pktidx_per_block;
-          
-          datablock_header = datablock_stats_header(&wblk[0]);
-          hputu8(datablock_header, "PKTIDX", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-          hputu8(datablock_header, "PKTSTART", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-          hputu8(datablock_header, "PKTSTOP", blk0_start_pktidx + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
-          // Finalize first working block
-          finalize_block(wblk);
-          // Update ndrop counter
-          ndrop_total += wblk->ndrop;
-          // hashpipe_info(thread_name, "Block dropped %d packets.", wblk->ndrop);
-          // Shift working blocks
-          block_stack_push(wblk, n_wblock);
-          // Increment last working block
-          increment_block(&wblk[n_wblock-1], pkt_blk_num);
-          // Wait for new databuf data block to be free
-          wait_for_block_free(&wblk[n_wblock-1], st, status_key);
         }
         
         // Update PKTIDX in status buffer if it is a new pkt_blk_num
