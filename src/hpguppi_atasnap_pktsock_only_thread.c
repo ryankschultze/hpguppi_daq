@@ -707,6 +707,7 @@ static void *run(hashpipe_thread_args_t * args)
             hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
+          flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
         }
 
         // write obs_info to overwrite any changes
@@ -812,8 +813,6 @@ static void *run(hashpipe_thread_args_t * args)
     // Only copy packet data and count packet if its wblk_idx is valid
     switch(check_pkt_observability(&obs_info, feng_id, stream, pkt_schan)){
       case PKT_OBS_OK:
-
-        flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
 
         if(!flag_reinit_blks) {// dont hijack obs_start alignment reinit
           if (pkt_idx < blk0_start_pktidx && blk0_start_pktidx - pkt_idx < obs_info.pktidx_per_block){
