@@ -689,29 +689,6 @@ static void *run(hashpipe_thread_args_t * args)
       if(obs_info_refresh_elapsed_ns > obs_info_refresh_period_ns){
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
-        // kill any observations if OBS_info_INVALID
-        if (obs_info_validity < OBS_SEEMS_VALID && obs_stop_pktidx > 0){
-          obs_start_pktidx = 0;
-          obs_stop_pktidx = 0;
-          hashpipe_status_lock_safe(st);
-          {
-            hputu8(st->buf, "OBSSTART", 0);
-            hputu8(st->buf, "OBSSTOP", 0);
-          }
-          hashpipe_status_unlock_safe(st);
-        }
-        else{
-          hashpipe_status_lock_safe(st);
-          {
-            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
-            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
-          }
-          hashpipe_status_unlock_safe(st);
-          if(npacket > 0){// let the first reinitialisation of the blocks be due to packet discontinuity
-            flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
-          }
-        }
-
         // write obs_info to overwrite any changes
         if (obs_info_validity == OBS_VALID && // if obs_info is valid
             pkt_idx >= obs_start_pktidx && pkt_idx < obs_stop_pktidx){ //and observing
@@ -732,6 +709,29 @@ static void *run(hashpipe_thread_args_t * args)
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
             obs_info_validity = OBS_SEEMS_VALID;
+          }
+        }
+
+        // kill any observations if OBS_info_INVALID
+        if (obs_info_validity < OBS_SEEMS_VALID && obs_stop_pktidx > 0){
+          obs_start_pktidx = 0;
+          obs_stop_pktidx = 0;
+          hashpipe_status_lock_safe(st);
+          {
+            hputu8(st->buf, "OBSSTART", 0);
+            hputu8(st->buf, "OBSSTOP", 0);
+          }
+          hashpipe_status_unlock_safe(st);
+        }
+        else{
+          hashpipe_status_lock_safe(st);
+          {
+            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
+            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
+          }
+          hashpipe_status_unlock_safe(st);
+          if(npacket > 0){// let the first reinitialisation of the blocks be due to packet discontinuity
+            flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
           }
         }
 
