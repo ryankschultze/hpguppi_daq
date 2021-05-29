@@ -707,7 +707,9 @@ static void *run(hashpipe_thread_args_t * args)
             hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
-          flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
+          if(npacket > 0){// let the first reinitialisation of the blocks be due to packet discontinuity
+            flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
+          }
         }
 
         // write obs_info to overwrite any changes
