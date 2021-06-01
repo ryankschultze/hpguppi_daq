@@ -654,13 +654,14 @@ static void *run(hashpipe_thread_args_t * args)
   uint64_t npacket_total=0, ndrop_total=0, nbogus_total=0, npacket=0;
 
   uint64_t pkt_idx;
+  uint64_t prev_obs_start_pktidx, prev_obs_stop_pktidx;
   uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0, blk0_start_pktidx=0;
   uint64_t pkt_payload_size;
   uint32_t fid_stride, time_stride;
   int32_t stream;
   uint16_t feng_id, pkt_schan;
 
-  char waiting=-1;
+  char waiting=-1, observing=0;
   char flag_reinit_blks=0;
 
   /* Time parameters */
@@ -690,8 +691,9 @@ static void *run(hashpipe_thread_args_t * args)
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
         // write obs_info to overwrite any changes
+        observing = pkt_idx >= obs_start_pktidx && pkt_idx < obs_stop_pktidx;
         if (obs_info_validity == OBS_VALID && // if obs_info is valid
-            pkt_idx >= obs_start_pktidx && pkt_idx < obs_stop_pktidx){ //and observing
+            observing ){ //and observing
             ata_snap_obs_info_write(st, &obs_info, obs_info_validity);
         }
         else {//otherwise read obs_info
@@ -724,12 +726,25 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_unlock_safe(st);
         }
         else{
+          prev_obs_start_pktidx = obs_start_pktidx;
+          prev_obs_stop_pktidx = obs_stop_pktidx;
           hashpipe_status_lock_safe(st);
           {
             hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
             hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
+          
+          if(obs_start_pktidx != prev_obs_start_pktidx){
+            hashpipe_info(thread_name, "obs_start_pktidx changed %lu -> %lu", prev_obs_start_pktidx, obs_start_pktidx);
+            if(!observing){
+              hashpipe_info(thread_name, "obs_start_pktidx change ignored while in observation.");
+              obs_start_pktidx = prev_obs_start_pktidx;
+            }
+          }
+          if(obs_stop_pktidx != prev_obs_stop_pktidx){
+            hashpipe_info(thread_name, "obs_stop_pktidx changed %lu -> %lu", prev_obs_stop_pktidx, obs_stop_pktidx);
+          }
           if(npacket > 0){// let the first reinitialisation of the blocks be due to packet discontinuity
             flag_reinit_blks = align_blk0_with_obsstart(&blk0_start_pktidx, obs_start_pktidx, obs_info.pktidx_per_block);
           }
