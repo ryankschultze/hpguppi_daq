@@ -665,7 +665,7 @@ static void *run(hashpipe_thread_args_t * args)
 
   /* Time parameters */
   struct timespec ts_checked_obs_info = {0}, ts_tried_obs_info = {0}, ts_now = {0};
-  const uint64_t obs_info_refresh_period_ns = 50*1000*1000;
+  const uint64_t obs_info_refresh_period_ns = 200*1000*1000;
   const uint64_t obs_info_retry_period_s = 5;
   uint64_t obs_info_refresh_elapsed_ns;
   
