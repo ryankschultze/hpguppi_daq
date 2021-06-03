@@ -947,7 +947,9 @@ static void *run(hashpipe_thread_args_t * args)
 
               // also update the working blocks' headers
               datablock_header = datablock_stats_header(wblk+wblk_idx);
-              memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hashpipe_status_lock_safe(st);
+                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hashpipe_status_unlock_safe(st);
               hputu8(datablock_header, "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputu8(datablock_header, "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputu8(datablock_header, "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
