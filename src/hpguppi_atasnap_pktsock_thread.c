@@ -793,10 +793,11 @@ static void *run(hashpipe_thread_args_t * args)
           
         switch(state_from_start_stop(pkt_seq_num, obs_start_pktidx, obs_stop_pktidx)){
           case IDLE:// If should IDLE, 
-            flag_state_update = (state != IDLE ? 1 : 0);// flag state update
             if(state == ARMED){
+              flag_state_update = 1;
               state = IDLE;
-            }// RECORDING -> IDLE handled before finalising a block
+            }
+            // if RECORDING -> IDLE handled before finalising a block
             break;
           case RECORD:// If should RECORD
             if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
