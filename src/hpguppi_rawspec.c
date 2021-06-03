@@ -126,7 +126,7 @@ update_fb_hdrs_from_raw_hdr(rawspec_context *ctx, const char *p_rawhdr)
     cb_data[i].fb_hdr.tstart = raw_hdr.mjd;
     cb_data[i].fb_hdr.ibeam = raw_hdr.beam_id;
     cb_data[i].fb_hdr.nbeams = raw_hdr.nbeam;
-    strncpy(cb_data[i].fb_hdr.source_name, raw_hdr.src_name, 80);
+    strncpy(cb_data[i].fb_hdr.source_name, raw_hdr.src_name, 81);
     cb_data[i].fb_hdr.source_name[80] = '\0';
     // Output product dependent
     cb_data[i].fb_hdr.foff = raw_hdr.obsbw/raw_hdr.obsnchan/ctx->Nts[i];

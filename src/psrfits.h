@@ -20,7 +20,7 @@ struct hdrinfo {
     char frontend[24];      // Frontend used
     char backend[24];       // Backend or instrument used
     char project_id[24];    // Project identifier
-    char date_obs[24];      // Start of observation (YYYY-MM-DDTHH:MM:SS.SSS)
+    char date_obs[29];      // Start of observation (YYYY-MM-DDTHH:MM:SS.SSS)
     char ra_str[16];        // Right Ascension string (HH:MM:SS.SSSS)
     char dec_str[16];       // Declination string (DD:MM:SS.SSSS)
     char poln_type[8];      // Polarization recorded (LIN or CIRC)

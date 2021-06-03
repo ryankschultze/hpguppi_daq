@@ -346,16 +346,19 @@ void hpguppi_read_obs_params(char *buf,
     // Use a $DATADIR/$PROJID/$BACKEND/$BANK prefix for files
     if (strnlen(banknam, sizeof(banknam)) < 1)
         snprintf(banknam, sizeof(banknam), ".");
-    sprintf(p->basefilename, "%s/%s/%s%s/%c/%s", dir, p->hdr.project_id,
+    sprintf(p->basefilename, "%.72s/%s/%s%s/%c/%.71s", dir, p->hdr.project_id,
             p->hdr.backend, g->coherent ? "_CODD" : "",
             banknam[strnlen(banknam, sizeof(banknam))-1], base);
 #endif
     { // Date and time of start
-        int YYYY, MM, DD, h, m;
-        double s;
+        int YYYY, MM, DD, h, m, s_integ_int, s_frac_int;
+        double s, s_integ, s_frac;
         datetime_from_mjd(p->hdr.MJD_epoch, &YYYY, &MM, &DD, &h, &m, &s);
-        sprintf(p->hdr.date_obs, "%04d-%02d-%02dT%02d:%02d:%06.3f",
-                YYYY % 10000, MM % 100, DD % 100, h % 24, m % 60, s);
+        s_frac = modf(s, &s_integ);
+        s_integ_int = abs((int)s_integ);
+        s_frac_int = abs((int)(s_frac*1000));
+        sprintf(p->hdr.date_obs, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
+                YYYY % 10000, MM % 100, DD % 100, h % 24, m % 60, s_integ_int % 100, s_frac_int % 1000);
     }
 
     // TODO: call telescope-specific settings here
@@ -366,7 +369,7 @@ void hpguppi_read_obs_params(char *buf,
     {
         int ii, jj, kk;
         int bytes_per_dt = p->hdr.nchan * p->hdr.npol * p->hdr.nbits / 8;
-        char key[10];
+        char key[17];
         double offset, scale, dtmp;
         long long max_bytes_per_file;
 
