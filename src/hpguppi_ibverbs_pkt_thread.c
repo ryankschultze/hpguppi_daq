@@ -168,7 +168,9 @@ int
 hpguppi_query_max_wr(const char * interface_name)
 {
   uint64_t interface_id;
-  struct ibv_device_attr ibv_dev_attr;
+  struct ibv_device_attr* ibv_dev_attr = malloc(sizeof(struct ibv_device_attr));
+  struct ibv_context* ibv_context = NULL;
+  int max_qp_wr = -1;
 
   if(hashpipe_ibv_get_interface_info(interface_name, NULL, &interface_id)) {
     hashpipe_error(interface_name, "error getting interace info");
@@ -177,12 +179,14 @@ hpguppi_query_max_wr(const char * interface_name)
   }
 
   if(hashpipe_ibv_open_device_for_interface_id(
-        interface_id, NULL, &ibv_dev_attr, NULL)) {
+        interface_id, &ibv_context, NULL, ibv_dev_attr)) {
     // Error message already logged
     return -1;
   }
 
-  return ibv_dev_attr.max_qp_wr;
+  max_qp_wr = ibv_dev_attr->max_qp_wr;
+  free(ibv_dev_attr);
+  return max_qp_wr;
 }
 
 // Parses the ibvpktsz string for chunk sizes and initializes db's pktbuf_info
