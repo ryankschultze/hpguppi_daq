@@ -457,12 +457,15 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Setup recv WRs' num_sge and SGEs' addr/length fields
   for(i=0; i<hibv_ctx->recv_pkt_num; i++) {
+    hibv_ctx->recv_pkt_buf[i].wr.wr_id = i;
     hibv_ctx->recv_pkt_buf[i].wr.num_sge = num_chunks;
+    hibv_ctx->recv_pkt_buf[i].wr.sg_list = &hibv_ctx->recv_sge_buf[num_chunks*i];
 
     base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, 0, i);
     for(j=0; j<num_chunks; j++) {
       hibv_ctx->recv_sge_buf[num_chunks*i+j].addr = base_addr + chunks[j].chunk_offset;
       hibv_ctx->recv_sge_buf[num_chunks*i+j].length = chunks[j].chunk_size;
+      // hibv_ctx->recv_sge_buf[num_chunks*i+j].lkey = hibv_ctx->recv_mr->lkey; // not implemented here
     }
   }
 
