@@ -486,7 +486,7 @@ create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
     .flags          = 0
   };
 
-  return ibv_create_flow(hibv_ctx->qp[0], &sniffer_flow_attr);
+  return ibv_create_flow(hibv_ctx->qp, &sniffer_flow_attr);
 }
 
 // Destrory sniffer flow
