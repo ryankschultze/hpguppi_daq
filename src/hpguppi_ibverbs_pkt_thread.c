@@ -405,7 +405,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
   hashpipe_status_unlock_safe(st);
 
   // General fields
-  hibv_ctx->nqp = 1;
+  // hibv_ctx->nqp = 1;
   hibv_ctx->pkt_size_max = 9*1024; // Not really used with user managed buffers
   hibv_ctx->user_managed_flag = 1;
 
@@ -439,8 +439,8 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Specify size of send and recv memory regions.
   // Send memory region is just one packet.  Recv memory region spans all data blocks.
-  hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
-  hibv_ctx->recv_mr_size = sizeof(db->block);
+  // hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
+  // hibv_ctx->recv_mr_size = sizeof(db->block);
 
   // Allocate memory for send_mr_buf
   if(!(hibv_ctx->send_mr_buf = (uint8_t *)calloc(
