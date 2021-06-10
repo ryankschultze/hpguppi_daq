@@ -737,7 +737,7 @@ static void *run(hashpipe_thread_args_t * args)
           
           if(obs_start_pktidx != prev_obs_start_pktidx){
             hashpipe_info(thread_name, "obs_start_pktidx changed %lu -> %lu", prev_obs_start_pktidx, obs_start_pktidx);
-            if(!observing){
+            if(observing){
               hashpipe_info(thread_name, "obs_start_pktidx change ignored while in observation.");
               obs_start_pktidx = prev_obs_start_pktidx;
             }
