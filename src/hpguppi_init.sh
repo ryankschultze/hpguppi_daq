@@ -67,14 +67,14 @@ case $cores_per_cpu in
     NET0CPU=17
     OUT0CPU=18
     TPS0MSK=133693440
-    CTR0CPU=27
+    CTR0CPU=26
     BINDHOST0=enp97s0f1
     NUMABIND1=0
     DATADIR1=/mnt/buf1
     NET1CPU=1
     OUT1CPU=2
     TPS1MSK=2040
-    CTR1CPU=14
+    CTR1CPU=11
     BINDHOST1=enp225s0f1
     ;;
   *)
