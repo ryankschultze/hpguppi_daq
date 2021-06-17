@@ -827,7 +827,7 @@ int debug_i=0, debug_j=0;
   hibv_ctx->recv_pkt_num = DEFAULT_RECV_PKT_NUM;
   hibv_ctx->pkt_size_max = DEFAULT_MAX_PKT_SIZE;
   hibv_ctx->max_flows    = DEFAULT_MAX_FLOWS;
-  hibv_ctx->nqp          = DEFAULT_NUM_QP;
+  uint32_t hibv_ctx_nqp  = DEFAULT_NUM_QP;
 
   // Get params from status buffer (if present)
   hashpipe_status_lock_safe(st);
@@ -835,7 +835,7 @@ int debug_i=0, debug_j=0;
     // Read (no change if not present)
     hgetu4(st->buf, "RPKTNUM", &hibv_ctx->recv_pkt_num);
     hgetu4(st->buf, "MAXFLOWS", &hibv_ctx->max_flows);
-    hgetu4(st->buf, "NUM_QP", &hibv_ctx->nqp);
+    hgetu4(st->buf, "NUM_QP", &hibv_ctx_nqp);
   }
   hashpipe_status_unlock_safe(st);
 
@@ -846,7 +846,7 @@ int debug_i=0, debug_j=0;
   }
 
   hashpipe_info(thread_name, "recv_pkt_num=%u max_flows=%u num_qp=%u",
-      hibv_ctx->recv_pkt_num, hibv_ctx->max_flows, hibv_ctx->nqp);
+      hibv_ctx->recv_pkt_num, hibv_ctx->max_flows, hibv_ctx_nqp);
 
   // Main loop
   while (run_threads()) {
