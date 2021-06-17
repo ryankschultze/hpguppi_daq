@@ -167,7 +167,87 @@
 #ifndef _HPGUPPI_ATASNAP_H_
 #define _HPGUPPI_ATASNAP_H_
 
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <pthread.h>
+#include "hashpipe.h"
+#include "hpguppi_databuf.h"
+#include "hpguppi_time.h"
+#include "hpguppi_util.h"
 #include "hashpipe_packet.h"
+
+// Define run states.  Currently three run states are defined: IDLE, LISTEN,
+// and RECORD.
+//
+// In the LISTEN and RECORD states, the PKTIDX field is updated with the value
+// from received packets.  Whenever the first PKTIDX of a block is received
+// (i.e. whenever PKTIDX is a multiple of pktidx_per_block), the value
+// for PKTSTART and DWELL are read from the status buffer.  PKTSTART is rounded
+// down, if needed, to ensure that it is a multiple of pktidx_per_block,
+// then PKTSTART is written back to the status buffer.  DWELL is interpreted as
+// the number of seconds to record and is used to calculate PKTSTOP (which gets
+// rounded down, if needed, to be a multiple of pktidx_per_block).
+//
+// The IDLE state is entered when there is no DESTIP defined in the status
+// buffer or it is 0.0.0.0.  In the IDLE state, the DESTIP value in the status
+// buffer is checked once per second.  If it is found to be something other
+// than 0.0.0.0, the state transitions to the LISTEN state and the current
+// blocks are reinitialized.
+//
+// To be operationally compatible with other hpguppi net threads, a "command
+// FIFO" is created and read from in all states, but commands sent there are
+// ignored.  State transitions are controlled entirely by DESTIP and
+// PKTSTART/DWELL status buffer fields.
+//
+// In the LISTEN state, incoming packets are processed (i.e. stored in the net
+// thread's output buffer) and full blocks are passed to the next thread.  When
+// the processed PKTIDX is equal to PKTSTART the state transitions to RECORD
+// and the following actions occur:
+//
+//   1. The MJD of the observation start time is calculated from PKTIDX,
+//      SYNCTIME, and other parameters.
+//
+//   2. The packet stats counters are reset
+//
+//   3. The STT_IMDJ and STT_SMJD are updated in the status buffer
+//
+//   4. STTVALID is set to 1
+//
+// In the RECORD state, incoming packets are processed (i.e. stored in the net
+// thread's output buffer) and full blocks are passed to the next thread (same
+// as in the LISTEN state).  When the processed PKTIDX is greater than or equal
+// to PKTSTOP the state transitions to LISTEN and STTVALID is set to 0.
+//
+// The PKTSTART/PKTSTOP tests are done every time the work blocks are advanced.
+//
+// The downstream thread (i.e. hpguppi_rawdisk_thread) is expected to use a
+// combination of PKTIDX, PKTSTART, PKTSTOP, and (optionally) STTVALID to
+// determine whether the blocks should be discarded or processed (e.g. written
+// to disk).
+
+enum run_states {IDLE, ARMED, RECORD};
+enum pkt_obs_code { PKT_OBS_OK=0,
+                    PKT_OBS_IDX,
+                    PKT_OBS_FENG,
+                    PKT_OBS_SCHAN,
+                    PKT_OBS_STREAM
+                  };
+
+/* Structs/functions to more easily deal with multiple
+ * active blocks being filled
+ */
+struct datablock_stats {
+    struct hpguppi_input_databuf *dbout; // Pointer to overall shared mem databuf
+    int block_idx;                    // Block index number in databuf
+    int64_t block_num;                // Absolute block number
+    uint64_t packet_idx;              // Index of first packet number in block
+    int pktidx_per_block;            // Total number of packets to go in the block
+    uint64_t pkts_per_block;
+    int npacket;                      // Number of packets filled so far
+    int ndrop;                     // Number of dropped packets so far
+    uint64_t last_pkt;                // Last packet seq number written to block
+};
 
 // ATA SNAP packet with link layer header and internal padding to optimize
 // alignment.  The alignment is acheived through judicious use of IB Verbs
@@ -551,5 +631,83 @@ pksuwl_pktidx_to_timespec(uint64_t pktidx, struct timespec *ts)
   ts->tv_nsec = (pktidx % PKSUWL_PKTIDX_PER_SEC) * PKSUWL_NS_PER_PKT;
 }
 #endif
+
+
+char * datablock_stats_data(const struct datablock_stats *d);
+char * datablock_stats_header(const struct datablock_stats *d);
+void reset_datablock_stats(struct datablock_stats *d);
+void init_datablock_stats(struct datablock_stats *d,
+    struct hpguppi_input_databuf *dbout, int block_idx, int64_t block_num,
+    uint64_t pkts_per_block);
+void block_stack_push(struct datablock_stats *d, int nblock);
+void finalize_block(struct datablock_stats *d);
+void increment_block(struct datablock_stats *d, int64_t block_num);
+void wait_for_block_free(const struct datablock_stats * d,
+  hashpipe_status_t * st, const char * status_key);
+
+unsigned check_pkt_observability(
+    const struct ata_snap_obs_info * ata_oi,
+    const uint64_t pkt_idx,
+    const uint64_t obs_start_pktidx,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  );
+
+void update_stt_status_keys( hashpipe_status_t *st,
+                                    enum run_states state,
+                                    uint64_t pktidx,
+                                    struct mjd_t *mjd);
+
+enum run_states state_from_start_stop(const uint64_t pktidx,
+                                       const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx);
+
+int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info);
+int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info);
+
+
+// The copy_packet_data_to_databuf() function does what it says: copies packet
+// data into a data buffer. This data buffer ought to be passed on to a transposition
+// thread, that produces the GUPPI RAW block layout.
+//
+// The data buffer block is identified by the datablock_stats structure pointed to
+// by the 'd' parameter.
+//
+// The 'ata_oi' parameter points to the observation's obs_info data.
+//
+// The ata_pkt parameter points to the packet.
+//
+// Each packet is copied as whole, and thusly the databuf has no contiguity across
+// the time samples.
+// The block is filled with packets with the order:
+//    PKTIDX[0 ... PIPERBLK]  (Packet-Time)  Slowest
+//    FENG  [0 ... NANT]      (AntennaEnum)  
+//    STREAM[0 ... NSTRM]     (Packet-Freq)  Fastest
+//
+// where each SNAP packet has dimensions:
+//    [Slowest ------> Fastest]
+//    [PKTCHAN, PKTNTIME, NPOL]
+//
+// The below datablock_stats_data(datablock_stats_pointer) offset is:
+//  First to this pktenum (time), then to  [biggest stride]
+//  first location of this FID, then to
+//  first location of this stream          [smallest stride]
+#define COPY_PACKET_DATA_TO_DATABUF(\
+      /*const struct datablock_stats*/    datablock_stats_pointer,\
+      /*const uint8_t*/   pkt_payload,\
+      /*const uint64_t*/  pkt_obs_relative_idx,\
+      /*const uint16_t*/  feng_id,\
+      /*const int32_t*/   stream,\
+      /*const uint16_t*/  pkt_schan,\
+      /*const uint32_t*/  fid_stride,\
+      /*const uint32_t*/  time_stride,\
+      /*const uint64_t*/  pkt_payload_size,\
+      /*const uint32_t*/  pkt_ntime)\
+  memcpy(datablock_stats_data(datablock_stats_pointer)+(\
+        ((pkt_obs_relative_idx%datablock_stats_pointer->pktidx_per_block)/pkt_ntime) * time_stride\
+            +  feng_id * fid_stride\
+            +  stream * pkt_payload_size\
+      ),\
+      pkt_payload, pkt_payload_size)
 
 #endif // _HPGUPPI_ATASNAP_H_
