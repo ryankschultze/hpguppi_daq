@@ -713,7 +713,6 @@ int debug_i=0, debug_j=0;
   // Initialize ts_start with current time
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts_start);
 
-  errno = 0;
   // Main loop
   while (run_threads()) {
     hibv_rpkt = hashpipe_ibv_recv_pkts(hibv_ctx, 50); // 50 ms timeout
