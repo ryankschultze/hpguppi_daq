@@ -5,9 +5,9 @@
 // assembles them into GUPPI RAW blocks.
 
 // TODO TEST Wait for first (second?) start-of-block when transitioning into
-//           LISTEN state so that the first block will be complete.
+//           LISTENING state so that the first block will be complete.
 // TODO Add PSPKTS and PSDRPS status buffer fields for pktsock
-// TODO TEST Set NETSTAE to idle in IDLE state
+// TODO TEST Set NETSTAE to idle in IDLING state
 // TODO TEST IP_DROP_MEMBERSHIP needs mcast IP address (i.e. not 0.0.0.0)
 
 #define _GNU_SOURCE 1
@@ -52,10 +52,10 @@
 #define ELAPSED_NS(start,stop) \
   (((int64_t)stop.tv_sec-start.tv_sec)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
-// Define run states.  Currently three run states are defined: IDLE, LISTEN,
-// and RECORD.
+// Define run states.  Currently three run states are defined: IDLING, LISTENING,
+// and RECORDING.
 //
-// In the LISTEN and RECORD states, the PKTIDX field is updated with the value
+// In the LISTENING and RECORDING states, the PKTIDX field is updated with the value
 // from received packets.  Whenever the first PKTIDX of a block is received
 // (i.e. whenever PKTIDX is a multiple of pktidx_per_block), the value
 // for PKTSTART and DWELL are read from the status buffer.  PKTSTART is rounded
@@ -64,10 +64,10 @@
 // the number of seconds to record and is used to calculate PKTSTOP (which gets
 // rounded down, if needed, to be a multiple of pktidx_per_block).
 //
-// The IDLE state is entered when there is no DESTIP defined in the status
-// buffer or it is 0.0.0.0.  In the IDLE state, the DESTIP value in the status
+// The IDLING state is entered when there is no DESTIP defined in the status
+// buffer or it is 0.0.0.0.  In the IDLING state, the DESTIP value in the status
 // buffer is checked once per second.  If it is found to be something other
-// than 0.0.0.0, the state transitions to the LISTEN state and the current
+// than 0.0.0.0, the state transitions to the LISTENING state and the current
 // blocks are reinitialized.
 //
 // To be operationally compatible with other hpguppi net threads, a "command
@@ -75,9 +75,9 @@
 // ignored.  State transitions are controlled entirely by DESTIP and
 // PKTSTART/DWELL status buffer fields.
 //
-// In the LISTEN state, incoming packets are processed (i.e. stored in the net
+// In the LISTENING state, incoming packets are processed (i.e. stored in the net
 // thread's output buffer) and full blocks are passed to the next thread.  When
-// the processed PKTIDX is equal to PKTSTART the state transitions to RECORD
+// the processed PKTIDX is equal to PKTSTART the state transitions to RECORDING
 // and the following actions occur:
 //
 //   1. The MJD of the observation start time is calculated from PKTIDX,
@@ -89,10 +89,10 @@
 //
 //   4. STTVALID is set to 1
 //
-// In the RECORD state, incoming packets are processed (i.e. stored in the net
+// In the RECORDING state, incoming packets are processed (i.e. stored in the net
 // thread's output buffer) and full blocks are passed to the next thread (same
-// as in the LISTEN state).  When the processed PKTIDX is greater than or equal
-// to PKTSTOP the state transitions to LISTEN and STTVALID is set to 0.
+// as in the LISTENING state).  When the processed PKTIDX is greater than or equal
+// to PKTSTOP the state transitions to LISTENING and STTVALID is set to 0.
 //
 // The PKTSTART/PKTSTOP tests are done every time the work blocks are advanced.
 //
@@ -101,7 +101,7 @@
 // determine whether the blocks should be discarded or processed (e.g. written
 // to disk).
 
-enum run_states {IDLE, LISTEN, RECORD};
+enum voltage_run_states {IDLING, LISTENING, RECORDING};
 
 // Structure related to block management
 struct block_info {
@@ -161,7 +161,7 @@ static void init_block_info(struct block_info *bi,
 }
 
 // Update block's header info and set filled status (i.e. hand-off to downstream)
-static void finalize_block(struct block_info *bi)
+static void finalize_block_info(struct block_info *bi)
 {
   if(bi->block_idx_out < 0) {
     hashpipe_error(__FUNCTION__, "block_info.block_idx_out == %d", bi->block_idx_out);
@@ -192,7 +192,7 @@ if(bi->pkts_per_block != bi->npacket) {
 //
 // NB: The caller must wait for the new data block to be free after this
 // function returns!
-static void increment_block(struct block_info *bi, int64_t block_num)
+static void increment_block_info(struct block_info *bi, int64_t block_num)
 {
   if(bi->block_idx_out < 0) {
     hashpipe_warn(__FUNCTION__,
@@ -216,8 +216,8 @@ static void increment_block(struct block_info *bi, int64_t block_num)
 // threads).  Any status buffer fields that need to be updated for correct
 // downstream processing of this block must be updated BEFORE calling this
 // function.  Note that some of the block's header fields will be set when the
-// block is finalized (see finalize_block() for details).
-static void wait_for_block_free(const struct block_info * bi,
+// block is finalized (see finalize_block_info() for details).
+static void wait_for_block_info_free(const struct block_info * bi,
     hashpipe_status_t * st, const char * status_key)
 {
   int rv;
@@ -389,15 +389,15 @@ printf("dst           = 0x%p\n", dst);
 //       STTVALID=1
 //       calculate and store STT_IMJD, STT_SMJD
 //     endif
-//     return RECORD
+//     return RECORDING
 //   else
 //     STTVALID=0
-//     return LISTEN
+//     return LISTENING
 //   endif
 static
-enum run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
+enum voltage_run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
 {
-  enum run_states retval = LISTEN;
+  enum voltage_run_states retval = LISTENING;
   uint32_t sttvalid = 0;
   uint64_t pktstart = 0;
   uint64_t pktstop = 0;
@@ -420,8 +420,8 @@ enum run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
     hgetu8(st->buf, "PKTSTOP", &pktstop);
 
     if(pktstart <= pktidx && pktidx < pktstop) {
-      retval = RECORD;
-      hputs(st->buf, "DAQSTATE", "RECORD");
+      retval = RECORDING;
+      hputs(st->buf, "DAQSTATE", "RECORDING");
 
       if(sttvalid != 1) {
         hputu4(st->buf, "STTVALID", 1);
@@ -449,7 +449,7 @@ enum run_states check_start_stop(hashpipe_status_t *st, uint64_t pktidx)
         hputr8(st->buf, "STT_OFFS", stt_offs);
       }
     } else {
-      hputs(st->buf, "DAQSTATE", "LISTEN");
+      hputs(st->buf, "DAQSTATE", "LISTENING");
       if(sttvalid != 0) {
         hputu4(st->buf, "STTVALID", 0);
       }
@@ -550,7 +550,7 @@ static int init(hashpipe_thread_args_t *args)
     obsbw = chan_bw * obsnchan / nants;
 
     // Update status buffer (in case fields were not there before).
-    hputs(st->buf, "DAQSTATE", "LISTEN");
+    hputs(st->buf, "DAQSTATE", "LISTENING");
     hputi4(st->buf, "BLOCSIZE", blocsize);
     hputi4(st->buf, "DIRECTIO", directio);
     hputi4(st->buf, "NBITS", nbits);
@@ -601,7 +601,7 @@ int debug_i=0, debug_j=0;
   uint32_t port = 4015;
 
   // Current run state
-  //enum run_states state = LISTEN;
+  //enum voltage_run_states state = LISTENING;
   unsigned waiting = 0;
   // Update status_key with idle state and get max_flows, port
   hashpipe_status_lock_safe(st);
@@ -776,7 +776,7 @@ int debug_i=0, debug_j=0;
   // Initialize working blocks
   for(wblk_idx=0; wblk_idx<2; wblk_idx++) {
     init_block_info(wblk+wblk_idx, dbout, wblk_idx, wblk_idx, 0);
-    wait_for_block_free(wblk+wblk_idx, st, status_key);
+    wait_for_block_info_free(wblk+wblk_idx, st, status_key);
   }
 
   // Get any obs info from status buffer, store values
@@ -943,7 +943,7 @@ int debug_i=0, debug_j=0;
                   }
                 }
                 nstreams = 0;
-                // TODO Update the IDLE/CAPTURE state???
+                // TODO Update the IDLING/CAPTURE state???
               } else {
                 // Get number of streams
                 nstreams = 1;
@@ -968,7 +968,7 @@ int debug_i=0, debug_j=0;
                     break;
                   }
                 }
-                // TODO Update the IDLE/CAPTURE state???
+                // TODO Update the IDLING/CAPTURE state???
               } // end zero/non-zero IP
 
               // Restore '+' if it was found
@@ -1187,7 +1187,7 @@ printf("next block (%ld == %ld + 1)\n", pkt_blk_num, wblk[1].block_num);
 #endif
 
         // Finalize first working block
-        finalize_block(wblk);
+        finalize_block_info(wblk);
         // Update ndrop counter
         ndrop_total += wblk->ndrop;
         // Shift working blocks
@@ -1195,9 +1195,9 @@ printf("next block (%ld == %ld + 1)\n", pkt_blk_num, wblk[1].block_num);
         // Check start/stop using wblk[0]'s first PKTIDX
         check_start_stop(st, wblk[0].block_num * pktidx_per_block);
         // Increment last working block
-        increment_block(&wblk[1], pkt_blk_num);
+        increment_block_info(&wblk[1], pkt_blk_num);
         // Wait for new databuf data block to be free
-        wait_for_block_free(&wblk[1], st, status_key);
+        wait_for_block_info_free(&wblk[1], st, status_key);
       }
       // Check for PKTIDX discontinuity
       else if(pkt_blk_num < wblk[0].block_num - 1
@@ -1205,7 +1205,7 @@ printf("next block (%ld == %ld + 1)\n", pkt_blk_num, wblk[1].block_num);
 #if 0
 printf("reset blocks (%ld <> [%ld - 1, %ld + 1])\n", pkt_blk_num, wblk[0].block_num, wblk[1].block_num);
 #endif
-        // Should only happen when transitioning into LISTEN, so warn about it
+        // Should only happen when transitioning into LISTENING, so warn about it
         hashpipe_warn(thread_name,
             "working blocks reinit due to packet discontinuity (PKTIDX %lu)",
             pkt_seq_num);
