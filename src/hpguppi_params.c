@@ -144,6 +144,12 @@ void hpguppi_read_pktsock_params(char *buf, struct hpguppi_pktsock_params *p)
         p->packet_size = 4128;
     else if (strncmp(p->packet_format, "SHORT", 5)==0)
         p->packet_size = 544;
+    else if (strncmp(p->packet_format, "ATASNAPV", 8)==0){
+        int bitspersample;
+        get_int("NBITS", bitspersample, 4);
+        //               payload : complex4[nchan, 16, 2]      +  header 
+        p->packet_size = p->obsnchan*16*2*(bitspersample*2/8) + 16;
+    }
     else
         p->packet_size = 8208;
 }
@@ -156,20 +162,20 @@ void guppi_read_obs_mode(const char *buf, char *mode) {
 #endif // 0
 
 // Read a status buffer all of the key observation paramters
+// Expectedly called after hpguppi_read_obs_params
 void hpguppi_read_subint_params(char *buf,
                                 struct hpguppi_params *g,
                                 struct psrfits *p)
 {
     // Parse packet size, # of packets, etc.
     get_lon("PKTIDX", g->packetindex, -1L);
-    get_int("PKTSIZE", g->packetsize, 0);
     get_int("NPKT", g->n_packets, 0);
     get_int("NDROP", g->n_dropped, 0);
     get_dbl("DROPAVG", g->drop_frac_avg, 0.0);
     get_dbl("DROPTOT", g->drop_frac_tot, 0.0);
-    get_int("BLOCSIZE", g->packets_per_block, 0);
-    if (g->packetsize>0)
-        g->packets_per_block /= g->packetsize;
+    if (g->packetsize==0)
+        get_int("PKTSIZE", g->packetsize, 0);
+
     if (g->n_packets>0)
         g->drop_frac = (double) g->n_dropped / (double) g->n_packets;
     else
@@ -232,6 +238,8 @@ void hpguppi_read_subint_params(char *buf,
 
 
 // Read a status buffer all of the key observation paramters
+// Call once at observation start, then call lighter-weight 
+// hpguppi_read_subint_params
 void hpguppi_read_obs_params(char *buf,
                              struct hpguppi_params *g,
                              struct psrfits *p)
@@ -242,6 +250,16 @@ void hpguppi_read_obs_params(char *buf,
     get_int("DS_TIME", p->hdr.ds_time_fact, 1); // Time down-sampling
     get_int("DS_FREQ", p->hdr.ds_freq_fact, 1); // Freq down-sampling
     get_int("ONLY_I", p->hdr.onlyI, 0);         // Only output Stokes I
+
+    // PIPERBLK
+    get_int("PIPERBLK", g->packets_per_block, 0);
+    if (g->packets_per_block==0)
+    {
+        get_int("BLOCSIZE", g->packets_per_block, 0);
+        get_int("PKTSIZE", g->packetsize, 0);
+        if (g->packetsize>0)
+            g->packets_per_block /= g->packetsize;
+    }
 
     // Freq, BW, etc.
     get_dbl("OBSFREQ", p->hdr.fctr, 0.0);
@@ -306,7 +324,10 @@ void hpguppi_read_obs_params(char *buf,
 
     // Coherent dedispersion params
     get_int("CODD", g->coherent, 0);
-    get_lon("PKTSTART", g->start_pkt, 0);
+    get_lon("OBSSTART", g->start_pkt, -1);
+    if(g->start_pkt == -1){
+        get_lon("PKTSTART", g->start_pkt, 0);
+    }
     get_int("OVERLAP", p->dedisp.overlap, 0);
     get_dbl("CHAN_DM", p->hdr.chan_dm, 0.0);
 
@@ -334,10 +355,9 @@ void hpguppi_read_obs_params(char *buf,
         sprintf(base, "%s_%05d_%s_%04d_cal", backend, p->hdr.start_day,
                 p->hdr.source, p->hdr.scan_number);
     } else {
-        // TODO don't hardcode the 16384 value for packets_per_block.
         // base is BACKEND_MJD_SEC_BLK_SRC_SCAN.
         sprintf(base, "%s_%05d_%05d_%06lld_%s_%04d", backend,
-                p->hdr.start_day, (int)(p->hdr.start_sec), g->start_pkt/16384,
+                p->hdr.start_day, (int)(p->hdr.start_sec), g->start_pkt/g->packets_per_block,
                 p->hdr.source, p->hdr.scan_number);
     }
 #ifdef NO_PROJECT_DIR
@@ -357,8 +377,11 @@ void hpguppi_read_obs_params(char *buf,
         s_frac = modf(s, &s_integ);
         s_integ_int = abs((int)s_integ);
         s_frac_int = abs((int)(s_frac*1000));
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wformat-overflow="
         sprintf(p->hdr.date_obs, "%04d-%02d-%02dT%02d:%02d:%02d.%03d",
                 YYYY % 10000, MM % 100, DD % 100, h % 24, m % 60, s_integ_int % 100, s_frac_int % 1000);
+        #pragma GCC diagnostic pop
     }
 
     // TODO: call telescope-specific settings here

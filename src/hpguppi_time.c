@@ -2,11 +2,7 @@
  *
  * Routines dealing with time conversion.
  */
-#include <stdio.h>
-#include <time.h>
-#include <sys/time.h>
-#include <hashpipe.h>
-#include "slalib.h"
+#include "hpguppi_time.h"
 
 int get_mjd_from_timespec(const struct timespec * ts,
     int *stt_imjd, int *stt_smjd, double *stt_offs)

@@ -23,12 +23,15 @@
 #include "hpguppi_rawspec.h"
 #include "hpguppi_util.h"
 
+// This is not used with filterbank-only output!
+#if 0
 // 80 character string for the BACKEND header record.
 static const char BACKEND_RECORD[] =
 // 0000000000111111111122222222223333333333
 // 0123456789012345678901234567890123456789
   "BACKEND = 'GUPPI   '                    " \
   "                                        ";
+#endif
 
 static int init(hashpipe_thread_args_t * args)
 {
