@@ -95,9 +95,9 @@
 #define DEFAULT_MAX_FLOWS (16)
 
 // A bit of a hack...
-#ifndef IBV_FLOW_ATTR_SNIFFER
-#define IBV_FLOW_ATTR_SNIFFER (0x3)
-#endif
+// #ifndef IBV_FLOW_ATTR_SNIFFER
+// #define IBV_FLOW_ATTR_SNIFFER IBV_EXP_FLOW_ATTR_SNIFFER
+// #endif
 
 // Forget previous (possilby less parenthesized) version
 #ifdef ELAPSED_NS
