@@ -410,7 +410,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // General fields
   // hibv_ctx->nqp = 1;
-  hibv_ctx->pkt_size_max = 9*1024; // Not really used with user managed buffers
+  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive
   hibv_ctx->user_managed_flag = 1;
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
@@ -420,6 +420,12 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     num_recv_wr = pktbuf_info->slots_per_block;
   }
   hibv_ctx->recv_pkt_num = num_recv_wr;
+
+  if(hibv_ctx->recv_pkt_num * hibv_ctx->pkt_size_max > BLOCK_DATA_SIZE){
+    // Should never happen
+    hashpipe_warn(__FUNCTION__, "hibv_ctx->recv_pkt_num (%u)*(%u) hibv_ctx->pkt_size_max (%u) > (%lu) BLOCK_DATA_SIZE",
+    hibv_ctx->recv_pkt_num, hibv_ctx->pkt_size_max, hibv_ctx->recv_pkt_num * hibv_ctx->pkt_size_max, BLOCK_DATA_SIZE);
+  }
 
   // Allocate packet buffers
   if(!(hibv_ctx->send_pkt_buf = (struct hashpipe_ibv_send_pkt *)calloc(
