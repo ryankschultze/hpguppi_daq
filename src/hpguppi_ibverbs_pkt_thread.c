@@ -812,7 +812,7 @@ int debug_i=0, debug_j=0;
       next_slot++;
       if(next_slot >= slots_per_block) {
         next_slot = 0;
-        next_block++;
+        next_block = (next_block + 1) % db->header.n_block;
       }
     } // end for each packet
 
