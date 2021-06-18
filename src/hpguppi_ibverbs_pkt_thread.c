@@ -452,7 +452,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     return HASHPIPE_ERR_SYS;
   }
   // Point recv_mr_buf to starts of block 0
-  hibv_ctx->recv_mr_buf = (uint8_t *)db->block;
+  hibv_ctx->recv_mr_buf = (uint8_t *)db->block[0].data;
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
