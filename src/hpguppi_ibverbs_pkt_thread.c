@@ -410,7 +410,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // General fields
   // hibv_ctx->nqp = 1;
-  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive
+  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive // Oddly not pkt_size (that causes work completion errors)
   hibv_ctx->user_managed_flag = 1;
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
@@ -458,7 +458,11 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     return HASHPIPE_ERR_SYS;
   }
   // Point recv_mr_buf to starts of block 0
-  hibv_ctx->recv_mr_buf = (uint8_t *)db->block[0].data;
+  hibv_ctx->recv_mr_num = db->header.n_block;
+  hibv_ctx->recv_mr_bufs = malloc(hibv_ctx->recv_mr_num * sizeof(uint8_t *));
+  for(i=0; i<hibv_ctx->recv_mr_num; i++){
+    hibv_ctx->recv_mr_bufs[i] = (uint8_t *)db->block[i].data;
+  }
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
@@ -475,7 +479,6 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     for(j=0; j<num_chunks; j++) {
       hibv_ctx->recv_sge_buf[num_chunks*i+j].addr = base_addr + chunks[j].chunk_offset;
       hibv_ctx->recv_sge_buf[num_chunks*i+j].length = chunks[j].chunk_size;
-      // hibv_ctx->recv_sge_buf[num_chunks*i+j].lkey = hibv_ctx->recv_mr->lkey; // not implemented here
     }
   }
 
@@ -812,6 +815,7 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
+        hibv_ctx->recv_sge_buf[num_chunks*next_slot + i].lkey = hibv_ctx->recv_mrs[next_block]->lkey;
       }
 
       // Advance slot
