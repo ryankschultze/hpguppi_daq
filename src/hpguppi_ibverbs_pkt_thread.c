@@ -815,14 +815,14 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
-        hibv_ctx->recv_sge_buf[num_chunks*next_slot + i].lkey = hibv_ctx->recv_mrs[next_block]->lkey;
+        hibv_ctx->recv_sge_buf[num_chunks*next_slot + i].lkey = hibv_ctx->recv_mrs[next_block % db->header.n_block]->lkey;
       }
 
       // Advance slot
       next_slot++;
       if(next_slot >= slots_per_block) {
         next_slot = 0;
-        next_block = (next_block + 1) % db->header.n_block;
+        next_block++;
       }
     } // end for each packet
 
