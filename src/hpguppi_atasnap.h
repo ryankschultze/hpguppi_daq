@@ -39,21 +39,16 @@
 //
 // Each voltage mode packet contains 2 polarizations, 256 frequency channels,
 // and 16 time samples.  Since each sample is 1 byte, this leads to an 8192
-// byte payload.  This payload is preceeded by an 64 bit header with the
+// byte payload.  This payload is preceeded by an 128 bit header with the
 // following format:
 //
-// hdr[05:00] =  6 bit antenna ID
-// hdr[17:06] = 12 bit channel number of first channel
-// hdr[55:18] = 38 bit sample number of first time sample
-// hdr[62:56] =  7 bit firmware version
-// hdr[63:63] =  1 bin firmware mode indicator (0=spectrometer, 1=voltage)
+// 8  bit version
+// 8  bit type
+// 16 bit n_chans
+// 16 bit chan
+// 16 bit feng_id
+// 64 bit timestamp
 
-#define ATA_SNAP_PKT_HEADER_PKTIDX_SHIFT (18)
-#define ATA_SNAP_PKT_HEADER_PKTIDX_WIDTH (38)
-#define ATA_SNAP_PKT_HEADER_CHAN_SHIFT   ( 6)
-#define ATA_SNAP_PKT_HEADER_CHAN_WIDTH   (12)
-#define ATA_SNAP_PKT_HEADER_FID_SHIFT    ( 0)
-#define ATA_SNAP_PKT_HEADER_FID_WIDTH    ( 6)
 //
 // The payload is ordered with the polarization index (0 to 1) changing
 // fastest, then channel number (0 to 255), then sample number (0 to 15)
@@ -159,10 +154,10 @@
 // ## IBVPKTSZ and voltage mode packet layout
 //
 // The ATA SNAP voltage mode packets consist of 42 bytes of Ethernet+IP+UDP
-// headers, 8 bytes of application header, and 8192 bytes of payload data.
+// headers, 16 bytes of application header, and 8192 bytes of payload data.
 // When using the ibvpkt thread (currently known as
 // "hpguppi_ibverbs_pkt_thread"), the "IBVPKYSZ" status keyword can be
-// specified as "42,8,8192".
+// specified as "42,16,8192".
 
 #ifndef _HPGUPPI_ATASNAP_H_
 #define _HPGUPPI_ATASNAP_H_
@@ -253,19 +248,24 @@ struct datablock_stats {
 // alignment.  The alignment is acheived through judicious use of IB Verbs
 // scatter/gather capabilities (specifically the scatter part).
 struct __attribute__ ((__packed__)) ata_snap_ibv_pkt {
-  struct ethhdr ethhdr;
-  struct iphdr iphdr;
-  struct udphdr udphdr;
-  uint8_t pad0[22];
-  uint64_t header;
-  uint8_t pad1[56];
-	uint8_t payload[];
+  struct ethhdr ethhdr; //0
+  struct iphdr iphdr;   //14
+  struct udphdr udphdr; //34
+  uint8_t pad0[22];     //42
+  uint8_t version;      //64
+  uint8_t type;         //65
+  uint16_t n_chans;     //66
+  uint16_t chan;        //68
+  uint16_t feng_id;     //70
+  uint64_t timestamp;   //72
+  uint8_t pad1[48];     //80
+	uint8_t payload[];    //128
 };
 
 struct __attribute__ ((__packed__)) ata_snap_pkt {
-  struct ethhdr ethhdr; // headers aren't functionally 
-  struct iphdr iphdr; // headers aren't functionally 
-  struct udphdr udphdr; // headers aren't functionally 
+  struct ethhdr ethhdr; // headers aren't functional  // 14 bytes
+  struct iphdr iphdr; // headers aren't functional    // 20 bytes
+  struct udphdr udphdr; // headers aren't functional  // 8 bytes
   uint8_t pad0[66]; // Dont know the reason, but actual network payload is offset
   uint8_t version;
   uint8_t type;
@@ -286,7 +286,7 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
    sizeof(struct iphdr ) + \
    sizeof(struct udphdr))
 
-#define ATA_SNAP_PKT_SIZE_HEADER (sizeof(uint64_t))
+#define ATA_SNAP_PKT_SIZE_HEADER (2*sizeof(uint64_t))
 
 // ATA SNAP payload byte offset within (unpadded) packet
 #define ATA_SNAP_PKT_OFFSET_PAYLOAD \
@@ -588,16 +588,9 @@ const uint8_t *
 ata_snap_parse_ibv_packet(const struct ata_snap_ibv_pkt *p,
     struct ata_snap_feng_info * fei)
 {
-  uint64_t header = p->header;
-
-  fei->pktidx = (header >> ATA_SNAP_PKT_HEADER_PKTIDX_SHIFT)
-              & ((1UL   << ATA_SNAP_PKT_HEADER_PKTIDX_WIDTH) - 1);
-
-  fei->feng_id = (header >> ATA_SNAP_PKT_HEADER_FID_SHIFT)
-               & ((1UL   << ATA_SNAP_PKT_HEADER_FID_WIDTH) - 1);
-
-  fei->feng_chan = (header >> ATA_SNAP_PKT_HEADER_CHAN_SHIFT)
-                 & ((1UL   << ATA_SNAP_PKT_HEADER_CHAN_WIDTH) - 1);
+  fei->pktidx = ATA_SNAP_PKT_NUMBER(p);
+  fei->feng_id = ATA_SNAP_PKT_FENG_ID(p);
+  fei->feng_chan = ATA_SNAP_PKT_CHAN(p);
 
   return p->payload;
 }
