@@ -116,13 +116,15 @@ h_type = PKT_TYPE
 h_nchan = nchan_per_block
 
 pkt_count = 0
-t = args.starttime
+t = 0
 tn = 0 # Count of complete sets of all fengs / chans
 tick = time.time()
 throttle_tick = time.time()
 NPKT_THROTTLE = 100
 nbytes_throttle = NPKT_THROTTLE * payload_len
 npkt_sent = 0
+sending_0s = True
+print('Sending payload of 0s')
 while(True):
     for f in range(args.nfeng):
         for c in range(nchan_block):
@@ -132,8 +134,12 @@ while(True):
                     pkt_count += 1
                     continue
             header = struct.pack(">BBHHHQ", h_version, h_type, h_nchan, args.startchan + c*nchan_per_block, f, t)
-            if args.infile:
+            if args.infile and t >= args.starttime and tn < ntime_block:
+                if sending_0s:
+                    print('Sending payload of {} (t={})'.format(args.infile, t))
+                sending_0s = False
                 payload = d[tn, f, c, :, :, :].tobytes()
+            # else: send payload of 0s
             sock.sendto(header + payload, (args.ip, args.port))
             pkt_count += 1
             if args.gbps is None:
@@ -147,16 +153,18 @@ while(True):
                     throttle_tick = time.time()
 
     t += NTIME
-    tn += 1
+    if not sending_0s:
+        tn += 1
     if args.ntime is not None:
-        if tn*NTIME > args.ntime:
-            print("Exiting because %d time samples have been sent" % (tn*NTIME))
+        if t > args.ntime:
+            print("Exiting because %d time samples have been sent" % (t))
             exit()
 
     if args.infile is not None:
-        if tn >= ntime_block:
-            print("Exiting because all %d time samples in the input file have been sent" % (tn*NTIME))
-            exit()
+        if tn >= ntime_block and not sending_0s:
+            print("Sending zero payloads because all %d time samples in the input file have been sent (t=%d)" % (tn*NTIME, t))
+            payload = b"\x00" * payload_len
+            sending_0s = True
 
     if time.time() - tick > 1:
         tock = time.time()
