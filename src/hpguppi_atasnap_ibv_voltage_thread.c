@@ -179,15 +179,6 @@ int debug_i=0, debug_j=0;
   const char * thread_name = args->thread_desc->name;
   const char * status_key = args->thread_desc->skey;
 
-  // String version of destination address
-  char dest_ip_stream_str[80] = {};
-  char dest_ip_stream_str_new[80] = {};
-  char * pchar;
-  // Numeric form of dest_ip
-  struct in_addr dest_ip;
-  int dest_idx;
-  // Number of destination IPs we are listening for
-  int nstreams = 0;
   // Max flows allowed (optionally from hpguppi_ibvpkt_thread via status
   // buffer)
   uint32_t max_flows = 16;
@@ -361,6 +352,19 @@ int debug_i=0, debug_j=0;
   // Wait for ibvpkt thread to be running, then it's OK to add/remove flows.
   hpguppi_ibvpkt_wait_running(st);
 
+  uint8_t* mac = ((struct hashpipe_ibv_context *)(dbin->padding + sizeof(struct hpguppi_pktbuf_info)))->mac;
+  hashpipe_info(thread_name, "DEST MAC: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  if(hpguppi_ibvpkt_flow(dbin, 0, IBV_FLOW_SPEC_UDP,
+        mac, NULL, 0, 0,
+        0, 0, 0, port))
+  {
+    hashpipe_error(thread_name, "hashpipe_ibv_flow error: (errno %d)", errno);
+    hashpipe_info(thread_name, "exiting!");
+    pthread_exit(NULL);
+
+    return NULL;
+  }
+
   // Main loop
   while (run_threads()) {
 
@@ -414,98 +418,9 @@ int debug_i=0, debug_j=0;
           // hputi4(st->buf, "BOGUSIZE", nbogus_size);
           hputs(st->buf, "DAQPULSE", timestr);
           HPUT_DAQ_STATE(st, state);
-
-          // Get DESTIP address
-          hgets(st->buf,  "DESTIP",
-              sizeof(dest_ip_stream_str_new), dest_ip_stream_str_new);
         }
         hashpipe_status_unlock_safe(st);
         lastnpacket_total = npacket_total;
-
-        // If DESTIP has changed
-        if(strcmp(dest_ip_stream_str, dest_ip_stream_str_new)) {
-
-          // Make sure the change is allowed
-          // If we are listening, the only allowed change is to "0.0.0.0"
-          if(nstreams > 0 && strcmp(dest_ip_stream_str_new, "0.0.0.0")) {
-            hashpipe_error(thread_name,
-                "already listening to %s, can't switch to %s",
-                dest_ip_stream_str, dest_ip_stream_str_new);
-          } else {
-            // Parse the A.B.C.D+N notation
-            //
-            // Nul terminate at '+', if present
-            if((pchar = strchr(dest_ip_stream_str_new, '+'))) {
-              // Null terminate dest_ip portion and point to N
-              *pchar = '\0';
-            }
-
-            // If the IP address fails to satisfy aton()
-            if(!inet_aton(dest_ip_stream_str_new, &dest_ip)) {
-              hashpipe_error(thread_name, "invalid DESTIP: %s", dest_ip_stream_str_new);
-            } else {
-              // If switching to "0.0.0.0"
-              if(dest_ip.s_addr == INADDR_ANY) {
-                // Remove all flows
-                hashpipe_info(thread_name, "dest_ip %s (removing %d flows)\nDESTIP 0.0.0.0 is not applicable.",
-                    dest_ip_stream_str_new, nstreams);
-                for(dest_idx=0; dest_idx < nstreams; dest_idx++) {
-                  if(hpguppi_ibvpkt_flow(dbin, dest_idx, IBV_FLOW_SPEC_UDP,
-                        0, 0, 0, 0, 0, 0, 0, 0))
-                  {
-                    hashpipe_error(thread_name, "hashpipe_ibv_flow error");
-                  }
-                }
-                nstreams = 0;
-                // TODO Update the IDLE/CAPTURE state???
-              } else {
-                // Get number of streams
-                nstreams = 1;
-                if(pchar) {
-                  nstreams = strtoul(pchar+1, NULL, 0);
-                  nstreams++;
-                }
-                if(nstreams > max_flows) {
-                  nstreams = max_flows;
-                }
-                // Add flows for stream
-                hashpipe_info(thread_name, "dest_ip %s+%s flows",
-                    dest_ip_stream_str_new, pchar ? pchar+1 : "0");
-                hashpipe_info(thread_name, "adding %d flows", nstreams);
-                uint8_t* mac = ((struct hashpipe_ibv_context *)(dbin->padding + sizeof(struct hpguppi_pktbuf_info)))->mac;
-                hashpipe_info(thread_name, "DEST MAC: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
-                errno = 0;
-                for(dest_idx=0; dest_idx < nstreams; dest_idx++) {
-                  if(hpguppi_ibvpkt_flow(dbin, dest_idx, IBV_FLOW_SPEC_UDP,
-                        mac, NULL, 0, 0,
-                        0, ntohl(dest_ip.s_addr)+dest_idx, 0, port))
-                  {
-                    hashpipe_error(thread_name, "hashpipe_ibv_flow error: dest_idx %d (errno %d)", dest_idx, errno); 
-                    break;
-                  }
-                }
-                // TODO Update the IDLE/CAPTURE state???
-              } // end zero/non-zero IP
-
-              // Restore '+' if it was found
-              if(pchar) {
-                *pchar = '+';
-              }
-              // Save the new DESTIP string
-              strncpy(dest_ip_stream_str, dest_ip_stream_str_new,
-                  sizeof(dest_ip_stream_str));
-            } // end ip valid
-          } // end destip change allowed
-
-          // Store (possibly unchanged) DESTIP/NSTRM
-          hashpipe_status_lock_safe(st);
-          {
-            hputs(st->buf,  "DESTIP", dest_ip_stream_str);
-            hputu4(st->buf, "NFLOWS", nstreams);
-          }
-          hashpipe_status_unlock_safe(st);
-        } // end destip changed
       } // curtime != lasttime
 
       // Set status field to "waiting" if we are not getting packets
