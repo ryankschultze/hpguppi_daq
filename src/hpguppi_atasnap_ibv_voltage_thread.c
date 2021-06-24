@@ -469,7 +469,7 @@ int debug_i=0, debug_j=0;
 
     // For each packet: process all packets
     p_u8pkt = (uint8_t *)hpguppi_databuf_data(dbin, block_idx_in);
-    for(i=0; pkt_obs_code == PKT_OBS_OK && i < pktbuf_info->slots_per_block; i++, p_u8pkt += pktbuf_info->slot_size) {
+    for(i=0; i < pktbuf_info->slots_per_block; i++, p_u8pkt += pktbuf_info->slot_size) {
 #if 0
       // Non-temporally copy packet into cached buffer
       memcpy_nt(p_spdpkt, p_u8pkt, MAX_PKT_SIZE);
