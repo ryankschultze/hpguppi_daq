@@ -37,126 +37,6 @@
   hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
                              state == ARMED ? "armed"  :\
                              "recording")
-// Define run states.  Currently three run states are defined: IDLE, ARMED, and
-// RECORD.
-//
-// In all states, the PKTIDX field is updated with the value from received
-// packets.  Whenever the first PKTIDX of a block is received (i.e. whenever
-// PKTIDX is a multiple of the number of packets per block), the value for
-// PKTSTART and DWELL are read from the status buffer.  PKTSTART is rounded
-// down, if needed, to ensure that it is a multiple of the number of packets
-// per block, then PKTSTART is written back to the status buffer.  DWELL is
-// interpreted as the number of seconds to record and is used to calculate
-// PKTSTOP (which gets rounded down, if needed, to be a multiple of the number
-// of packets per block).
-//
-// In the IDLE state, incoming packets are dropped, but PKTIDX is still
-// updated.  Transitioning out of the IDLE state will reinitialize the current
-// blocks.  A "start" command will transition the state from IDLE to ARMED.
-// A "stop" command will transition the state from ARMED or RECORD to IDLE.
-//
-// In the ARMED state, incoming packets are processed (i.e. stored in the net
-// thread's output buffer) and full blocks are passed to the next thread.  When
-// the processed PKTIDX is equal to PKTSTART the state transitions to RECORD
-// and the following actions occur:
-//
-//   1. The MJD of the observation start time is calculated (TODO Calculate
-//      from SYNCTIME and PKTIDX)
-//
-//   2. The packet stats counters are reset
-//
-//   3. The STT_IMDJ and STT_SMJD are updated in the status buffer
-//
-//   4. STTVALID is set to 1
-//
-// In the RECORD state, incoming packets are processed (i.e. stored in the net
-// thread's output buffer) and full blocks are passed to the next thread (same
-// as in the ARMED state).  When the processed PKTIDX is greater than or equal
-// to PKTSTOP the state transitions to ARMED and STTVALID is set to 0.
-//
-// The downstream thread (i.e. hpguppi_rawdisk_thread) is expected to use a
-// combination of PKTIDX, PKTSTART, PKTSTOP, and (optionally) STTVALID to
-// determine whether the blocks should be discarded or processed (e.g. written
-// to disk).
-
-enum run_states {IDLE, ARMED, RECORD};
-
-//  if state == RECORD && STTVALID == 0 
-//    STTVALID=1
-//    calculate and store STT_IMJD, STT_SMJD
-//  else if STTVALID != 0
-//    STTVALID=0
-//  endif
-static void update_stt_status_keys( hashpipe_status_t *st,
-                                    enum run_states state,
-                                    uint64_t pktidx,
-                                    struct mjd_t *mjd){
-  // uint32_t pktntime = ATASNAP_DEFAULT_PKTNTIME;
-  uint64_t synctime = 0;
-  double chan_bw = 1.0;
-
-  double realtime_secs = 0.0;
-  struct timespec ts;
-
-  uint32_t sttvalid = 0;
-  hashpipe_status_lock_safe(st);
-  {
-    hgetu4(st->buf, "STTVALID", &sttvalid);
-    if((state == ARMED || state == RECORD) && sttvalid != 1) {
-      hputu4(st->buf, "STTVALID", 1);
-
-      // hgetu4(st->buf, "PKTNTIME", &pktntime);
-      hgetr8(st->buf, "CHAN_BW", &chan_bw);
-      hgetu8(st->buf, "SYNCTIME", &synctime);
-
-      // Calc real-time seconds since SYNCTIME for pktidx, taken to be a multiple of PKTNTIME:
-      //
-      //                          pktidx
-      //     realtime_secs = -------------------
-      //                        1e6 * chan_bw
-      if(chan_bw != 0.0) {
-        realtime_secs = pktidx / (1e6 * fabs(chan_bw));
-      }
-
-      ts.tv_sec = (time_t)(synctime + rint(realtime_secs));
-      ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
-
-      get_mjd_from_timespec(&ts, &(mjd->stt_imjd), &(mjd->stt_smjd), &(mjd->stt_offs));
-
-      hputu4(st->buf, "STT_IMJD", mjd->stt_imjd);
-      hputu4(st->buf, "STT_SMJD", mjd->stt_smjd);
-      hputr8(st->buf, "STT_OFFS", mjd->stt_offs);
-    }
-    else if(state == IDLE && sttvalid != 0) {
-      hputu4(st->buf, "STTVALID", 0);
-    }
-  }
-  hashpipe_status_unlock_safe(st);
-}
-
-// Check the given block's start/stop values against the observation's OBSSTART/OBSSTOP
-// values (given as PKT sequence numbers). Logic goes something like this:
-//   if OBSSTART <= block_start_or_stop < OBSSTOP
-//     return RECORD
-//   else if block_stop <= OBSSTART
-//     return ARMED
-//   else
-//     return IDLE
-//   endif
-static
-enum run_states state_from_start_stop(const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx,
-                                       const uint64_t block_start_pktidx, const uint64_t block_stop_pktidx)
-{
-  if(block_start_pktidx >= obs_stop_pktidx){
-    return IDLE;
-  }
-  else if(block_stop_pktidx <= obs_start_pktidx){ //block_stop_pktidx is exclusive
-    return ARMED;
-  }
-  else{// block_start_pktidx < obs_stop_pktidx && block_stop_pktidx >= obs_start_pktidx
-    return RECORD;
-  }
-}
 
 int wait_out_free_transfer_in_and_set_filled(
     hpguppi_input_databuf_t* indb, int* blk_in_idx,
@@ -299,7 +179,7 @@ static void *run(hashpipe_thread_args_t * args)
     hgetu8(datablock_header, "PKTSTART", &block_start_pktidx);
     hgetu8(datablock_header, "PKTSTOP", &block_stop_pktidx);
 
-    switch(state_from_start_stop(obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx)){
+    switch(state_from_block_start_stop(obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx)){
       case IDLE:// If should IDLE, 
         if(state != IDLE){
           if(state == RECORD){//and recording, finalise block

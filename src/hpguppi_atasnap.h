@@ -228,6 +228,15 @@ enum pkt_obs_code { PKT_OBS_OK=0,
                     PKT_OBS_SCHAN,
                     PKT_OBS_STREAM
                   };
+enum obs_info_validity { 
+                OBS_UNKNOWN=-5,       //=-5
+                OBS_INVALID_FENG=-4,  //=-4
+                OBS_INVALID_SCHAN=-3, //=-3
+                OBS_INVALID_STREAM=-2,//=-2
+                OBS_INVALID=-1,       //=-1
+                OBS_SEEMS_VALID=0,    //=0   sign bit for validity
+                OBS_VALID=1           //=1
+              };
 
 /* Structs/functions to more easily deal with multiple
  * active blocks being filled
@@ -638,7 +647,21 @@ void increment_block(struct datablock_stats *d, int64_t block_num);
 void wait_for_block_free(const struct datablock_stats * d,
   hashpipe_status_t * st, const char * status_key);
 
+unsigned check_pkt_observability_sans_idx(
+    const struct ata_snap_obs_info * ata_oi,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  );
 unsigned check_pkt_observability(
+    const struct ata_snap_obs_info * ata_oi,
+    const uint64_t pkt_idx,
+    const uint64_t obs_start_pktidx,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  );
+unsigned check_pkt_observability_silent(
     const struct ata_snap_obs_info * ata_oi,
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
@@ -655,9 +678,15 @@ void update_stt_status_keys( hashpipe_status_t *st,
 enum run_states state_from_start_stop(const uint64_t pktidx,
                                        const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx);
 
+enum run_states state_from_block_start_stop(const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx,
+                                       const uint64_t block_start_pktidx, const uint64_t block_stop_pktidx);
+
 int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info);
 int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info);
+char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity);
+void ata_snap_obs_info_write_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity obs_info_valid);
 
+char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, uint32_t pktidx_per_block);
 
 // The copy_packet_data_to_databuf() function does what it says: copies packet
 // data into a data buffer. This data buffer ought to be passed on to a transposition

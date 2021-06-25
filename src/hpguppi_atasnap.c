@@ -61,6 +61,9 @@ void finalize_block(struct datablock_stats *d)
   if(d->pkts_per_block > d->npacket) {
     d->ndrop = d->pkts_per_block - d->npacket;
   }
+  else if(d->pkts_per_block < d->npacket) { // Should never happen, so warn about it
+    hashpipe_warn(__FUNCTION__, "block #%d has too many packets (%u > %u pkts_per_block)", d->block_idx, d->npacket, d->pkts_per_block);
+  }
 
   sprintf(dropstat, "%d/%lu", d->ndrop, d->pkts_per_block);
   hputi4(header, "NPKT", d->npacket);
@@ -143,7 +146,26 @@ void wait_for_block_free(const struct datablock_stats * d,
   hashpipe_status_unlock_safe(st);
 }
 
-unsigned check_pkt_observability(
+unsigned check_pkt_observability_sans_idx(
+    const struct ata_snap_obs_info * ata_oi,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  )
+{
+  if(feng_id >= ata_oi->nants){
+    return PKT_OBS_FENG;
+  }
+  if(pkt_schan < ata_oi->schan){
+    return PKT_OBS_SCHAN;
+  }
+  if(stream >= ata_oi->nstrm){
+    return PKT_OBS_STREAM;
+  }
+  return PKT_OBS_OK;
+}
+
+unsigned check_pkt_observability_silent(
     const struct ata_snap_obs_info * ata_oi,
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
@@ -153,22 +175,48 @@ unsigned check_pkt_observability(
   )
 {
   if(pkt_idx < obs_start_pktidx){
-    // hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx", pkt_idx, obs_start_pktidx);
     return PKT_OBS_IDX;
   }
-  if(feng_id >= ata_oi->nants){
-    hashpipe_warn(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants", feng_id, ata_oi->nants);
-    return PKT_OBS_FENG;
+  return check_pkt_observability_sans_idx(ata_oi,
+                                          feng_id,
+                                          stream,
+                                          pkt_schan);
+}
+
+unsigned check_pkt_observability(
+    const struct ata_snap_obs_info * ata_oi,
+    const uint64_t pkt_idx,
+    const uint64_t obs_start_pktidx,
+    const uint16_t feng_id,
+    const int32_t stream,
+    const uint16_t pkt_schan
+  )
+{
+  unsigned obs_code = check_pkt_observability_silent(
+    ata_oi,
+    pkt_idx,
+    obs_start_pktidx,
+    feng_id,
+    stream,
+    pkt_schan
+  );
+  switch(obs_code){
+    case PKT_OBS_IDX:
+      // hashpipe_error(__FUNCTION__, "pkt_idx (%lu) < (%lu) obs_start_pktidx", pkt_idx, obs_start_pktidx);
+      break;
+    case PKT_OBS_FENG:
+      hashpipe_warn(__FUNCTION__, "feng_id (%u) >= (%u) ata_oi->nants", feng_id, ata_oi->nants);
+      break;
+    case PKT_OBS_SCHAN:
+      hashpipe_warn(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan", pkt_schan, ata_oi->schan);
+      break;
+    case PKT_OBS_STREAM:
+      hashpipe_warn(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm", stream, ata_oi->nstrm);
+      break;
+    default:
+      break;
   }
-  if(pkt_schan < ata_oi->schan){
-    hashpipe_warn(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan", pkt_schan, ata_oi->schan);
-    return PKT_OBS_SCHAN;
-  }
-  if(stream >= ata_oi->nstrm){
-    hashpipe_warn(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm", stream, ata_oi->nstrm);
-    return PKT_OBS_STREAM;
-  }
-  return PKT_OBS_OK;
+  return obs_code;
 }
 
 //  if state == RECORD && STTVALID == 0 
@@ -245,9 +293,67 @@ enum run_states state_from_start_stop(const uint64_t pktidx,
   }
 }
 
+// Check the given block's start/stop values against the observation's OBSSTART/OBSSTOP
+// values (given as PKT sequence numbers). Logic goes something like this:
+//   if OBSSTART <= block_start_or_stop < OBSSTOP
+//     return RECORD
+//   else if block_stop <= OBSSTART
+//     return ARMED
+//   else
+//     return IDLE
+//   endif
+enum run_states state_from_block_start_stop(const uint64_t obs_start_pktidx, const uint64_t obs_stop_pktidx,
+                                       const uint64_t block_start_pktidx, const uint64_t block_stop_pktidx)
+{
+  if(block_start_pktidx >= obs_stop_pktidx){
+    return IDLE;
+  }
+  else if(block_stop_pktidx <= obs_start_pktidx){ //block_stop_pktidx is exclusive
+    return ARMED;
+  }
+  else{// block_start_pktidx < obs_stop_pktidx && block_stop_pktidx >= obs_start_pktidx
+    return RECORD;
+  }
+}
+
 int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
 {
-  int rc = 1;//obsinfo valid
+  enum obs_info_validity validity = OBS_UNKNOWN; // No persistence of validity
+  ata_snap_obs_info_read_with_validity(st, obs_info, &validity);
+  return validity >= OBS_SEEMS_VALID;
+}
+
+// This function overwrites the status values with those of the provided ata_snap_obs_info
+// which primarily serves to revert any changes that were made mid-observation
+int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
+{
+  enum obs_info_validity validity = OBS_SEEMS_VALID;
+  // If obs_info is valid
+  if(!ata_snap_obs_info_valid(*obs_info)) {
+    validity = OBS_INVALID;
+  }
+  ata_snap_obs_info_write_with_validity(st, obs_info, validity);
+  
+  return validity >= OBS_SEEMS_VALID;
+}
+
+
+/**
+ * Updates @param validity and returns 1 if the info changed, else 0. 
+ * 
+ * Commented out are fields that are static due to the SNAP's implementation.
+ */
+char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
+{
+  uint32_t fenchan = obs_info->fenchan;
+  uint32_t nants = obs_info->nants;
+  uint32_t nstrm = obs_info->nstrm;
+  uint32_t pkt_npol = obs_info->pkt_npol;
+  uint32_t time_nbits = obs_info->time_nbits;
+  uint32_t pkt_ntime = obs_info->pkt_ntime;
+  uint32_t pkt_nchan = obs_info->pkt_nchan;
+  int schan = obs_info->schan;
+  float obs_bw = obs_info->obs_bw;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -262,34 +368,49 @@ int ata_snap_obs_info_read(hashpipe_status_t *st, struct ata_snap_obs_info *obs_
     hgetu4(st->buf, "PKTNCHAN", &obs_info->pkt_nchan);
     hgeti4(st->buf, "SCHAN",    &obs_info->schan);
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
-    // If obs_info is valid
-    if(ata_snap_obs_info_valid(*obs_info)) {
-      ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
-    } else {
-      rc = 0;
-    }
   }
   hashpipe_status_unlock_safe(st);
-  return rc;
+
+  // if no change in obs_info
+  if (*validity != OBS_UNKNOWN &&
+      fenchan == obs_info->fenchan &&
+      nants == obs_info->nants &&
+      nstrm == obs_info->nstrm &&
+      pkt_npol == obs_info->pkt_npol &&
+      time_nbits == obs_info->time_nbits &&
+      pkt_ntime == obs_info->pkt_ntime &&
+      pkt_nchan == obs_info->pkt_nchan &&
+      schan == obs_info->schan &&
+      obs_bw == obs_info->obs_bw)
+  {
+    // then obs will continue to be invalid or valid
+    return 0;
+  }
+  else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
+    ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
+    *validity = OBS_SEEMS_VALID;
+    return 1;
+  } else { // if change in obs_info and obs_info seems invalid
+    *validity = OBS_INVALID;
+    return 1;
+  }
 }
 
 // This function overwrites the status values with those of the provided ata_snap_obs_info
 // which primarily serves to revert any changes that were made mid-observation
-int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info)
+void ata_snap_obs_info_write_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity obs_info_valid)
 {
-  int rc = 1;//obsinfo valid
   uint32_t obsnchan = 0;
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
   {
     // If obs_info is valid
-    if(ata_snap_obs_info_valid(*obs_info)) {
+    if(obs_info_valid >= OBS_SEEMS_VALID) {
       obsnchan = ata_snap_obsnchan(*obs_info);
       hputs(st->buf, "OBSINFO", "VALID");
     } else {
       obsnchan = 1;
-      rc = 0;
       hputs(st->buf, "OBSINFO", "INVALID");
     }
 
@@ -309,5 +430,48 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
     hputu4(st->buf, "PKTSIZE",  obs_info->pkt_data_size);
   }
   hashpipe_status_unlock_safe(st);
-  return rc;
+}
+
+// Align the blk0_start index to be integer (preferably positive) 
+// multiples of pktidx_per_block away from obsstart.
+char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, uint32_t pktidx_per_block){
+  //
+  // blk0
+  //  |  blk
+  //  |   |  blk
+  //  |   |   | observation
+  //  |   |   |  |
+  //  0---|---|-->____
+  //          |vv|
+  //    /offset/
+  //  |^^|
+  //  0++0---|---|>____
+  //
+  //  observation
+  //      | blk0 
+  //      |  |  blk
+  //      |  |   |  blk
+  //      |  |   |   |
+  //      >__0___|___|
+  //      |^^|offset
+  //      0___|___...
+
+  uint32_t blk_obsstart_alignment_offset = (obsstart - *blk0_start_pktidx)%pktidx_per_block;
+
+  if(blk_obsstart_alignment_offset != 0){
+    // Subtract rather, so that the offset motion is more inclusive rather than exclusive
+    // (particularly for the case of blk0 > obsstart)
+    if(*blk0_start_pktidx > pktidx_per_block){
+      blk_obsstart_alignment_offset = pktidx_per_block - blk_obsstart_alignment_offset;
+      *blk0_start_pktidx -= blk_obsstart_alignment_offset;
+    }
+    else{
+      *blk0_start_pktidx += blk_obsstart_alignment_offset;
+    }
+    hashpipe_info(__FUNCTION__,
+        "working blocks reinit to align pktstart to obsstart\n\t\toffset of -%lu",
+        blk_obsstart_alignment_offset);
+    return 1;
+  }
+  return 0;
 }
