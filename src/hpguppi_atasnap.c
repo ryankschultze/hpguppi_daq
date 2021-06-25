@@ -88,6 +88,7 @@ void increment_block(struct datablock_stats *d, int64_t block_num)
 
   d->block_idx = (d->block_idx + 1) % d->dbout->header.n_block;
   d->block_num = block_num;
+  d->packet_idx += d->pktidx_per_block;
   reset_datablock_stats(d);
 }
 

@@ -567,6 +567,7 @@ int debug_i=0, debug_j=0;
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
             wblk[wblk_idx].pkts_per_block = obs_info.pkt_per_block;
             wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
+            wblk[wblk_idx].packet_idx = obs_start_seq_num + wblk_idx*obs_info.pktidx_per_block;
             init_datablock_stats(wblk+wblk_idx, NULL, -1,
                 0+wblk_idx,
                 obs_info.pkt_per_block);
@@ -616,16 +617,15 @@ int debug_i=0, debug_j=0;
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
 
             // If the block to be finalised is out of observation range then flag_obs_end
-            if(state_from_start_stop(obs_start_seq_num + wblk[0].block_num * obs_info.pktidx_per_block, obs_start_seq_num, obs_stop_seq_num) == IDLE &&
-              state_from_start_stop(obs_start_seq_num + (wblk[0].block_num + 1) * obs_info.pktidx_per_block, obs_start_seq_num, obs_stop_seq_num) == IDLE){
+            if(state_from_start_stop(wblk[0].packet_idx, obs_start_seq_num, obs_stop_seq_num) == IDLE &&
+              state_from_start_stop(wblk[1].packet_idx, obs_start_seq_num, obs_stop_seq_num) == IDLE){
                   flag_obs_end = 1;
             }
 
             // Finalize first working block
             datablock_header = datablock_stats_header(&wblk[0]);
-            
             // update PKTIDX triggering rawdisk to close fd when this last block gets finalised.
-            hputu8(datablock_header, "PKTIDX", flag_obs_end ? pkt_seq_num : obs_start_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTIDX", flag_obs_end ? pkt_seq_num : wblk[0].packet_idx);
             finalize_block(wblk);
             if(!flag_obs_end){
               // Update ndrop counter
@@ -656,6 +656,7 @@ int debug_i=0, debug_j=0;
             // Re-init working blocks for block number of current packet's block,
             // and clear their data buffers
             for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+              wblk[wblk_idx].packet_idx = pkt_seq_num + wblk_idx*obs_info.pktidx_per_block;
               init_datablock_stats(wblk+wblk_idx, NULL, -1,
                   pkt_blk_num+wblk_idx,
                   obs_info.pkt_per_block);
