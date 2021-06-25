@@ -359,8 +359,8 @@ static void *run(hashpipe_thread_args_t * args)
           memcpy(&ts_checked_obs_startstop, &ts_now, sizeof(struct timespec));
           hashpipe_status_lock_safe(st);
           {
-            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
-            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
+            hgetu8(st->buf, "PKTSTART", &obs_start_pktidx);
+            hgetu8(st->buf, "PKTSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
         }
@@ -425,8 +425,8 @@ static void *run(hashpipe_thread_args_t * args)
             }
             hashpipe_status_unlock_safe(st);
             hputu8(datablock_header, "PKTIDX", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTART", first_pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTOP", first_pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
           }
           hashpipe_info(thread_name, "Armed wblk for observation: first_pkt_seq_num = %lu", first_pkt_seq_num);
         }
@@ -443,8 +443,8 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_lock_safe(st);
           hputu8(st->buf, "BLKIDX", pkt_blk_num);
           hputu8(st->buf, "PKTIDX", pkt_seq_num);
-          hputu8(st->buf, "PKTSTART", pkt_seq_num);
-          hputu8(st->buf, "PKTSTOP", pkt_seq_num + obs_info.pktidx_per_block);
+          hputu8(st->buf, "BLKSTART", pkt_seq_num);
+          hputu8(st->buf, "BLKSTOP", pkt_seq_num + obs_info.pktidx_per_block);
           hashpipe_status_unlock_safe(st);
         }
 
@@ -481,8 +481,8 @@ static void *run(hashpipe_thread_args_t * args)
             
             // update PKTIDX triggering rawdisk to close fd when this last block gets finalised.
             hputu8(datablock_header, "PKTIDX", flag_obs_end ? pkt_seq_num : first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTART", first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTOP", first_pkt_seq_num + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTART", first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTOP", first_pkt_seq_num + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
             finalize_block(wblk);
             if(!flag_obs_end){
               // Update ndrop counter
@@ -523,8 +523,8 @@ static void *run(hashpipe_thread_args_t * args)
                 memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
               hashpipe_status_unlock_safe(st);
               hputu8(datablock_header, "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputu8(datablock_header, "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
-              hputu8(datablock_header, "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
+              hputu8(datablock_header, "BLKSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
+              hputu8(datablock_header, "BLKSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
             }
             // Immediately update STT keys to ensure that the rawdisk thread uses a new stem
             update_stt_status_keys(st, state, obs_start_pktidx, mjd);

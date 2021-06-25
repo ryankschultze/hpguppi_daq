@@ -300,8 +300,8 @@ static void *run(hashpipe_thread_args_t * args)
           obs_stop_pktidx = 0;
           hashpipe_status_lock_safe(st);
           {
-            hputu8(st->buf, "OBSSTART", 0);
-            hputu8(st->buf, "OBSSTOP", 0);
+            hputu8(st->buf, "PKTSTART", 0);
+            hputu8(st->buf, "PKTSTOP", 0);
           }
           hashpipe_status_unlock_safe(st);
         }
@@ -310,8 +310,8 @@ static void *run(hashpipe_thread_args_t * args)
           prev_obs_stop_pktidx = obs_stop_pktidx;
           hashpipe_status_lock_safe(st);
           {
-            hgetu8(st->buf, "OBSSTART", &obs_start_pktidx);
-            hgetu8(st->buf, "OBSSTOP", &obs_stop_pktidx);
+            hgetu8(st->buf, "PKTSTART", &obs_start_pktidx);
+            hgetu8(st->buf, "PKTSTOP", &obs_stop_pktidx);
           }
           hashpipe_status_unlock_safe(st);
           
@@ -420,8 +420,8 @@ static void *run(hashpipe_thread_args_t * args)
             
             datablock_header = datablock_stats_header(&wblk[0]);
             hputu8(datablock_header, "PKTIDX", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTART", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "PKTSTOP", blk0_start_pktidx + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTART", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "BLKSTOP", blk0_start_pktidx + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
             // Finalize first working block
             finalize_block(wblk);
             // Update ndrop counter
@@ -482,8 +482,8 @@ static void *run(hashpipe_thread_args_t * args)
           hashpipe_status_lock_safe(st);
             hputu8(st->buf, "BLKIDX", pkt_blk_num);
             hputu8(st->buf, "PKTIDX", pkt_idx);
-            hputu8(st->buf, "PKTSTART", pkt_idx);
-            hputu8(st->buf, "PKTSTOP", pkt_idx + obs_info.pktidx_per_block);
+            hputu8(st->buf, "BLKSTART", pkt_idx);
+            hputu8(st->buf, "BLKSTOP", pkt_idx + obs_info.pktidx_per_block);
           hashpipe_status_unlock_safe(st);
         }
     

@@ -174,10 +174,10 @@ static void *run(hashpipe_thread_args_t * args)
     }
 
     datablock_header = hpguppi_databuf_header(indb, curblock_in);
-    hgetu8(datablock_header, "OBSSTART", &obs_start_pktidx);
-    hgetu8(datablock_header, "OBSSTOP", &obs_stop_pktidx);
-    hgetu8(datablock_header, "PKTSTART", &block_start_pktidx);
-    hgetu8(datablock_header, "PKTSTOP", &block_stop_pktidx);
+    hgetu8(datablock_header, "PKTSTART", &obs_start_pktidx);
+    hgetu8(datablock_header, "PKTSTOP", &obs_stop_pktidx);
+    hgetu8(datablock_header, "BLKSTART", &block_start_pktidx);
+    hgetu8(datablock_header, "BLKSTOP", &block_stop_pktidx);
 
     switch(state_from_block_start_stop(obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx)){
       case IDLE:// If should IDLE, 
