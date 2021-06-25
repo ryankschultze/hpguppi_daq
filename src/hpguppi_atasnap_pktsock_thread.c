@@ -671,7 +671,6 @@ static void *run(hashpipe_thread_args_t * args)
 
     char waiting=-1;
     enum run_states state = IDLE;
-    uint32_t subsequent_state_idle_count = 0;
     char flag_state_update = 0;
     char  PKT_OBS_IDX_flagged, PKT_OBS_FENG_flagged, 
           PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged, pkt_obs_code;
@@ -794,20 +793,13 @@ static void *run(hashpipe_thread_args_t * args)
           
         switch(state_from_start_stop(pkt_seq_num, obs_start_pktidx, obs_stop_pktidx)){
           case IDLE:// If should IDLE, 
-            flag_state_update = (state != IDLE ? 1 : 0);// flag state update
-            subsequent_state_idle_count += (state == RECORD ? 1 : 0);
-            if(state == RECORD && subsequent_state_idle_count > 100){//and recording, finalise block
-              flag_obs_end = 1;
-              // first_pkt_seq_num = 0; // reset after finalisation of block
-              state = IDLE;
-              update_stt_status_keys(st, state, pkt_seq_num, mjd);
-            }
-            else if(state == ARMED){
+            if(state == ARMED){
+              flag_state_update = 1;
               state = IDLE;
             }
+            // if RECORDING -> IDLE handled before finalising a block
             break;
           case RECORD:// If should RECORD
-            subsequent_state_idle_count = 0;
             if (state != RECORD && ata_snap_obs_info_valid(obs_info)){// Only enter recording mode if obs_params are valid
               // and not recording, flag obs_start
               flag_state_update = 1;
@@ -816,7 +808,6 @@ static void *run(hashpipe_thread_args_t * args)
             }
             break;
           case ARMED:// If should ARM,
-            subsequent_state_idle_count = 0;
             if(state == IDLE){
               flag_state_update = 1;// flag state update
               state = ARMED;
@@ -887,7 +878,7 @@ static void *run(hashpipe_thread_args_t * args)
         npacket_total += 1;
         // count ndrop only when a block is finalised, lest it is filled out of order.
         
-        if (state != RECORD && flag_obs_end != 1){
+        if (state != RECORD){
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }
@@ -900,10 +891,17 @@ static void *run(hashpipe_thread_args_t * args)
 
         // Manage blocks based on pkt_blk_num
         // fprintf(stderr, "%010ld\r", pkt_blk_num);
-        if(flag_obs_end || pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
+        if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
             // Time to advance the blocks!!!
             // fprintf(stderr, "\nFinalising Block: %ld", wblk[0].block_num);
             clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
+
+            // If the block to be finalised is out of observation range then flag_obs_end
+            if(state_from_start_stop(first_pkt_seq_num + wblk[0].block_num * obs_info.pktidx_per_block, obs_start_pktidx, obs_stop_pktidx) == IDLE &&
+              state_from_start_stop(first_pkt_seq_num + (wblk[0].block_num + 1) * obs_info.pktidx_per_block, obs_start_pktidx, obs_stop_pktidx) == IDLE){
+                  flag_obs_end = 1;
+            }
+
             // Finalize first working block
             datablock_header = datablock_stats_header(&wblk[0]);
             
@@ -947,7 +945,9 @@ static void *run(hashpipe_thread_args_t * args)
 
               // also update the working blocks' headers
               datablock_header = datablock_stats_header(wblk+wblk_idx);
-              memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hashpipe_status_lock_safe(st);
+                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+              hashpipe_status_unlock_safe(st);
               hputu8(datablock_header, "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputu8(datablock_header, "PKTSTART", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
               hputu8(datablock_header, "PKTSTOP", pkt_seq_num + (wblk_idx + 1) * obs_info.pktidx_per_block);
@@ -957,11 +957,13 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         // Check observation state
-        if(state != RECORD){// Either ARMED or transitioning RECORD->IDLE
-          if(flag_obs_end){
-            flag_obs_end = 0;
-            first_pkt_seq_num = 0;
-          }
+        if(flag_obs_end){// transitioning RECORD->IDLE
+          flag_obs_end = 0;
+          first_pkt_seq_num = 0;
+          state = IDLE;
+          flag_state_update = 1;
+          update_stt_status_keys(st, state, pkt_seq_num, mjd);
+          
           hashpipe_pktsock_release_frame(p_frame);
           continue;
         }
