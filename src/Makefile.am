@@ -33,6 +33,8 @@ hpguppi_support = hpguppi_atasnap.h \
 libsla_support = slalib.h sla.c f77.h
 
 hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
+		  hpguppi_atasnap_control_thread.c \
+		  hpguppi_atasnap_pktsock_only_thread.c \
 		  hpguppi_atasnap_pkt_to_FTP_transpose.c \
 		  hpguppi_atasnap_rawdisk_thread.c \
 		  hpguppi_net_thread.c \
