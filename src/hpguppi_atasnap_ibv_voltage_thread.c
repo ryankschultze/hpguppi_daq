@@ -489,16 +489,6 @@ int debug_i=0, debug_j=0;
       //     continue;
       // }
 
-#if 0
-if(i==0) {
-fprintf(stderr, "pkt_seq_num = %lu\n", pkt_seq_num);
-fprintf(stderr, "pkt_blk_num = %lu\n", pkt_blk_num);
-fprintf(stderr, "pktidx       = 0x%016lx\n", feng_info.pktidx   );
-fprintf(stderr, "feng_id      = 0x%016lx\n", feng_info.feng_id  );
-fprintf(stderr, "feng_chan    = 0x%016lx\n", feng_info.feng_chan);
-}
-#endif
-
       // We update the status buffer at the start of each block
       // Also read PKTSTART and PKTSTOP
       if(pkt_seq_num % obs_info.pktidx_per_block == 0
@@ -519,7 +509,6 @@ fprintf(stderr, "feng_chan    = 0x%016lx\n", feng_info.feng_chan);
 
       // Get packet index and absolute block number for packet
       pkt_seq_num = feng_info.pktidx;
-      pkt_blk_num = pkt_seq_num / obs_info.pktidx_per_block;
       pkt_stream = (feng_info.feng_chan - obs_info.schan) / obs_info.pkt_nchan;
 
       // if(pkt_obs_code != PKT_OBS_OK){
@@ -589,7 +578,6 @@ fprintf(stderr, "feng_chan    = 0x%016lx\n", feng_info.feng_chan);
               memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
             }
             hashpipe_status_unlock_safe(st);
-            hputu8(datablock_header, "PKTIDX", obs_start_seq_num + wblk_idx * obs_info.pktidx_per_block);
           }
           hashpipe_info(thread_name, "Armed wblk for observation: obs_start_seq_num = %lu", obs_start_seq_num);
         }
@@ -677,7 +665,6 @@ fprintf(stderr, "feng_chan    = 0x%016lx\n", feng_info.feng_chan);
               hashpipe_status_lock_safe(st);
                 memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
               hashpipe_status_unlock_safe(st);
-              hputu8(datablock_header, "PKTIDX", pkt_seq_num + wblk_idx * obs_info.pktidx_per_block);
             }
             // Immediately update STT keys to ensure that the rawdisk thread uses a new stem
             update_stt_status_keys(st, state, obs_start_seq_num, mjd);
