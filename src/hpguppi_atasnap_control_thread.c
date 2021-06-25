@@ -131,7 +131,7 @@ static void *run(hashpipe_thread_args_t * args)
           {
               hputu8(st->buf, "OBSNPKTS", obs_npacket_total);
               hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
-              hputu4(st->buf, "BLKSPS", blocks_per_second);
+              hputr4(st->buf, "BLKSPS", blocks_per_second);
               hputs(st->buf, "DAQPULSE", timestr);
               HPUT_DAQ_STATE(st, state);
           }
