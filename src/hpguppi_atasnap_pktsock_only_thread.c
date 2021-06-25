@@ -415,13 +415,11 @@ static void *run(hashpipe_thread_args_t * args)
           // Manage blocks based on pkt_blk_num
           if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
             // Time to advance the blocks!!!
-            wblk[0].pkts_per_block = obs_info.pkt_per_block;
-            wblk[0].pktidx_per_block = obs_info.pktidx_per_block;
-            
+
             datablock_header = datablock_stats_header(&wblk[0]);
-            hputu8(datablock_header, "PKTIDX", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "BLKSTART", blk0_start_pktidx + wblk[0].block_num * obs_info.pktidx_per_block);
-            hputu8(datablock_header, "BLKSTOP", blk0_start_pktidx + (wblk[0].block_num + 1) * obs_info.pktidx_per_block);
+            hputu8(datablock_header, "PKTIDX", wblk[0].packet_idx);
+            hputu8(datablock_header, "BLKSTART", wblk[0].packet_idx);
+            hputu8(datablock_header, "BLKSTOP", wblk[1].packet_idx);
             // Finalize first working block
             finalize_block(wblk);
             // Update ndrop counter
@@ -460,9 +458,11 @@ static void *run(hashpipe_thread_args_t * args)
           pkt_blk_num = (pkt_idx - blk0_start_pktidx) / obs_info.pktidx_per_block;
 
           for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+            wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
             init_datablock_stats(wblk+wblk_idx, NULL, -1,
                 pkt_blk_num+wblk_idx,
                 obs_info.pkt_per_block);
+            wblk[wblk_idx].packet_idx = blk0_start_pktidx + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
 
             // also update the working blocks' headers
             datablock_header = datablock_stats_header(wblk+wblk_idx);
@@ -480,7 +480,7 @@ static void *run(hashpipe_thread_args_t * args)
           last_pkt_blk_num = pkt_blk_num;
 
           hashpipe_status_lock_safe(st);
-            hputu8(st->buf, "BLKIDX", pkt_blk_num);
+            hputu8(st->buf, "BLKIDX", pkt_idx/obs_info.pktidx_per_block);
             hputu8(st->buf, "PKTIDX", pkt_idx);
             hputu8(st->buf, "BLKSTART", pkt_idx);
             hputu8(st->buf, "BLKSTOP", pkt_idx + obs_info.pktidx_per_block);
