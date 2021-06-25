@@ -697,7 +697,7 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
       /*const uint64_t*/  pkt_payload_size,\
       /*const uint32_t*/  pkt_ntime)\
   memcpy(datablock_stats_data(datablock_stats_pointer)+(\
-        ((pkt_obs_relative_idx%datablock_stats_pointer->pktidx_per_block)/pkt_ntime) * time_stride\
+        (pkt_obs_relative_idx/pkt_ntime) * time_stride\
             +  feng_id * fid_stride\
             +  stream * pkt_payload_size\
       ),\

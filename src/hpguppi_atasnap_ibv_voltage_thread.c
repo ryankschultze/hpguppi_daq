@@ -693,7 +693,7 @@ int debug_i=0, debug_j=0;
             if(0 <= wblk_idx && wblk_idx < n_wblock) {
               // Copy packet data to data buffer of working block
               COPY_PACKET_DATA_TO_DATABUF(((struct datablock_stats*) wblk+wblk_idx),
-                  p_payload, pkt_obs_relative_idx,
+                  p_payload, pkt_obs_relative_idx%obs_info.pktidx_per_block,
                   feng_info.feng_id, pkt_stream, feng_info.feng_chan,
                   fid_stride, time_stride, pkt_payload_size, 16);//obs_info.pkt_ntime);
               // Count packet for block and for processing stats

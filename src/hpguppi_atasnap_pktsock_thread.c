@@ -553,7 +553,7 @@ static void *run(hashpipe_thread_args_t * args)
             if(0 <= wblk_idx && wblk_idx < n_wblock) {
               // Copy packet data to data buffer of working block
               COPY_PACKET_DATA_TO_DATABUF(((struct datablock_stats*) wblk+wblk_idx),
-                  ata_snap_pkt, pkt_obs_relative_idx,
+                  ata_snap_pkt->payload, pkt_obs_relative_idx%obs_info.pktidx_per_block,
                   feng_id, stream, pkt_schan,
                   fid_stride, time_stride, pkt_payload_size, 16);//obs_info.pkt_ntime);
               // Count packet for block and for processing stats
