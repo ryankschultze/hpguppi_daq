@@ -172,10 +172,10 @@ while(True):
     #if n_block > 100:
     #    break
     g_nants, g_nchans, g_ntimes, g_npols = gd.shape
-    print(g_ntimes)
+    print('gd.shape', gd.shape)
     print("PKTIDX:", gh['PKTIDX'])
     if capture_offset == -1:
-        capture_offset = gh['PKTIDX'] - gh['OBSSTART']
+        capture_offset = gh['PKTIDX'] - gh['PKTSTART']
         print('capture_offset:', capture_offset)
     # gd has shape: nants x nchans x ntimes x npols
     # infile data has shape: ntime x nants x nchans x NTIME x NPOL
@@ -186,11 +186,16 @@ while(True):
     # of samples when verifying
     block_time = (n_block) * g_ntimes
     for t in range(g_ntimes):
-        if np.all(gd[:, :, t, :] == d[(block_time + t + capture_offset)//NTIME, :, :, (block_time + t + capture_offset)%NTIME, :]):
+        golden_slice = gd[:, :, t, :]
+        record_slice = d[(block_time + t + capture_offset)//NTIME, :, :, (block_time + t + capture_offset)%NTIME, :]
+        diff = np.equal(golden_slice, record_slice)
+        if diff.all():
             good_cnt += g_nants * g_nchans * g_npols
         else:
-            print(n_block, t, gd[0, :, t, 0], d[(block_time + t + capture_offset)//NTIME, 0, :, (block_time + t + capture_offset)%NTIME, 0])
+            # print('-'*20+'\n', n_block, t, '\n', golden_slice, '\nvs\n', record_slice, '\n'+'-'*20)
+            print('-'*20+'\n', n_block, t, diff, '\n'+'-'*20)
             bad_cnt += g_nants * g_nchans * g_npols
+            break
         # TODO why are samples after 12239 bad?
         #if t == 12239:
         #    break
