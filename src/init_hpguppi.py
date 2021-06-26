@@ -23,6 +23,8 @@ parser.add_argument('-o', '--options', type=str, nargs='*', default=[],
 										help='Additional key=val pairs for the Hpguppi instance\'s status buffer')
 parser.add_argument('-e', '--environment-keys', type=str, nargs='*', default=[],
 										help='Additional key=val pairs for the environment of the Hpguppi instance')
+parser.add_argument('-d', '--dry-run', action='store_true',
+										help='Do not start the instance')
 parser.add_argument('--configfile', type=str, default='config_hpguppi.yml',
 										help='The file containing systems\' configurations.')
 args = parser.parse_args()
@@ -172,9 +174,6 @@ if logdir is not None:
 			logio.write('\n{}\nStartup {}\n{}\n{}\n'.format('-'*20, datetime.datetime.now(), ' '.join(cmd), 'v'*20))
 	print()
 
-cmd = ' '.join(cmd)
-print(cmd)
-
 # Setup environment
 environment_keys = args.environment_keys
 if 'hashpipe_keyfile' in system:
@@ -194,6 +193,17 @@ for env_kv in environment_keys:
 	
 	hashpipe_env[key] = val
 
+print()
+cmd = ' '.join(cmd)
+print(cmd)
+
 out_logio = None if out_logpath is None else open(out_logpath, 'a')
 err_logio = None if err_logpath is None else open(err_logpath, 'a')
-subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
+if not args.dry_run:
+	subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
+else:
+	print('^^^ Dry run ^^^')
+	err_logio.write('Dry run')
+	err_logio.write('Dry run')
+	out_logio.close()
+	out_logio.close()
