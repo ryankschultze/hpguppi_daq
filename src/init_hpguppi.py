@@ -33,8 +33,18 @@ args = parser.parse_args()
 with open(args.configfile, 'r') as fio:
 	config = yaml.load(fio, Loader=yaml.SafeLoader)
 
+subsystem_split_index = args.system.find('_')
+
 # Select configuration for the system
-assert args.system in config, 'System {} not defined in {}'.format(args.system, args.configfile)
+if subsystem_split_index > -1 and args.system not in config:
+	subsystem = args.system[subsystem_split_index+1:]
+	args.system = args.system[0:subsystem_split_index]
+	assert args.system in config , 'Root-system {} not defined in {}'.format(args.system, args.configfile)
+	print('Accessing root-system \'{}\''.format(args.system))
+else:
+	subsystem = None
+	assert args.system in config , 'System {} not defined in {}'.format(args.system, args.configfile)
+
 system = config[args.system]
 
 # Gather cpu core count
@@ -69,8 +79,13 @@ else:
 	print('Consequetively masking threads from CPU core {}'.format(cpu_core))
 
 # Gather the list of threads for the instance
-assert 'threads' in system_config, '\'threads\' not defined for system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
-system_threads = system_config['threads']
+if subsystem is not None:
+	assert 'subsystem_threads' in system_config, '\'subsystem_threads\' not defined for root-system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
+	assert subsystem in system_config['subsystem_threads'], '\'{}\' not defined in the subsystem_threads for root-system {} ({} core) in {}'.format(subsystem, args.system, cores_per_cpu, args.configfile)
+	system_threads = system_config['subsystem_threads'][subsystem]
+else:
+	assert 'threads' in system_config, '\'threads\' not defined for system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
+	system_threads = system_config['threads']
 
 # Create the thread-list segment of the instance command
 hpguppi_threads_cmd_segment = []
