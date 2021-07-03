@@ -183,14 +183,15 @@ if logdir is not None:
 
 	# Trim existing logs
 	for logpath in [out_logpath, err_logpath]:
-		print('Trimming log: {}'.format(logpath))
+		if os.path.exists(logpath):
+			print('Trimming log: {}'.format(logpath))
 
-		with open('tmp.out', 'w') as tmpio:
-			subprocess.run('tail -n 100000 {}'.format(logpath).split(' '), stdout=tmpio)
-		
-		subprocess.run('mv tmp.out {}'.format(logpath).split(' '))
-		with open(logpath, 'a') as logio:
-			logio.write('\n{}\nStartup {}\n{}\n{}\n'.format('-'*20, datetime.datetime.now(), ' '.join(cmd), 'v'*20))
+			with open('tmp.out', 'w') as tmpio:
+				subprocess.run('tail -n 100000 {}'.format(logpath).split(' '), stdout=tmpio)
+			
+			subprocess.run('mv tmp.out {}'.format(logpath).split(' '))
+			with open(logpath, 'a') as logio:
+				logio.write('\n{}\nStartup {}\n{}\n{}\n'.format('-'*20, datetime.datetime.now(), ' '.join(cmd), 'v'*20))
 	print()
 
 # Setup environment
