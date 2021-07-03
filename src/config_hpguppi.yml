@@ -9,22 +9,25 @@ atasnap:
     - LD_LIBRARY_PATH=/home/sonata/dev/dm_hpguppi_daq/src:/home/sonata/src/hashpipe/src:/opt/mnt/lib
     - PATH=$PATH:/opt/mnt/:/opt/mnt/lib
   options:
-    - IBVPKTSZ=42,16,8192
+    - IBVPKTSZ=42,16,8208
     - BINDPORT=10000
   instance_numanode_bind:
-    - 1
     - 0
+    - 1
   instance_datadir:
-    - /mnt/buf0
     - /mnt/buf1
+    - /mnt/buf0
   instance_bindhost:
     - enp97s0f1
     - enp225s0f1
+  thread_mask_lengths:
+    hpguppi_atasnap_pkt_to_FTP_transpose:
+      8
   cpu_core_count_config:
     16:
       instance_cpu_core_start_list:
-        - 17
-        - 1
+        - 0
+        - 16
       subsystem_threads:
         ibv:
           hpguppi_ibvpkt_thread:
