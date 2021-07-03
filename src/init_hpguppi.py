@@ -213,6 +213,18 @@ for env_kv in environment_keys:
 	
 	hashpipe_env[key] = val
 
+if 'setup_commands' in system:
+	print()
+	setup_command_variable_dict = {
+		'BINDHOST': instance_bindhost
+	}
+
+	for setup_command in system['setup_commands']:
+		for var,val in setup_command_variable_dict.items():
+			setup_command = setup_command.replace('${}'.format(var), val)
+		print(setup_command)
+		subprocess.run(setup_command.split(' '))
+
 print()
 cmd = ' '.join(cmd)
 print(cmd)
