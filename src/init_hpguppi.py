@@ -42,7 +42,7 @@ if subsystem_split_index > -1 and args.system not in config:
 	assert args.system in config , 'Root-system {} not defined in {}'.format(args.system, args.configfile)
 	print('Accessing root-system \'{}\''.format(args.system))
 else:
-	subsystem = None
+	subsystem = ''
 	assert args.system in config , 'System {} not defined in {}'.format(args.system, args.configfile)
 
 system = config[args.system]
@@ -79,7 +79,7 @@ else:
 	print('Consequetively masking threads from CPU core {}'.format(cpu_core))
 
 # Gather the list of threads for the instance
-if subsystem is not None:
+if subsystem != '':
 	assert 'subsystem_threads' in system_config, '\'subsystem_threads\' not defined for root-system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
 	assert subsystem in system_config['subsystem_threads'], '\'{}\' not defined in the subsystem_threads for root-system {} ({} core) in {}'.format(subsystem, args.system, cores_per_cpu, args.configfile)
 	system_threads = system_config['subsystem_threads'][subsystem]
@@ -92,7 +92,7 @@ hpguppi_threads_cmd_segment = []
 for system_thread, thread_mask in system_threads.items():
 	if cpu_core is None: # explicit core masks
 		assert thread_mask is not None, '{} does not define a CPU core mask (either as a list or a single number) for system {} ({} core) in {}, assuming each thread dictates its cpu mask.'.format(
-																			system_thread, args.system, cores_per_cpu, args.configfile
+																			system_thread, args.system+'_'+subsystem, cores_per_cpu, args.configfile
 																		)
 		if isinstance(thread_mask, int):
 			hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, system_thread))
@@ -111,6 +111,10 @@ for system_thread, thread_mask in system_threads.items():
 				mask_val += 2**core_idx
 			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, system_thread))
 			cpu_core += thread_mask
+		else:
+			assert isinstance(thread_mask, int), '{} does not define a number of sequential CPU cores to mask for system {} ({} core) in {}.'.format(
+																			system_thread, args.system+'_'+subsystem, cores_per_cpu, args.configfile
+																		)
 
 # Gather instance-agnostic instantiation variables
 prefix_exec = system['prefix_exec'] if 'prefix_exec' in system else default_prefix_exec
