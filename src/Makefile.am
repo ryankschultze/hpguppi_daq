@@ -40,6 +40,7 @@ hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_atasnap_ibv_voltage_thread.c \
+		  hpguppi_atasnap_ibv_voltage_only_thread.c \
 		  hpguppi_atasnap_voltage_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
