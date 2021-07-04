@@ -224,7 +224,8 @@ if 'setup_commands' in system:
 		for var,val in setup_command_variable_dict.items():
 			setup_command = setup_command.replace('${}'.format(var), str(val))
 		print(setup_command)
-		print(subprocess.run(setup_command.split(' '), capture_output=True).stdout.decode())
+		if not args.dry_run:
+			print(subprocess.run(setup_command.split(' '), capture_output=True).stdout.decode())
 		print()
 
 cmd = ' '.join(cmd)
