@@ -35,6 +35,7 @@ with open(args.configfile, 'r') as fio:
 
 subsystem_split_index = args.system.find('_')
 
+system_full_name = args.system
 # Select configuration for the system
 if subsystem_split_index > -1 and args.system not in config:
 	subsystem = args.system[subsystem_split_index+1:]
@@ -62,59 +63,78 @@ assert 'cpu_core_count_config' in system, '{} not defined for system {} in {}'.f
 if cores_per_cpu not in system['cpu_core_count_config']:
 	print('{}[{}] not defined for system {} in {}'.format('cpu_core_count_config', cores_per_cpu, args.system, args.configfile))
 	exit(1)
-system_config = system['cpu_core_count_config'][cores_per_cpu]
+system_ccc_config = system['cpu_core_count_config'][cores_per_cpu] if isinstance(system['cpu_core_count_config'], dict) else True
+
+# Gather numanode_bind specifications
+instance_numanode_bind = args.instance
+if 'instance_numanode_bind' in system:
+	instance_numanode_bind = system['instance_numanode_bind'][args.instance]
+else:
+	print('{} not found for system {} in {}, numactl binding matches instance enumeration'.format('instance_numanode_bind', args.system, args.configfile))
 
 # Set cpu_core to first core
-cpu_core = None
-if 'instance_cpu_core_start_list' not in system_config:
-	print('{} not found for system {} ({} core) in {}, assuming each thread dictates its cpu mask.'.format(
-		'instance_cpu_core_start_list', args.system, cores_per_cpu, args.configfile
-	))
-else:
-	if args.instance >= len(system_config['instance_cpu_core_start_list']):
-		print('{} only defines {} instances for system {} ({} core) in {}'.format('instance_cpu_core_start_list', len(system_config['instance_cpu_core_start_list']), args.system, cores_per_cpu, args.configfile))
+cpu_core = cores_per_cpu*instance_numanode_bind
+if isinstance(system_ccc_config, dict) and 'instance_cpu_core_0' in system_ccc_config:
+	if args.instance >= len(system_ccc_config['instance_cpu_core_0']):
+		print('{} only defines {} instances for system {} ({} core) in {}'.format('instance_cpu_core_0', len(system_ccc_config['instance_cpu_core_0']), args.system, cores_per_cpu, args.configfile))
 		exit(1)
 	
-	cpu_core = system_config['instance_cpu_core_start_list'][args.instance]
-	print('Consequetively masking threads from CPU core {}'.format(cpu_core))
+	cpu_core = system_ccc_config['instance_cpu_core_0'][args.instance]
+print('Fallback thread-masks start from CPU core {}.'.format(cpu_core))
 
 # Gather the list of threads for the instance
 if subsystem != '':
-	assert 'subsystem_threads' in system_config, '\'subsystem_threads\' not defined for root-system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
-	assert subsystem in system_config['subsystem_threads'], '\'{}\' not defined in the subsystem_threads for root-system {} ({} core) in {}'.format(subsystem, args.system, cores_per_cpu, args.configfile)
-	system_threads = system_config['subsystem_threads'][subsystem]
+	assert 'subsystem_threads' in system, '\'subsystem_threads\' not defined for root-system {} in {}'.format(args.system, args.configfile)
+	assert subsystem in system['subsystem_threads'], '\'{}\' not defined in the subsystem_threads for root-system {} in {}'.format(subsystem, args.system, args.configfile)
+	threads = system['subsystem_threads'][subsystem]
 else:
-	assert 'threads' in system_config, '\'threads\' not defined for system {} ({} core) in {}'.format(args.system, cores_per_cpu, args.configfile)
-	system_threads = system_config['threads']
+	assert 'threads' in system, '\'threads\' not defined for system {} in {}'.format(args.system, args.configfile)
+	threads = system['threads']
+
+# Gather dictionaries of thread masks' lengths and user-specified thread masks
+thread_mask_length_dict = system['thread_mask_lengths'] if 'thread_mask_lengths' in system else {}
+thread_instance_mask_dict = None
+thread_instance_mask_dict_name = None
+if isinstance(system_ccc_config, dict):
+	if subsystem == '' and 'instance_thread_masks' in system_ccc_config:
+		thread_instance_mask_dict = system_ccc_config['instance_thread_masks']
+		thread_instance_mask_dict_name = 'instance_thread_masks'
+	elif 'instance_subsystem_thread_masks' in system_ccc_config and subsystem in system_ccc_config['instance_subsystem_thread_masks']:
+		thread_instance_mask_dict = system_ccc_config['instance_subsystem_thread_masks'][subsystem]
+		thread_instance_mask_dict_name = 'instance_subsystem_thread_masks'
 
 # Create the thread-list segment of the instance command
 hpguppi_threads_cmd_segment = []
-for system_thread, thread_mask in system_threads.items():
-	if cpu_core is None: # explicit core masks
-		assert thread_mask is not None, '{} does not define a CPU core mask (either as a list or a single number) for system {} ({} core) in {}, assuming each thread dictates its cpu mask.'.format(
-																			system_thread, args.system+'_'+subsystem, cores_per_cpu, args.configfile
+for thread in threads:
+	if thread_instance_mask_dict is not None and thread in thread_instance_mask_dict: # explicit core masks
+		assert isinstance(thread_instance_mask_dict[thread], list), '{}[{}] must define a mask for each instance as a list for system {} ({} core) in {}.'.format(
+																			thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, args.configfile
 																		)
+		assert args.instance < len(thread_instance_mask_dict[thread]), '{}[{}] doesn\'t define a mask for instance {} for system {} ({} core) in {}.'.format(
+																			thread_instance_mask_dict_name, thread, args.instance, system_full_name, cores_per_cpu, args.configfile
+																		)
+		thread_mask = thread_instance_mask_dict[thread][args.instance]
 		if isinstance(thread_mask, int):
-			hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, system_thread))
+			hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, thread))
+			cpu_core = thread_mask + 1
 		elif isinstance(thread_mask, list):
 			mask_val = 0
 			for core_idx in thread_mask:
 				mask_val += 2**core_idx
-			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, system_thread))
+				cpu_core = core_idx + 1
+			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
 	else: # sequential core masks
-		if thread_mask is None:
-			hpguppi_threads_cmd_segment.append('-c {} {}'.format(cpu_core, system_thread))
+		if thread_instance_mask_dict is not None:
+			print('Fallback masking thread {} from core {}'.format(thread, cpu_core))
+		if thread not in thread_mask_length_dict:
+			hpguppi_threads_cmd_segment.append('-c {} {}'.format(cpu_core, thread))
 			cpu_core += 1
-		elif isinstance(thread_mask, int):
-			mask_val = 0
-			for core_idx in range(cpu_core, cpu_core+thread_mask):
-				mask_val += 2**core_idx
-			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, system_thread))
-			cpu_core += thread_mask
 		else:
-			assert isinstance(thread_mask, int), '{} does not define a number of sequential CPU cores to mask for system {} ({} core) in {}.'.format(
-																			system_thread, args.system+'_'+subsystem, cores_per_cpu, args.configfile
-																		)
+			mask_val = 0
+			for core_idx in range(cpu_core, cpu_core+thread_mask_length_dict[thread]):
+				mask_val += 2**core_idx
+			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+			cpu_core += thread_mask_length_dict[thread]
 
 # Gather instance-agnostic instantiation variables
 prefix_exec = system['prefix_exec'] if 'prefix_exec' in system else default_prefix_exec
@@ -134,12 +154,6 @@ assert 'instance_bindhost' in system, '{} for system {} ({} core) in {}'.format(
 instance_bindhost = system['instance_bindhost'][args.instance]
 
 # Gather optional instance-sensitive instantiation variables
-instance_numanode_bind = args.instance
-if 'instance_numanode_bind' in system:
-	instance_numanode_bind = system['instance_numanode_bind'][args.instance]
-else:
-	print('{} not found for system {} in {}, numactl binding matches instance enumeration'.format('instance_numanode_bind', args.system, args.configfile))
-
 instance_port_bind = None
 if 'instance_port_bind' in system:
 	instance_port_bind = system['instance_port_bind'][args.instance]
