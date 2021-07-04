@@ -216,16 +216,17 @@ for env_kv in environment_keys:
 if 'setup_commands' in system:
 	print()
 	setup_command_variable_dict = {
-		'BINDHOST': instance_bindhost
+		'BINDHOST': instance_bindhost,
+		'INSTANCE': args.instance,
 	}
 
 	for setup_command in system['setup_commands']:
 		for var,val in setup_command_variable_dict.items():
-			setup_command = setup_command.replace('${}'.format(var), val)
+			setup_command = setup_command.replace('${}'.format(var), str(val))
 		print(setup_command)
-		subprocess.run(setup_command.split(' '))
+		print(subprocess.run(setup_command.split(' '), capture_output=True).stdout.decode())
+		print()
 
-print()
 cmd = ' '.join(cmd)
 print(cmd)
 
