@@ -56,3 +56,59 @@ atasnap:
         ibv:
           hpguppi_ibvpkt_thread: [10,26]
           hpguppi_atasnap_ibv_voltage_thread: [0, 16]
+
+##################### Templates #####################
+template_singular: # Singular System Configuration Definition
+  # prefix_exec: /opt/mnt/bin/ # The directory for the hashpipe executable
+  # prefix_lib: /opt/mnt/lib/ # The directory for the hpguppi_daq.so 
+  # hpguppi_plugin: hpguppi_daq.so # The name of the hpguppi_daq plugin
+  # logdir: # The directory to log to (if missing, no logging takes place)
+  # command_prefix: # Commands to insert before `hashpipe` in the final command
+  # setup_commands: # List of commands to run before starting the instance
+  # post_commands: # List of commands to run after having started the instance
+  # hashpipe_keyfile: # The value of the instance's HASHPIPE_KEYFILE environment variable
+  # environment: # List of key=value environment variables for the instance
+  # options: # List of status-buffer key=value options for the command (each prefixed with -o)
+  # instance_numanode_bind: # $instance indexed list of numanode numbers to cpu/mem-bind the instance to (if missing numanode $instance is bound to)
+  instance_datadir: # $instance indexed list of DATADIR values to set for the instance
+    - /mnt/buf0
+    - /mnt/buf1
+  instance_bindhost: # $instance indexed list of DATADIR values to set for the instance
+    - enp97s0f1
+    - enp225s0f1
+  # thread_mask_lengths: # thread_name=mask_length map of mask lengths for threads (otherwise assumed to be 1 (single-core threads))
+  threads: # Sequential list of threads for an instance of the system
+  cpu_core_count_config: [] # Either a simple list of core_counts supported 
+  ########################### or
+  # cpu_core_count_config:  # A core_count={} map of further configuration specifications
+    # 16:
+      # instance_cpu_core_0: # $instance indexed list of cpu_cores from which to start thread masking
+      # instance_thread_masks: # thread=[instance_mask_list] map to $instance indexed lists of thread-masks (a thread-mask that is a list is possible for multi-core threads)
+template_sub-multitudinous: # Mulitple Sub-System Configuration Definitions
+  # prefix_exec: /opt/mnt/bin/ # The directory for the hashpipe executable
+  # prefix_lib: /opt/mnt/lib/ # The directory for the hpguppi_daq.so 
+  # hpguppi_plugin: hpguppi_daq.so # The name of the hpguppi_daq plugin
+  # logdir: # The directory to log to (if missing, no logging takes place)
+  # command_prefix: # Commands to insert before `hashpipe` in the final command
+  # setup_commands: # List of commands to run before starting the instance
+  # post_commands: # List of commands to run after having started the instance
+  # hashpipe_keyfile: # The value of the instance's HASHPIPE_KEYFILE environment variable
+  # environment: # List of key=value environment variables for the instance
+  # options: # List of status-buffer key=value options for the command (each prefixed with -o)
+  # instance_numanode_bind: # $instance indexed list of numanode numbers to cpu/mem-bind the instance to (if missing numanode $instance is bound to)
+  instance_datadir: # $instance indexed list of DATADIR values to set for the instance
+    - /mnt/buf0
+    - /mnt/buf1
+  instance_bindhost: # $instance indexed list of DATADIR values to set for the instance
+    - enp97s0f1
+    - enp225s0f1
+  # thread_mask_lengths: # thread_name=mask_length map of mask lengths for threads (otherwise assumed to be 1 (single-core threads))
+  subsystem_threads: # subsystem=[threads_list] map to
+    $subsystem: # Sequential list of threads for an instance of the subsystem
+  cpu_core_count_config: [] # Either a simple list of core_counts supported 
+  ########################### or
+  # cpu_core_count_config:  # A core_count={} map of further configuration specifications
+    # 16:
+      # instance_cpu_core_0: # $instance indexed list of cpu_cores from which to start thread masking
+      # instance_subsystem_thread_masks: # subsystem={thread=[instance_mask_list]} map of thread maps 
+        # $thread_name: to $instance indexed lists of thread-masks (a thread-mask that is a list is possible for multi-core threads)
