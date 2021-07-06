@@ -72,6 +72,14 @@ if 'instance_numanode_bind' in system:
 else:
 	print('{} not found for system {} in {}, numactl binding matches instance enumeration'.format('instance_numanode_bind', args.system, args.configfile))
 
+instance_numanode_cpubind = instance_numanode_bind
+if 'instance_numanode_cpubind' in system:
+	instance_numanode_cpubind = system['instance_numanode_cpubind'][args.instance]
+
+instance_numanode_membind = instance_numanode_bind
+if 'instance_numanode_membind' in system:
+	instance_numanode_membind = system['instance_numanode_membind'][args.instance]
+
 # Set cpu_core to first core
 cpu_core = cores_per_cpu*instance_numanode_bind
 if isinstance(system_ccc_config, dict) and 'instance_cpu_core_0' in system_ccc_config:
@@ -141,7 +149,7 @@ prefix_exec = system['prefix_exec'] if 'prefix_exec' in system else default_pref
 prefix_lib = system['prefix_lib'] if 'prefix_lib' in system else default_prefix_lib
 logdir = system['logdir'] if 'logdir' in system else default_logdir
 # Gather optional instance-agnostic instantiation variables
-command_prefix = system['command_prefix'] if 'command_prefix' in system else []
+command_prefix = system['command_prefix'] if 'command_prefix' in system else ''
 hpguppi_plugin = system['hpguppi_plugin'] if 'hpguppi_plugin' in system else 'hpguppi_daq.so'
 
 # Gather required instance-sensitive instantiation variables
@@ -176,8 +184,8 @@ print()
 
 # Build hpguppi_daq command
 cmd = [
-	'numactl --cpunodebind={} --membind={}'.format(instance_numanode_bind, instance_numanode_bind),
-	'{}'.format(' '.join(command_prefix)),
+	'numactl --cpunodebind={} --membind={}'.format(instance_numanode_bind, instance_numanode_membind),
+	command_prefix,
 	'{}hashpipe -p {} -I {}'.format(prefix_exec, os.path.join(prefix_lib, hpguppi_plugin), args.instance),
 	' '.join(['-o {}'.format(opt) for opt in options]),
 	' '.join(args.additional_arguments),
