@@ -188,11 +188,8 @@ cmd = [seg for seg in cmd if seg != '']
 
 # Kill previous instances
 previous_instance_cmd_pattern = 'hashpipe -p .* -I {}'.format(args.instance)
-previous_instance_pid = subprocess.run(['pgrep', '-f', previous_instance_cmd_pattern], capture_output=True).stdout
-if previous_instance_pid:
-	print('Killing previous {} instance #{} ({})'.format(args.system, args.instance, previous_instance_pid.decode().strip()))
-	if not args.dry_run:
-		print(subprocess.run(['pkill', '-ef', previous_instance_cmd_pattern], capture_output=True).stdout.decode())
+if not args.dry_run:
+	print(subprocess.run(['pkill', '-ef', previous_instance_cmd_pattern], capture_output=True).stdout.decode())
 
 # Handle logging true switch
 out_logpath = None
