@@ -95,9 +95,9 @@
 #define DEFAULT_MAX_FLOWS (16)
 
 // A bit of a hack...
-#ifndef IBV_FLOW_ATTR_SNIFFER
-#define IBV_FLOW_ATTR_SNIFFER (0x3)
-#endif
+// #ifndef IBV_FLOW_ATTR_SNIFFER
+// #define IBV_FLOW_ATTR_SNIFFER IBV_EXP_FLOW_ATTR_SNIFFER
+// #endif
 
 // Forget previous (possilby less parenthesized) version
 #ifdef ELAPSED_NS
@@ -168,7 +168,9 @@ int
 hpguppi_query_max_wr(const char * interface_name)
 {
   uint64_t interface_id;
-  struct ibv_device_attr ibv_dev_attr;
+  struct ibv_device_attr* ibv_dev_attr = malloc(sizeof(struct ibv_device_attr));
+  struct ibv_context* ibv_context = NULL;
+  int max_qp_wr = -1;
 
   if(hashpipe_ibv_get_interface_info(interface_name, NULL, &interface_id)) {
     hashpipe_error(interface_name, "error getting interace info");
@@ -177,12 +179,14 @@ hpguppi_query_max_wr(const char * interface_name)
   }
 
   if(hashpipe_ibv_open_device_for_interface_id(
-        interface_id, NULL, &ibv_dev_attr, NULL)) {
+        interface_id, &ibv_context, NULL, ibv_dev_attr)) {
     // Error message already logged
     return -1;
   }
 
-  return ibv_dev_attr.max_qp_wr;
+  max_qp_wr = ibv_dev_attr->max_qp_wr;
+  free(ibv_dev_attr);
+  return max_qp_wr;
 }
 
 // Parses the ibvpktsz string for chunk sizes and initializes db's pktbuf_info
@@ -405,8 +409,8 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
   hashpipe_status_unlock_safe(st);
 
   // General fields
-  hibv_ctx->nqp = 1;
-  hibv_ctx->pkt_size_max = 9*1024; // Not really used with user managed buffers
+  // hibv_ctx->nqp = 1;
+  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive // Oddly not pkt_size (that causes work completion errors)
   hibv_ctx->user_managed_flag = 1;
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
@@ -416,6 +420,12 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     num_recv_wr = pktbuf_info->slots_per_block;
   }
   hibv_ctx->recv_pkt_num = num_recv_wr;
+
+  if(hibv_ctx->recv_pkt_num * hibv_ctx->pkt_size_max > BLOCK_DATA_SIZE){
+    // Should never happen
+    hashpipe_warn(__FUNCTION__, "hibv_ctx->recv_pkt_num (%u)*(%u) hibv_ctx->pkt_size_max (%u) > (%lu) BLOCK_DATA_SIZE",
+    hibv_ctx->recv_pkt_num, hibv_ctx->pkt_size_max, hibv_ctx->recv_pkt_num * hibv_ctx->pkt_size_max, BLOCK_DATA_SIZE);
+  }
 
   // Allocate packet buffers
   if(!(hibv_ctx->send_pkt_buf = (struct hashpipe_ibv_send_pkt *)calloc(
@@ -439,8 +449,8 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Specify size of send and recv memory regions.
   // Send memory region is just one packet.  Recv memory region spans all data blocks.
-  hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
-  hibv_ctx->recv_mr_size = sizeof(db->block);
+  // hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
+  // hibv_ctx->recv_mr_size = sizeof(db->block);
 
   // Allocate memory for send_mr_buf
   if(!(hibv_ctx->send_mr_buf = (uint8_t *)calloc(
@@ -448,7 +458,11 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
     return HASHPIPE_ERR_SYS;
   }
   // Point recv_mr_buf to starts of block 0
-  hibv_ctx->recv_mr_buf = (uint8_t *)db->block;
+  hibv_ctx->recv_mr_num = db->header.n_block;
+  hibv_ctx->recv_mr_bufs = malloc(hibv_ctx->recv_mr_num * sizeof(uint8_t *));
+  for(i=0; i<hibv_ctx->recv_mr_num; i++){
+    hibv_ctx->recv_mr_bufs[i] = (uint8_t *)db->block[i].data;
+  }
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
@@ -457,7 +471,9 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Setup recv WRs' num_sge and SGEs' addr/length fields
   for(i=0; i<hibv_ctx->recv_pkt_num; i++) {
+    hibv_ctx->recv_pkt_buf[i].wr.wr_id = i;
     hibv_ctx->recv_pkt_buf[i].wr.num_sge = num_chunks;
+    hibv_ctx->recv_pkt_buf[i].wr.sg_list = &hibv_ctx->recv_sge_buf[num_chunks*i];
 
     base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, 0, i);
     for(j=0; j<num_chunks; j++) {
@@ -486,7 +502,7 @@ create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
     .flags          = 0
   };
 
-  return ibv_create_flow(hibv_ctx->qp[0], &sniffer_flow_attr);
+  return ibv_create_flow(hibv_ctx->qp, &sniffer_flow_attr);
 }
 
 // Destrory sniffer flow
@@ -799,6 +815,7 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
+        hibv_ctx->recv_sge_buf[num_chunks*next_slot + i].lkey = hibv_ctx->recv_mrs[next_block % db->header.n_block]->lkey;
       }
 
       // Advance slot
