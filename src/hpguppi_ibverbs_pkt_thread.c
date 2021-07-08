@@ -466,6 +466,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
+  hibv_ctx->send_pkt_buf[0].wr.sg_list = hibv_ctx->send_sge_buf;
   hibv_ctx->send_sge_buf[0].addr = (uint64_t)hibv_ctx->send_mr_buf;
   hibv_ctx->send_sge_buf[0].length = hibv_ctx->pkt_size_max;
 
