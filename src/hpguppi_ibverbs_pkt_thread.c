@@ -415,6 +415,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
   hibv_ctx->send_pkt_num = 1;
+  hibv_ctx->recv_pkt_per_mr_buf = pktbuf_info->slots_per_block;
   int num_recv_wr = hpguppi_query_max_wr(hibv_ctx->interface_name);
   if(num_recv_wr > pktbuf_info->slots_per_block) {
     num_recv_wr = pktbuf_info->slots_per_block;
@@ -466,6 +467,7 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
+  hibv_ctx->send_pkt_buf[0].wr.sg_list = hibv_ctx->send_sge_buf;
   hibv_ctx->send_sge_buf[0].addr = (uint64_t)hibv_ctx->send_mr_buf;
   hibv_ctx->send_sge_buf[0].length = hibv_ctx->pkt_size_max;
 
@@ -815,7 +817,7 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
-        hibv_ctx->recv_sge_buf[num_chunks*next_slot + i].lkey = hibv_ctx->recv_mrs[next_block % db->header.n_block]->lkey;
+        curr_rpkt->wr.sg_list[i].lkey = hibv_ctx->recv_mrs[next_block % db->header.n_block]->lkey;
       }
 
       // Advance slot
