@@ -415,7 +415,6 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
   hibv_ctx->send_pkt_num = 1;
-  hibv_ctx->recv_pkt_per_mr_buf = pktbuf_info->slots_per_block;
   int num_recv_wr = hpguppi_query_max_wr(hibv_ctx->interface_name);
   if(num_recv_wr > pktbuf_info->slots_per_block) {
     num_recv_wr = pktbuf_info->slots_per_block;
