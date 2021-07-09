@@ -449,9 +449,10 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
   }
 
   // Specify size of send and recv memory regions.
-  // Send memory region is just one packet.  Recv memory region spans all data blocks.
-  // hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
-  // hibv_ctx->recv_mr_size = sizeof(db->block);
+  // Send memory region is just one packet.  Recv memory region spans a data block, with
+  // one recv memory region registered per block (see recv_mr_num).
+  hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
+  hibv_ctx->recv_mr_size = sizeof(db->block[0].data);
 
   // Allocate memory for send_mr_buf
   if(!(hibv_ctx->send_mr_buf = (uint8_t *)calloc(
