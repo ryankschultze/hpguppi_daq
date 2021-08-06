@@ -28,6 +28,8 @@ atasnap:
   thread_mask_lengths:
     hpguppi_atasnap_pkt_to_FTP_transpose:
       8
+    hpguppi_atasnap_ibv_voltage_only_thread:
+      6
   subsystem_threads:
     ibv:
       - hpguppi_ibvpkt_thread

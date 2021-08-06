@@ -39,6 +39,9 @@
 #include "hpguppi_atasnap.h"
 #include "hpguppi_ibverbs_pkt_thread.h"
 
+#include <omp.h>
+#define VOLTAGE_THREAD_COUNT 6
+
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
 #define bzero_nt(d,l) memset(d,0,l)
@@ -259,7 +262,7 @@ int debug_i=0, debug_j=0;
   // wblk is a two element array of block_info structures (i.e. the working
   // blocks)
   int wblk_idx;
-  const int n_wblock = 2;
+  const int n_wblock = 3;
   struct datablock_stats wblk[n_wblock];
 
   // Packet block variables
@@ -286,7 +289,8 @@ int debug_i=0, debug_j=0;
   char flag_reinit_blks=0;
 
   char flag_state_update = 0;
-  char  PKT_OBS_FENG_flagged, 
+  char  LATE_PKTIDX_flagged = 0;
+  char  PKT_OBS_FENG_flagged,
         PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged;
 
   // Variables for working with the input databuf
@@ -296,7 +300,7 @@ int debug_i=0, debug_j=0;
   char * datablock_header;
 
   // Variables for counting packets and bytes.
-  uint64_t npacket, npacket_total=0, ndrop_total=0;
+  uint64_t npacket=0, npacket_total=0, ndrop_total=0;
   // uint32_t nbogus_size;
 
   // Variables for handing received packets
@@ -353,6 +357,9 @@ int debug_i=0, debug_j=0;
   // Wait for ibvpkt thread to be running, then it's OK to add/remove flows.
   hpguppi_ibvpkt_wait_running(st);
 
+  const size_t slots_per_block = pktbuf_info->slots_per_block;
+  const size_t slot_size = pktbuf_info->slot_size;
+
   uint8_t* mac = ((struct hashpipe_ibv_context *)(dbin->padding + sizeof(struct hpguppi_pktbuf_info)))->mac;
   hashpipe_info(thread_name, "DEST MAC: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
   if(hpguppi_ibvpkt_flow(dbin, 0, IBV_FLOW_SPEC_UDP,
@@ -366,6 +373,16 @@ int debug_i=0, debug_j=0;
     return NULL;
   }
 
+
+  hashpipe_status_lock_safe(st);
+  {
+    hputi4(st->buf, "NETTHRDS", VOLTAGE_THREAD_COUNT);
+  }
+  hashpipe_status_unlock_safe(st);
+  #if VOLTAGE_THREAD_COUNT > 1
+    omp_set_num_threads(VOLTAGE_THREAD_COUNT);
+  #endif
+  
   // Main loop
   while (run_threads()) {
 
@@ -522,122 +539,106 @@ int debug_i=0, debug_j=0;
       ts_input_full0 = ts_stop_recv;
     }
 
-    // For each packet: process all packets
+    // Gather pkt_0 pointer
     p_u8pkt = (uint8_t *)hpguppi_databuf_data(dbin, block_idx_in);
-    for(i=0; obs_info_validity >= OBS_SEEMS_VALID && i < pktbuf_info->slots_per_block; i++, p_u8pkt += pktbuf_info->slot_size) {
-#if 0
-      // Non-temporally copy packet into cached buffer
-      memcpy_nt(p_spdpkt, p_u8pkt, MAX_PKT_SIZE);
-#else
+
+    // First check the first packet, to determine reinit_blocks
+    //  This works because it is figured that a block filled with packets
+    //  will contain packets with indices that place them in two adjacent downstream blocks.
+    if(!flag_reinit_blks){
       p_pkt = (struct ata_snap_ibv_pkt *)p_u8pkt;
-#endif
+      // Parse packet
+      ata_snap_parse_ibv_packet(p_pkt, &feng_info);
+      // Get packet index and absolute block number for packet
+      pkt_seq_num = feng_info.pktidx;
+      // Get packet's block number relative to the first block's starting index.
+      pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
+
+      if(pkt_blk_num + 1 < wblk[0].block_num //TODO dont use pkt_blk_num due to underflow
+          || pkt_blk_num > wblk[n_wblock-1].block_num + 1
+        ) {
+        flag_reinit_blks = 1;
+        blk0_start_seq_num = pkt_seq_num;
+        align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
+        // Should only happen when seeing first packet when obs_info is valid
+        // warn in case it happens in other scenarios
+        hashpipe_warn(thread_name,
+            "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+            pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+      }
+    }
+    
+    if(flag_reinit_blks) { // Reinitialise working blocks
+      flag_reinit_blks = 0;
+      // Re-init working blocks for block number of current packet's block,
+      // and clear their data buffers
+      pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
+
+      for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+        wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
+        init_datablock_stats(wblk+wblk_idx, NULL, -1,
+            pkt_blk_num+wblk_idx,
+            obs_info.pkt_per_block);
+        wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
+
+        // also update the working blocks' headers
+        datablock_header = datablock_stats_header(wblk+wblk_idx);
+        hashpipe_status_lock_safe(st);
+          memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+        hashpipe_status_unlock_safe(st);
+      }
+      // // trigger noteable difference in last_pkt_blk_num 
+      // last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
+    }
+
+    // For each packet: process all packets
+    #if VOLTAGE_THREAD_COUNT > 1
+      #pragma omp parallel for private (\
+        p_pkt,\
+        feng_info,\
+        p_payload,\
+        pkt_seq_num,\
+        pkt_stream,\
+        pkt_blk_num,\
+        wblk_idx,\
+        LATE_PKTIDX_flagged\
+      )\
+      firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged)\
+      reduction(min:obs_info_validity)\
+      // The above `reduction` initialises each local variable as MAX>OBS_SEEMS_VALID, 
+      //  and reduces (merges local variables) with min operator which preserves the
+      //  negative values that indicate invalid obs_info
+    #endif
+    for(i=0; i < slots_per_block; i++) {
+      if(obs_info_validity < OBS_SEEMS_VALID){
+        continue;
+      }
+
+      p_pkt = (struct ata_snap_ibv_pkt *)(p_u8pkt+i*slot_size);
 
       // Parse packet
       p_payload = ata_snap_parse_ibv_packet(p_pkt, &feng_info);
-      npacket += 1;
-
-      /* Check packet size */
-      // PKT_UDP_SIZE doesn't work on p_pkt, also the observability will be good enough...
-      // if(obs_info.pkt_data_size != PKT_UDP_SIZE((unsigned char *)p_pkt) - 8) {
-      //     /* Unexpected packet size, ignore */
-      //     nbogus_total++;
-      //     nbogus_size = PKT_UDP_SIZE((unsigned char *)p_pkt)-8;
-      //     continue;
-      // }
 
       // Get packet index and absolute block number for packet
       pkt_seq_num = feng_info.pktidx;
       pkt_stream = (feng_info.feng_chan - obs_info.schan) / obs_info.pkt_nchan;
-      
-      // Get packet's block number relative to the first block's starting index.
-      pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
 
       // Only copy packet data and count packet if its wblk_idx is valid
       switch(check_pkt_observability_sans_idx(&obs_info, feng_info.feng_id, pkt_stream, feng_info.feng_chan)){
         case PKT_OBS_OK:
 
-          if(!flag_reinit_blks) {
-            // Manage blocks based on pkt_blk_num
-            if(pkt_blk_num == wblk[n_wblock-1].block_num + 1) {
-              // Time to advance the blocks!!!
-              clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
-
-              datablock_header = datablock_stats_header(&wblk[0]);
-              hputu8(datablock_header, "PKTIDX", wblk[0].packet_idx);
-              hputu8(datablock_header, "BLKSTART", wblk[0].packet_idx);
-              hputu8(datablock_header, "BLKSTOP", wblk[1].packet_idx);
-              // Finalize first working block
-              finalize_block(wblk);
-              // Update ndrop counter
-              ndrop_total += wblk->ndrop;
-              // hashpipe_info(thread_name, "Block dropped %d packets.", wblk->ndrop);
-              // Shift working blocks
-              block_stack_push(wblk, n_wblock);
-              // Increment last working block
-              increment_block(&wblk[n_wblock-1], pkt_blk_num);
-              // Wait for new databuf data block to be free
-              wait_for_block_free(&wblk[n_wblock-1], st, status_key);
-
-              blocks_per_second = 1e9/ELAPSED_NS(ts_start_block,ts_stop_block);
-              clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
-            }
-            else if (pkt_seq_num < blk0_start_seq_num && blk0_start_seq_num - pkt_seq_num < obs_info.pktidx_per_block){
-              hashpipe_info(thread_name, "pkt_seq_num (%lu) < (%lu) blk0_start_seq_num", pkt_seq_num, blk0_start_seq_num);
-              continue;
-            }
-            else if(pkt_blk_num + 1 < wblk[0].block_num //TODO dont use pkt_blk_num due to underflow
-                || pkt_blk_num > wblk[n_wblock-1].block_num + 1
-              ) {
-              flag_reinit_blks = 1;
-              blk0_start_seq_num = pkt_seq_num;
-              align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
-              // Should only happen when seeing first packet when obs_info is valid
-              // warn in case it happens in other scenarios
-              hashpipe_warn(thread_name,
-                  "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-                  pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
-            }
-          }
-
-          if(flag_reinit_blks) { // Reinitialise working blocks
-            flag_reinit_blks = 0;
-            // Re-init working blocks for block number of current packet's block,
-            // and clear their data buffers
-            pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
-
-            for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-              wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
-              init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx,
-                  obs_info.pkt_per_block);
-              wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
-
-              // also update the working blocks' headers
-              datablock_header = datablock_stats_header(wblk+wblk_idx);
-              hashpipe_status_lock_safe(st);
-                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-              hashpipe_status_unlock_safe(st);
-            }
-
-            // trigger noteable difference in last_pkt_blk_num 
-            last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
-          }
-          
-          // Update PKTIDX in status buffer if it is a new pkt_blk_num
-          if(pkt_blk_num > last_pkt_blk_num || pkt_blk_num + n_wblock < last_pkt_blk_num){
-            last_pkt_blk_num = pkt_blk_num;
-
-            hashpipe_status_lock_safe(st);
-              hputu8(st->buf, "BLKIDX", pkt_seq_num/obs_info.pktidx_per_block);
-              hputu8(st->buf, "PKTIDX", pkt_seq_num);
-              hputu8(st->buf, "BLKSTART", pkt_seq_num);
-              hputu8(st->buf, "BLKSTOP", pkt_seq_num + obs_info.pktidx_per_block);
-            hashpipe_status_unlock_safe(st);
-          }
-      
+          // Manage blocks based on pkt_blk_num
+          // if (pkt_seq_num < blk0_start_seq_num && blk0_start_seq_num - pkt_seq_num < obs_info.pktidx_per_block){
+          //   hashpipe_info(thread_name, "pkt_seq_num (%lu) < (%lu) blk0_start_seq_num", pkt_seq_num, blk0_start_seq_num);
+          //   continue;
+          // }
+            
           // Once we get here, compute the index of the working block corresponding
           // to this packet.  The computed index may not correspond to a valid
           // working block!
+
+          // Get packet's block number relative to the first block's starting index.
+          pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
           wblk_idx = pkt_blk_num - wblk[0].block_num;
 
           if(0 <= wblk_idx && wblk_idx < n_wblock) {
@@ -646,53 +647,47 @@ int debug_i=0, debug_j=0;
                 p_payload, (pkt_seq_num - blk0_start_seq_num)%obs_info.pktidx_per_block,
                 feng_info.feng_id, pkt_stream, feng_info.feng_chan,
                 fid_stride, time_stride, pkt_payload_size, 16);//obs_info.pkt_ntime);
+
             // Count packet for block and for processing stats
+            #pragma omp critical
             wblk[wblk_idx].npacket++;
           }
-          else{
-            // Only happens if a packet arrives late, consider n_wblock++
+          else if(!LATE_PKTIDX_flagged){
+            // Happens on the first packet that is outside of wblks' scope,
+            // or if a packet arrives late, consider n_wblock++
+            LATE_PKTIDX_flagged = 1;
             hashpipe_error(thread_name, "Packet ignored: determined wblk_idx = %d", wblk_idx);
           }
-
           obs_info_validity = OBS_VALID;
           break;
         case PKT_OBS_FENG:
           if(!PKT_OBS_FENG_flagged){
-            PKT_OBS_FENG_flagged = 1;
             obs_info_validity = OBS_INVALID_FENG;
             hashpipe_error(thread_name, 
               "Packet ignored: PKT_OBS_FENG\n\tfeng_id (%u) >= (%u) obs_info.nants",
               feng_info.feng_id, obs_info.nants
             );
-            hashpipe_status_lock_safe(st);
-              hputs(st->buf, "OBSINFO", "INVALID FENG");
-            hashpipe_status_unlock_safe(st);
+            PKT_OBS_FENG_flagged = 1;
           }
           break;
         case PKT_OBS_SCHAN:
           if(!PKT_OBS_SCHAN_flagged){
-            PKT_OBS_SCHAN_flagged = 1;
             obs_info_validity = OBS_INVALID_SCHAN;
             hashpipe_error(thread_name, 
               "Packet ignored: PKT_OBS_SCHAN\n\tpkt_schan (%d) < (%d) obs_info.schan",
               feng_info.feng_chan, obs_info.schan
             );
-            hashpipe_status_lock_safe(st);
-              hputs(st->buf, "OBSINFO", "INVALID SCHAN");
-            hashpipe_status_unlock_safe(st);
+            PKT_OBS_SCHAN_flagged = 1;
           }
           break;
         case PKT_OBS_STREAM:
           if(!PKT_OBS_STREAM_flagged){
-            PKT_OBS_STREAM_flagged = 1;
             obs_info_validity = OBS_INVALID_STREAM;
             hashpipe_error(thread_name, 
               "Packet ignored: PKT_OBS_STREAM\n\tstream (%d) >= (%d) obs_info.nstrm",
               pkt_stream, obs_info.nstrm
             );
-            hashpipe_status_lock_safe(st);
-              hputs(st->buf, "OBSINFO", "INVALID NSTRM");
-            hashpipe_status_unlock_safe(st);
+            PKT_OBS_STREAM_flagged = 1;
           }
           break;
         default:
@@ -703,6 +698,64 @@ int debug_i=0, debug_j=0;
 
     // Mark input block free
     hpguppi_input_databuf_set_free(dbin, block_idx_in);
+
+    npacket += slots_per_block;
+
+    // Handle '|' reduced OBS_flags
+    if(obs_info_validity == OBS_INVALID_FENG){
+      obs_info_validity = OBS_INVALID_FENG;
+      hashpipe_status_lock_safe(st);
+        hputs(st->buf, "OBSINFO", "INVALID FENG");
+      hashpipe_status_unlock_safe(st);
+    }
+    else if(obs_info_validity == OBS_INVALID_SCHAN){
+      obs_info_validity = OBS_INVALID_SCHAN;
+      hashpipe_status_lock_safe(st);
+        hputs(st->buf, "OBSINFO", "INVALID SCHAN");
+      hashpipe_status_unlock_safe(st);
+    }
+    else if(obs_info_validity == OBS_INVALID_STREAM){
+      obs_info_validity = OBS_INVALID_STREAM;
+      hashpipe_status_lock_safe(st);
+        hputs(st->buf, "OBSINFO", "INVALID NSTRM");
+      hashpipe_status_unlock_safe(st);
+    }
+
+    // Update PKTIDX in status buffer if it is a new pkt_blk_num
+    if(wblk[0].block_num != last_pkt_blk_num){
+      last_pkt_blk_num = wblk[0].block_num;
+
+      hashpipe_status_lock_safe(st);
+        hputu8(st->buf, "BLKIDX", last_pkt_blk_num/obs_info.pktidx_per_block);
+        hputu8(st->buf, "PKTIDX", wblk[0].packet_idx);
+        hputu8(st->buf, "BLKSTART", wblk[0].packet_idx);
+        hputu8(st->buf, "BLKSTOP", wblk[1].packet_idx);
+      hashpipe_status_unlock_safe(st);
+    }
+    
+    if(wblk[n_wblock-1].npacket > 0) {
+      // Time to advance the blocks!!!
+      clock_gettime(CLOCK_MONOTONIC, &ts_stop_block);
+
+      datablock_header = datablock_stats_header(&wblk[0]);
+      hputu8(datablock_header, "PKTIDX", wblk[0].packet_idx);
+      hputu8(datablock_header, "BLKSTART", wblk[0].packet_idx);
+      hputu8(datablock_header, "BLKSTOP", wblk[1].packet_idx);
+      // Finalize first working block
+      finalize_block(wblk);
+      // Update ndrop counter
+      ndrop_total += wblk->ndrop;
+      // hashpipe_info(thread_name, "Block dropped %d packets.", wblk->ndrop);
+      // Shift working blocks
+      block_stack_push(wblk, n_wblock);
+      // Increment last working block
+      increment_block(&wblk[n_wblock-1], wblk[n_wblock-1].block_num + 1);
+      // Wait for new databuf data block to be free
+      wait_for_block_free(&wblk[n_wblock-1], st, status_key);
+
+      blocks_per_second = 1e9/ELAPSED_NS(ts_start_block,ts_stop_block);
+      clock_gettime(CLOCK_MONOTONIC, &ts_start_block);
+    }
 
     // Update moving sum (for moving average)
     clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
