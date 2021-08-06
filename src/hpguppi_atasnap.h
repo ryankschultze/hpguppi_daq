@@ -714,6 +714,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 //  First to this pktenum (time), then to  [biggest stride]
 //  first location of this FID, then to
 //  first location of this stream          [smallest stride]
+#if 0
 #define COPY_PACKET_DATA_TO_DATABUF(\
       /*const struct datablock_stats*/    datablock_stats_pointer,\
       /*const uint8_t*/   pkt_payload,\
@@ -730,6 +731,121 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
             +  feng_id * fid_stride\
             +  stream * pkt_payload_size\
       ),\
-      pkt_payload, pkt_payload_size)
+      pkt_payload, 4096)
+#else
+  #define COPY_PACKET_DATA_TO_DATABUF_1024(\
+        /*const struct datablock_stats*/    datablock_stats_pointer,\
+        /*const uint8_t*/   pkt_payload,\
+        /*const uint64_t*/  pkt_obs_relative_idx,\
+        /*const uint16_t*/  feng_id,\
+        /*const int32_t*/   stream,\
+        /*const uint16_t*/  pkt_schan,\
+        /*const uint32_t*/  fid_stride,\
+        /*const uint32_t*/  time_stride,\
+        /*const uint32_t*/  pkt_ntime)\
+    memcpy(datablock_stats_data(datablock_stats_pointer)+(\
+          (pkt_obs_relative_idx/pkt_ntime) * time_stride\
+              +  feng_id * fid_stride\
+              +  stream * 1024\
+        ),\
+        pkt_payload, 1024)
+  #define COPY_PACKET_DATA_TO_DATABUF_2048(\
+        /*const struct datablock_stats*/    datablock_stats_pointer,\
+        /*const uint8_t*/   pkt_payload,\
+        /*const uint64_t*/  pkt_obs_relative_idx,\
+        /*const uint16_t*/  feng_id,\
+        /*const int32_t*/   stream,\
+        /*const uint16_t*/  pkt_schan,\
+        /*const uint32_t*/  fid_stride,\
+        /*const uint32_t*/  time_stride,\
+        /*const uint32_t*/  pkt_ntime)\
+    memcpy(datablock_stats_data(datablock_stats_pointer)+(\
+          (pkt_obs_relative_idx/pkt_ntime) * time_stride\
+              +  feng_id * fid_stride\
+              +  stream * 2048\
+        ),\
+        pkt_payload, 2048)
+  #define COPY_PACKET_DATA_TO_DATABUF_4096(\
+        /*const struct datablock_stats*/    datablock_stats_pointer,\
+        /*const uint8_t*/   pkt_payload,\
+        /*const uint64_t*/  pkt_obs_relative_idx,\
+        /*const uint16_t*/  feng_id,\
+        /*const int32_t*/   stream,\
+        /*const uint16_t*/  pkt_schan,\
+        /*const uint32_t*/  fid_stride,\
+        /*const uint32_t*/  time_stride,\
+        /*const uint32_t*/  pkt_ntime)\
+    memcpy(datablock_stats_data(datablock_stats_pointer)+(\
+          (pkt_obs_relative_idx/pkt_ntime) * time_stride\
+              +  feng_id * fid_stride\
+              +  stream * 4096\
+        ),\
+        pkt_payload, 4096)
+  #define COPY_PACKET_DATA_TO_DATABUF_8192(\
+        /*const struct datablock_stats*/    datablock_stats_pointer,\
+        /*const uint8_t*/   pkt_payload,\
+        /*const uint64_t*/  pkt_obs_relative_idx,\
+        /*const uint16_t*/  feng_id,\
+        /*const int32_t*/   stream,\
+        /*const uint16_t*/  pkt_schan,\
+        /*const uint32_t*/  fid_stride,\
+        /*const uint32_t*/  time_stride,\
+        /*const uint32_t*/  pkt_ntime)\
+    memcpy(datablock_stats_data(datablock_stats_pointer)+(\
+          (pkt_obs_relative_idx/pkt_ntime) * time_stride\
+              +  feng_id * fid_stride\
+              +  stream * 8192\
+        ),\
+        pkt_payload, 8192)
 
+  static inline int COPY_PACKET_DATA_TO_DATABUF(
+        const struct datablock_stats*   datablock_stats_pointer,
+        const uint8_t*  pkt_payload,
+        const uint64_t  pkt_obs_relative_idx,
+        const uint16_t  feng_id,
+        const int32_t   stream,
+        const uint16_t  pkt_schan,
+        const uint32_t  fid_stride,
+        const uint32_t  time_stride,
+        const uint64_t  pkt_payload_size,
+        const uint32_t  pkt_ntime)
+  {
+    switch(pkt_payload_size){
+      case 1024:
+        COPY_PACKET_DATA_TO_DATABUF_1024(datablock_stats_pointer,
+          pkt_payload, pkt_obs_relative_idx, feng_id, stream,
+          pkt_schan, fid_stride, time_stride, pkt_ntime
+        );
+        break;
+      case 2048:
+        COPY_PACKET_DATA_TO_DATABUF_2048(datablock_stats_pointer,
+          pkt_payload, pkt_obs_relative_idx, feng_id, stream,
+          pkt_schan, fid_stride, time_stride, pkt_ntime
+        );
+        break;
+      case 4096:
+        COPY_PACKET_DATA_TO_DATABUF_4096(datablock_stats_pointer,
+          pkt_payload, pkt_obs_relative_idx, feng_id, stream,
+          pkt_schan, fid_stride, time_stride, pkt_ntime
+        );
+        break;
+      case 8192:
+        COPY_PACKET_DATA_TO_DATABUF_8192(datablock_stats_pointer,
+          pkt_payload, pkt_obs_relative_idx, feng_id, stream,
+          pkt_schan, fid_stride, time_stride, pkt_ntime
+        );
+        break;
+      default:
+        memcpy(datablock_stats_data(datablock_stats_pointer)+(
+          (pkt_obs_relative_idx/pkt_ntime) * time_stride
+              +  feng_id * fid_stride
+              +  stream * pkt_payload_size
+        ),  pkt_payload, pkt_payload_size);
+        hashpipe_warn(__FUNCTION__, "Packet_payload_size of %d is not optimally handled.", pkt_payload_size);
+        return -1;
+        break;
+    }
+    return 0;
+  }
+#endif // COPY_PACKET_DATA_TO_DATABUF
 #endif // _HPGUPPI_ATASNAP_H_
