@@ -109,10 +109,8 @@ void wait_for_block_free(const struct datablock_stats * d,
   int rv;
   char netstat[80] = {0};
   char netbuf_status[80];
-//   int netbuf_full = hpguppi_input_databuf_total_status(d->dbout);
-  //struct timespec ts_sleep = {0, 10 * 1000 * 1000}; // 10 ms
-//   sprintf(netbuf_status, "%d/%d", netbuf_full, d->dbout->header.n_block);//not reporting correctly
-  sprintf(netbuf_status, "%d/%d", d->block_idx, d->dbout->header.n_block);
+  int netbuf_full = hpguppi_input_databuf_total_status(d->dbout);
+  sprintf(netbuf_status, "%d/%d", netbuf_full, d->dbout->header.n_block);
 
   hashpipe_status_lock_safe(st);
   {
