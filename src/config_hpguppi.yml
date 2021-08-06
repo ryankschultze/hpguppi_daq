@@ -27,7 +27,7 @@ atasnap:
   instance_bindhost: [enp97s0f1, enp225s0f1]
   thread_mask_lengths:
     hpguppi_atasnap_pkt_to_FTP_transpose:
-      8
+      6
     hpguppi_atasnap_ibv_voltage_only_thread:
       6
   subsystem_threads:
