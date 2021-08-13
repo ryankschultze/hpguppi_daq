@@ -68,20 +68,29 @@ system_ccc_config = system['cpu_core_count_config'][cores_per_cpu] if isinstance
 # Gather numanode_bind specifications
 instance_numanode_bind = args.instance
 if 'instance_numanode_bind' in system:
-	instance_numanode_bind = system['instance_numanode_bind'][args.instance]
+	if system['instance_numanode_bind'] is False:
+		instance_numanode_bind = False
+	else:
+		instance_numanode_bind = system['instance_numanode_bind']
+		if isinstance(instance_numanode_bind, list):
+			instance_numanode_bind = instance_numanode_bind[args.instance]
 else:
 	print('{} not found for system {} in {}, numactl binding matches instance enumeration'.format('instance_numanode_bind', args.system, args.configfile))
 
 instance_numanode_cpubind = instance_numanode_bind
 if 'instance_numanode_cpubind' in system:
-	instance_numanode_cpubind = system['instance_numanode_cpubind'][args.instance]
+	instance_numanode_cpubind = system['instance_numanode_cpubind']
+	if isinstance(instance_numanode_cpubind, list):
+		instance_numanode_cpubind = instance_numanode_cpubind[args.instance]
 
 instance_numanode_membind = instance_numanode_bind
 if 'instance_numanode_membind' in system:
-	instance_numanode_membind = system['instance_numanode_membind'][args.instance]
+	instance_numanode_membind = system['instance_numanode_membind']
+	if isinstance(instance_numanode_membind, list):
+		instance_numanode_membind = instance_numanode_membind[args.instance]
 
 # Set cpu_core to first core
-cpu_core = cores_per_cpu*instance_numanode_bind
+cpu_core = cores_per_cpu*instance_numanode_bind if isinstance(instance_numanode_bind, int) else 0
 if isinstance(system_ccc_config, dict) and 'instance_cpu_core_0' in system_ccc_config:
 	if args.instance >= len(system_ccc_config['instance_cpu_core_0']):
 		print('{} only defines {} instances for system {} ({} core) in {}'.format('instance_cpu_core_0', len(system_ccc_config['instance_cpu_core_0']), args.system, cores_per_cpu, args.configfile))
@@ -114,23 +123,38 @@ if isinstance(system_ccc_config, dict):
 # Create the thread-list segment of the instance command
 hpguppi_threads_cmd_segment = []
 for thread in threads:
-	if thread_instance_mask_dict is not None and thread in thread_instance_mask_dict: # explicit core masks
-		assert isinstance(thread_instance_mask_dict[thread], list), '{}[{}] must define a mask for each instance as a list for system {} ({} core) in {}.'.format(
-																			thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, args.configfile
-																		)
-		assert args.instance < len(thread_instance_mask_dict[thread]), '{}[{}] doesn\'t define a mask for instance {} for system {} ({} core) in {}.'.format(
-																			thread_instance_mask_dict_name, thread, args.instance, system_full_name, cores_per_cpu, args.configfile
-																		)
-		thread_mask = thread_instance_mask_dict[thread][args.instance]
-		if isinstance(thread_mask, int):
-			hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, thread))
-			cpu_core = thread_mask + 1
-		elif isinstance(thread_mask, list):
-			mask_val = 0
-			for core_idx in thread_mask:
-				mask_val += 2**core_idx
-				cpu_core = core_idx + 1
-			hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+	if thread_instance_mask_dict is not None and (thread_instance_mask_dict is False or thread in thread_instance_mask_dict): # explicit core masks
+		if thread_instance_mask_dict is False:
+			if thread == threads[0]:
+				print('{}[{}] defined as false: no thread-masking performed for system {} ({} core) in {}.'.format(
+																				thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, args.configfile
+																				)
+																			)
+			hpguppi_threads_cmd_segment.append('{}'.format(thread))
+		else:
+			assert isinstance(thread_instance_mask_dict[thread], list), '{}[{}] must define a mask for each instance as a list for system {} ({} core) in {}.'.format(
+																				thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, args.configfile
+																			)
+			assert args.instance < len(thread_instance_mask_dict[thread]), '{}[{}] doesn\'t define a mask for instance {} for system {} ({} core) in {}.'.format(
+																				thread_instance_mask_dict_name, thread, args.instance, system_full_name, cores_per_cpu, args.configfile
+																			)
+			thread_mask = thread_instance_mask_dict[thread][args.instance]
+			if isinstance(thread_mask, int):
+				if thread not in thread_mask_length_dict:
+					hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, thread))
+					cpu_core = thread_mask + 1
+				else: # implies a mask of 'thread_mask_length' consequetive cores
+					mask_val = 0
+					for core_idx in range(thread_mask, thread_mask+thread_mask_length_dict[thread]):
+						mask_val += 2**core_idx
+					hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+					cpu_core = thread_mask + thread_mask_length_dict[thread]
+			elif isinstance(thread_mask, list):
+				mask_val = 0
+				for core_idx in thread_mask:
+					mask_val += 2**core_idx
+					cpu_core = core_idx + 1
+				hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
 	else: # sequential core masks
 		if thread_instance_mask_dict is not None:
 			print('Fallback masking thread {} from core {}'.format(thread, cpu_core))
@@ -184,18 +208,21 @@ print()
 
 # Build hpguppi_daq command
 cmd = [
-	'numactl --cpunodebind={} --membind={}'.format(instance_numanode_bind, instance_numanode_membind),
 	command_prefix,
 	'{}hashpipe -p {} -I {}'.format(prefix_exec, os.path.join(prefix_lib, hpguppi_plugin), args.instance),
 	' '.join(['-o {}'.format(opt) for opt in options]),
 	' '.join(args.additional_arguments),
 	' '.join(hpguppi_threads_cmd_segment),
 ]
+if isinstance(instance_numanode_bind, str):
+	cmd.insert(0, 'numactl --interleave={}'.format(instance_numanode_bind))
+elif instance_numanode_bind is not False:
+	cmd.insert(0, 'numactl --cpunodebind={} --membind={}'.format(instance_numanode_bind, instance_numanode_membind))
 
 cmd = [seg for seg in cmd if seg != '']
 
 # Kill previous instances
-previous_instance_cmd_pattern = 'hashpipe -p .* -I {}'.format(args.instance)
+previous_instance_cmd_pattern = 'hashpipe -p .*\.so -I {}'.format(args.instance)
 if not args.dry_run:
 	print(subprocess.run(['pkill', '-ef', previous_instance_cmd_pattern], capture_output=True).stdout.decode())
 
@@ -228,6 +255,12 @@ if 'hashpipe_keyfile' in system:
 if 'environment' in system:
 	environment_keys.extend(system['environment'])
 
+
+_keyword_variable_dict = {
+	'BINDHOST': instance_bindhost,
+	'INSTANCE': args.instance,
+}
+
 hashpipe_env = os.environ
 for env_kv in environment_keys:
 	env_kv_parts = env_kv.split('=')
@@ -237,16 +270,16 @@ for env_kv in environment_keys:
 	if '$'+key in val:
 		replacement = hashpipe_env[key] if key in hashpipe_env else ''
 		val = val.replace('$'+key, replacement)
-	
+	for var,val in _keyword_variable_dict.items():
+			setup_command = setup_command.replace('${}'.format(var), str(val))
+
 	hashpipe_env[key] = val
 
-_command_variable_dict = {
-	'BINDHOST': instance_bindhost,
-	'INSTANCE': args.instance,
-}
 if 'setup_commands' in system:
 	for setup_command in system['setup_commands']:
-		for var,val in _command_variable_dict.items():
+		if isinstance(setup_command, list):
+			setup_command = setup_command[args.instance]
+		for var,val in _keyword_variable_dict.items():
 			setup_command = setup_command.replace('${}'.format(var), str(val))
 		print('#', setup_command)
 		if not args.dry_run:
