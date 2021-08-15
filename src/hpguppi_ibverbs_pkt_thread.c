@@ -179,7 +179,7 @@ hpguppi_query_max_wr(const char * interface_name)
   }
 
   if(hashpipe_ibv_open_device_for_interface_id(
-        interface_id, &ibv_context, NULL, ibv_dev_attr)) {
+        interface_id, &ibv_context, ibv_dev_attr, NULL)) {
     // Error message already logged
     return -1;
   }
@@ -409,17 +409,19 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
   hashpipe_status_unlock_safe(st);
 
   // General fields
-  // hibv_ctx->nqp = 1;
-  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive // Oddly not pkt_size (that causes work completion errors)
+  hibv_ctx->nqp = 1;
+  hibv_ctx->pkt_size_max = pktbuf_info->slot_size; // max for both send and receive //not pkt_size as it is used for the cumulative sge buffers
   hibv_ctx->user_managed_flag = 1;
 
   // Number of send/recv packets (i.e. number of send/recv WRs)
   hibv_ctx->send_pkt_num = 1;
   int num_recv_wr = hpguppi_query_max_wr(hibv_ctx->interface_name);
+  hashpipe_info(__FUNCTION__, "max work requests of %s = %d", hibv_ctx->interface_name, num_recv_wr);
   if(num_recv_wr > pktbuf_info->slots_per_block) {
     num_recv_wr = pktbuf_info->slots_per_block;
   }
   hibv_ctx->recv_pkt_num = num_recv_wr;
+  hashpipe_info(__FUNCTION__, "using %d work requests", num_recv_wr);
 
   if(hibv_ctx->recv_pkt_num * hibv_ctx->pkt_size_max > BLOCK_DATA_SIZE){
     // Should never happen
@@ -504,7 +506,7 @@ create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
     .flags          = 0
   };
 
-  return ibv_create_flow(hibv_ctx->qp, &sniffer_flow_attr);
+  return ibv_create_flow(hibv_ctx->qp[0], &sniffer_flow_attr);
 }
 
 // Destrory sniffer flow
