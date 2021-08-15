@@ -270,8 +270,8 @@ for env_kv in environment_keys:
 	if '$'+key in val:
 		replacement = hashpipe_env[key] if key in hashpipe_env else ''
 		val = val.replace('$'+key, replacement)
-	for var,val in _keyword_variable_dict.items():
-			setup_command = setup_command.replace('${}'.format(var), str(val))
+	for var,keyword_val in _keyword_variable_dict.items():
+			val = val.replace('${}'.format(var), str(keyword_val))
 
 	hashpipe_env[key] = val
 
