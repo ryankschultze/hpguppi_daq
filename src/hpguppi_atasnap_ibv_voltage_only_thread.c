@@ -188,6 +188,10 @@ int debug_i=0, debug_j=0;
   // Max flows allowed (optionally from hpguppi_ibvpkt_thread via status
   // buffer)
   uint32_t max_flows = 16;
+  // NIC to listen on
+  char interface_name[IFNAMSIZ] = {0};
+  // MAC of the NIC
+  uint8_t interface_mac[6] = {0};
   // Port to listen on
   uint32_t port = 10000;
 
@@ -199,6 +203,17 @@ int debug_i=0, debug_j=0;
     hgetu4(st->buf, "BINDPORT", &port);
     // Store bind port in status buffer (in case it was not there before).
     hputu4(st->buf, "BINDPORT", port);
+    // Store NIC interface name in order to query its MAC with hashpipe_ibv_get_interface_info
+    hgets(st->buf,  "IBVIFACE",
+        sizeof(interface_name), interface_name);
+    if(interface_name[0] == '\0') {
+      hgets(st->buf,  "BINDHOST",
+          sizeof(interface_name), interface_name);
+      if(interface_name[0] == '\0') {
+        strcpy(interface_name, "eth4");
+        hputs(st->buf, "IBVIFACE", interface_name);
+      }
+    }
   }
   hashpipe_status_unlock_safe(st);
 
@@ -360,10 +375,16 @@ int debug_i=0, debug_j=0;
   const size_t slots_per_block = pktbuf_info->slots_per_block;
   const size_t slot_size = pktbuf_info->slot_size;
 
-  uint8_t* mac = ((struct hashpipe_ibv_context *)(dbin->padding + sizeof(struct hpguppi_pktbuf_info)))->mac;
-  hashpipe_info(thread_name, "DEST MAC: %02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+  if(hashpipe_ibv_get_interface_info(interface_name, interface_mac, NULL)) {
+    hashpipe_error(interface_name, "error getting interace info");
+    errno = 0;
+    return NULL;
+  }
+
+  hashpipe_info(thread_name, "IBV Flow Destination MAC: %02X:%02X:%02X:%02X:%02X:%02X", interface_mac[0], interface_mac[1], interface_mac[2], interface_mac[3], interface_mac[4], interface_mac[5]);
   if(hpguppi_ibvpkt_flow(dbin, 0, IBV_FLOW_SPEC_UDP,
-        mac, NULL, 0, 0,
+        interface_mac, NULL, 0, 0,
         0, 0, 0, port))
   {
     hashpipe_error(thread_name, "hashpipe_ibv_flow error: (errno %d)", errno);
