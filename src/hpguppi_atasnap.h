@@ -51,7 +51,7 @@
 
 //
 // The payload is ordered with the polarization index (0 to 1) changing
-// fastest, then channel number (0 to 255), then sample number (0 to 15)
+// fastest, then sample number (0 to 15), then channel number (0 to 255)
 // changing the slowest.
 //
 // The data in a packet spans 16 spectra of 900 MHz bandwidth channelized to
