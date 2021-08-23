@@ -237,6 +237,9 @@ def run(
 				with open(logpath, 'a') as logio:
 					logio.write('\n{}\nStartup {}\n{}\n{}\n'.format('-'*20, datetime.datetime.now(), ' '.join(cmd), 'v'*20))
 		print()
+	
+	out_logio = None if out_logpath is None else open(out_logpath, 'a')
+	err_logio = None if err_logpath is None else open(err_logpath, 'a')
 
 	# Setup environment
 	environment_keys = environment_keys
@@ -272,22 +275,24 @@ def run(
 			for var,val in _keyword_variable_dict.items():
 				setup_command = setup_command.replace('${}'.format(var), str(val))
 			print('#', setup_command)
+			out_logio.write('\n# {}\n'.format(setup_command))
 			if not dry_run:
-				print(subprocess.run(setup_command.split(' '), env=hashpipe_env, capture_output=True).stdout.decode())
+				out_logio.write(subprocess.run(setup_command.split(' '), env=hashpipe_env, capture_output=True).stdout.decode())
 		print()
+		out_logio.write('%'*20)
 
 	cmd = ' '.join(cmd)
 	print(cmd)
 
-	out_logio = None if out_logpath is None else open(out_logpath, 'a')
-	err_logio = None if err_logpath is None else open(err_logpath, 'a')
+
 	if not dry_run:
 		subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
 	else:
+		print(hashpipe_env)
 		print('^^^ Dry run ^^^')
 		err_logio.write('Dry run')
-		err_logio.write('Dry run')
-		out_logio.close()
+		out_logio.write('Dry run')
+		err_logio.close()
 		out_logio.close()
 
 	if 'post_commands' in system:
