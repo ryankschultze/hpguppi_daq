@@ -5,20 +5,27 @@ atasnap:
   logdir: /home/sonata/logs
   # command_prefix:
   setup_commands:
+    - ethtool -L $BINDHOST combined 32
+    - [
+      "set_irq_affinity_cpulist.sh 14,15 $BINDHOST",
+      "set_irq_affinity_cpulist.sh 30,31 $BINDHOST",
+    ]
+    - ethtool -C $BINDHOST adaptive-rx on rx-frames 8 rx-usecs 0
+    - ethtool -G $BINDHOST rx 8192
+    - cpupower -c 0-31 idle-set -d 2
+    - cpupower frequency-set -g performance
     - /opt/mnt/bin/kill_redis_gateway.sh $INSTANCE
-    - pkill -ef hashpipe_status_monitor
-    - ipcrm -a
-  # post_commands:
-  #   - sleep 5
-  #   - /opt/mnt/bin/init_redis_gateway.sh $INSTANCE
+  post_commands:
+    - sleep 2
+    - /opt/mnt/bin/init_redis_gateway.sh $INSTANCE
   hashpipe_keyfile: /home/sonata
   environment:
     - ATASHAREDIR="/opt/mnt"
-    - GEM_PATH=/home/sonata/.rvm/gems/ruby-2.1.10/bin
-    # - LD_LIBRARY_PATH=/opt/mnt/lib:$LD_LIBRARY_PATH
-    - LD_LIBRARY_PATH=/home/sonata/dev/dm_hpguppi_daq/src:/home/sonata/src/hashpipe/src:/opt/mnt/lib
-    - PATH=/opt/mnt/bin:$PATH:/home/sonata/.rvm/rubies/ruby-2.1.10/bin:/home/sonata/.rvm/bin
-    # sudo HASHPIPE_KEYFILE=/home/sonata PATH=/home/sonata/.rvm/rubies/ruby-2.1.10/bin:/home/sonata/.rvm/bin:$PATH GEM_PATH=/home/sonata/.rvm/gems/ruby-2.1.10/bin /opt/mnt/bin/init_redis_gateway.sh 0
+    - rvm_bin_path=/home/sonata/.rvm/bin
+    - GEM_PATH=/home/sonata/.rvm/gems/ruby-2.1.10:/home/sonata/.rvm/gems/ruby-2.1.10@global
+    - GEM_HOME=/home/sonata/.rvm/gems/ruby-2.1.10
+    - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/opt/mnt/lib
+    - PATH=/opt/mnt/bin:$PATH:/home/sonata/.rvm/rubies/ruby-2.1.10/bin:/home/sonata/.rvm/bin:/home/sonata/.rvm/gems/ruby-2.1.10/bin
   options:
     - IBVPKTSZ=42,16,8208
     - BINDPORT=10000
