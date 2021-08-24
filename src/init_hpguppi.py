@@ -279,11 +279,10 @@ def run(
 			if not dry_run:
 				out_logio.write(subprocess.run(setup_command.split(' '), env=hashpipe_env, capture_output=True).stdout.decode())
 		print()
-		out_logio.write('%'*20)
+		out_logio.write('%'*20+'\n')
 
 	cmd = ' '.join(cmd)
 	print(cmd)
-
 
 	if not dry_run:
 		subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
@@ -297,7 +296,7 @@ def run(
 
 	if 'post_commands' in system:
 		for post_command in system['post_commands']:
-			for var,val in _command_variable_dict.items():
+			for var,val in _keyword_variable_dict.items():
 				post_command = post_command.replace('${}'.format(var), str(val))
 			print('#', post_command)
 			if not dry_run:
