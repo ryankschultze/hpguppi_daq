@@ -445,13 +445,6 @@ ata_snap_pkt_payload_bytes(const struct ata_snap_obs_info oi)
 // not be processed (e.g. copied to output files) so it is important to update
 // the BLOCSIZE field in the status buffer accordingly whenever a new
 // pktidx_per_block value is calculated.
-//
-// Furthermore, the number of time samples per block is desired to be a power
-// of two, so that subsequent FFTs can operate on complete blocks with maximum
-// efficiency.  For this to happen, both the number of time samples per packet
-// (PKT_NTIME) and the number of PKTIDX values per block (PIPERBLK) must be
-// powers of two.  PKT_NTIME is set by the upstream F engines, so we have no
-// control of that, but we can and do ensure that PIPERBLK is a power of 2.
 static inline
 uint32_t
 calc_ata_snap_pkt_per_block(size_t block_size, uint32_t nchan,
@@ -460,7 +453,7 @@ calc_ata_snap_pkt_per_block(size_t block_size, uint32_t nchan,
 {
   uint32_t pkt_idxpblk = (uint32_t)(block_size /
       calc_ata_snap_pkt_payload_bytes(nchan, pkt_ntime, pkt_npol, time_nbits));
-  return prevpow2(pkt_idxpblk);
+  return pkt_idxpblk;
 }
 
 static inline
@@ -512,8 +505,8 @@ ata_snap_pkt_bytes(const struct ata_snap_obs_info oi)
   return calc_ata_snap_pkt_bytes(oi.pkt_nchan, oi.pkt_ntime, oi.pkt_npol, oi.time_nbits);
 }
 
-// For ATA SNAP, the NTIME parameter (not stored in the status buffer or GUPPI
-// RAW files), represents the total number of time samples in a block.  It
+// For ATA SNAP, the PIPERBLK parameter (Packet Index Per Block)
+// represents the total number of time samples in a block, per channel. It
 // depends on the block size and NCHAN (and sample size, but that is assumed to
 // be 2 bytes).  This calculation is a bit tricky because the effective block
 // size can be less than the max block size when NCHAN and PKT_NTIME do not
@@ -579,6 +572,14 @@ ata_snap_tbin(const struct ata_snap_obs_info oi)
   return calc_ata_snap_tbin(ata_snap_obsnchan(oi), oi.obs_bw);
 }
 
+
+// The number of time samples per block (PIPERBLK) is desired to be a power
+// of two, so that subsequent FFTs can operate on complete blocks with maximum
+// efficiency (CUFFT preference).  For this to happen, both the number of time 
+// samples per packet (PKT_NTIME) and the number of PKTIDX values per block
+// (PIPERBLK) must be powers of two. PKT_NTIME is set by the upstream F engines,
+// so we have no control of that, but we can and do ensure that PIPERBLK is a
+// power of 2.
 static inline
 void
 ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_info *oi)
@@ -586,6 +587,7 @@ ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_in
   oi->pkt_data_size = ata_snap_pkt_bytes(*oi);
   oi->pkt_per_block = ata_snap_eff_pkt_per_block(block_size, *oi);
   oi->pktidx_per_block = ata_snap_pktidx_per_block(block_size, *oi);//inherently effective 
+  oi->pktidx_per_block = prevpow2(oi->pktidx_per_block);
   oi->eff_block_size = oi->pkt_per_block*(oi->pkt_data_size-16);
 }
 
