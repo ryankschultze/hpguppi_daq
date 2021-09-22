@@ -371,6 +371,11 @@ static void *run(hashpipe_thread_args_t * args)
               flag_state_update = 1;
               state = IDLE;
             }
+            else if(state == RECORD && obs_stop_pktidx == 0){ // external signal to stop recording
+              flag_state_update = 1;
+              state = IDLE;
+              flag_obs_end = 1;
+            }
             // if RECORDING -> IDLE handled before finalising a block
             break;
           case RECORD:// If should RECORD
