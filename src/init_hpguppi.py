@@ -62,6 +62,8 @@ def run(
 			instance_numanode_bind = False
 		else:
 			instance_numanode_bind = system['instance_numanode_bind']
+			if isinstance(instance_numanode_bind, dict):
+				instance_numanode_bind = instance_numanode_bind[cores_per_cpu]
 			if isinstance(instance_numanode_bind, list):
 				instance_numanode_bind = instance_numanode_bind[instance]
 	else:
@@ -70,12 +72,16 @@ def run(
 	instance_numanode_cpubind = instance_numanode_bind
 	if 'instance_numanode_cpubind' in system:
 		instance_numanode_cpubind = system['instance_numanode_cpubind']
+		if isinstance(instance_numanode_cpubind, dict):
+			instance_numanode_cpubind = instance_numanode_cpubind[cores_per_cpu]
 		if isinstance(instance_numanode_cpubind, list):
 			instance_numanode_cpubind = instance_numanode_cpubind[instance]
 
 	instance_numanode_membind = instance_numanode_bind
 	if 'instance_numanode_membind' in system:
 		instance_numanode_membind = system['instance_numanode_membind']
+		if isinstance(instance_numanode_membind, dict):
+			instance_numanode_membind = instance_numanode_membind[cores_per_cpu]
 		if isinstance(instance_numanode_membind, list):
 			instance_numanode_membind = instance_numanode_membind[instance]
 
@@ -168,12 +174,20 @@ def run(
 
 	# Gather required instance-sensitive instantiation variables
 	assert 'instance_datadir' in system, '{} for system {} ({} core) in {}'.format('instance_datadir', system_name, cpu_core_count, config_filename)
-	instance_datadir = system['instance_datadir'][instance]
+	instance_datadir = system['instance_datadir']
+	if isinstance(instance_datadir, dict):
+		instance_datadir = instance_datadir[cores_per_cpu]
+	instance_datadir = instance_datadir[instance]
+
 	assert os.path.exists(instance_datadir), '{} datadir path does not exist for instance {} of system {} ({} core) in {}'.format(
 		instance_datadir, instance, system_name, cpu_core_count, config_filename)
 
 	assert 'instance_bindhost' in system, '{} for system {} ({} core) in {}'.format('instance_bindhost', system_name, cpu_core_count, config_filename)
-	instance_bindhost = system['instance_bindhost'][instance]
+	instance_bindhost = system['instance_bindhost']
+	if isinstance(instance_bindhost, dict):
+		instance_bindhost = instance_bindhost[cores_per_cpu]
+	instance_bindhost = instance_bindhost[instance]
+
 
 	# Gather optional instance-sensitive instantiation variables
 	instance_port_bind = None
@@ -269,9 +283,22 @@ def run(
 		hashpipe_env[key] = val
 
 	if 'setup_commands' in system:
-		for setup_command in system['setup_commands']:
-			if isinstance(setup_command, list):
+		setup_commands = system['setup_commands']
+		setup_command_index = 0
+		while setup_command_index < len(setup_commands):
+			setup_command = setup_commands[setup_command_index]
+			setup_command_index += 1
+
+			if isinstance(setup_command, dict): # cores_per_cpu dict, insert commands next and continue
+				assert cores_per_cpu in setup_command, 'Missing an entry for {} cores in the {} Dict of for system {} in {}\n'.format(cores_per_cpu, 'setup_commands', system_name, config_filename, setup_command)
+				if isinstance(setup_command[cores_per_cpu], list):
+					setup_commands[setup_command_index:setup_command_index] = setup_command[cores_per_cpu]
+				else:
+					setup_commands.insert(setup_command_index, setup_command[cores_per_cpu])
+				continue
+			if isinstance(setup_command, list): # instance-indexed list of commands, select appropriately
 				setup_command = setup_command[instance]
+			
 			for var,val in _keyword_variable_dict.items():
 				setup_command = setup_command.replace('${}'.format(var), str(val))
 			print('#', setup_command)
