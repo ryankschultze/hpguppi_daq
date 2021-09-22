@@ -140,23 +140,18 @@ static void *run(hashpipe_thread_args_t * args)
       }
 
       // Waiting for input
-      while ((rv=hpguppi_input_databuf_wait_filled(indb, curblock_in)) != 
-          HASHPIPE_OK)
+      rv=hpguppi_input_databuf_wait_filled(indb, curblock_in);
+      if (rv == HASHPIPE_TIMEOUT)
       {
-        if (rv == HASHPIPE_TIMEOUT)
-        {
-          hashpipe_status_lock_safe(st);
-            hputs(st->buf, status_key, "waiting");
-          hashpipe_status_unlock_safe(st);
-          waiting=1;
-          break;
-        }
-        else
-        {
-          hashpipe_error(thread_name, "error waiting for input buffer, rv: %i", rv);
-          pthread_exit(NULL);
-          break;
-        }
+        hashpipe_status_lock_safe(st);
+          hputs(st->buf, status_key, "waiting");
+        hashpipe_status_unlock_safe(st);
+        waiting=1;
+      }
+      else if(rv != HASHPIPE_OK)
+      {
+        hashpipe_error(thread_name, "error waiting for input buffer, rv: %i", rv);
+        pthread_exit(NULL);
       }
 
     } while (rv != HASHPIPE_OK && run_threads());
