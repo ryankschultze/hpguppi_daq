@@ -458,6 +458,10 @@ int debug_i=0, debug_j=0;
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
             obs_info_validity = OBS_SEEMS_VALID;
+            
+            hashpipe_status_lock_safe(st);
+              hputs(st->buf, "OBSINFO", "VALID");
+            hashpipe_status_unlock_safe(st);
 
             PKT_OBS_FENG_flagged = 0;
             PKT_OBS_SCHAN_flagged = 0;
@@ -790,7 +794,7 @@ int debug_i=0, debug_j=0;
     if(block_idx_in == N_INPUT_BLOCKS - 1) {
       hashpipe_status_lock_safe(st);
       {
-        hputr8(st->buf, "NETBLKMS",
+        hputr4(st->buf, "NETBLKMS",
             round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
       }
       hashpipe_status_unlock_safe(st);
