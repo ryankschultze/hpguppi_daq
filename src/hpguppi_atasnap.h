@@ -587,7 +587,9 @@ ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_in
   oi->pkt_data_size = ata_snap_pkt_bytes(*oi);
   oi->pkt_per_block = ata_snap_eff_pkt_per_block(block_size, *oi);
   oi->pktidx_per_block = ata_snap_pktidx_per_block(block_size, *oi);//inherently effective 
-  oi->pktidx_per_block = prevpow2(oi->pktidx_per_block);
+  // Rather calculate the block_size to hold a power-of-2 packets
+  // // oi->pktidx_per_block = prevpow2(oi->pktidx_per_block);
+  // // oi->pkt_per_block = (oi->pktidx_per_block/oi->pkt_ntime)*oi->nants*oi->nstrm;
   oi->eff_block_size = oi->pkt_per_block*(oi->pkt_data_size-16);
 }
 
@@ -879,8 +881,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 //
 
 // Packet content constants
-#define ATASNAP_DEFAULT_SAMPLE_BITWIDTH uint8_t // this is the total width of the complex sample (4+4i = 8bit)
-#define ATASNAP_DEFAULT_SAMPLE_BYTESIZE sizeof(ATASNAP_DEFAULT_SAMPLE_BITWIDTH)
+#define ATASNAP_DEFAULT_SAMPLE_BYTESIZE sizeof(uint8_t) // this is the total width of the complex sample (4+4i = 8bit)
 #define ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE // this assumes that a packet's PKTIDX (ie timestamp) field increments in steps of NTIME
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
 
@@ -892,7 +893,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE */\
       )\
-    for(pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       memcpy(\
         dest_feng_pktidx_offset + channel_stride*(pkt_schan+pkt_chan_idx),\
         pkt_payload + pkt_chan_idx*ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE,\

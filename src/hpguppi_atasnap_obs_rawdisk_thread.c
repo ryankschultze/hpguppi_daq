@@ -164,10 +164,12 @@ static void *run(hashpipe_thread_args_t * args)
       rv=hpguppi_input_databuf_wait_filled(indb, curblock_in);
       if (rv == HASHPIPE_TIMEOUT)
       {
-        hashpipe_status_lock_safe(st);
-          hputs(st->buf, status_key, "waiting");
-        hashpipe_status_unlock_safe(st);
-        waiting=1;
+        if(waiting != 1){
+          hashpipe_status_lock_safe(st);
+            hputs(st->buf, status_key, "waiting");
+          hashpipe_status_unlock_safe(st);
+          waiting=1;
+        }
       }
       else if(rv != HASHPIPE_OK)
       {
@@ -356,7 +358,7 @@ static void *run(hashpipe_thread_args_t * args)
 
       /* If we got packet 0, write data to disk */
       if (got_packet_0) {
-
+        waiting = -1;
         /* Note writing status */
         hashpipe_status_lock_safe(st);
         hputs(st->buf, status_key, "writing");

@@ -1,18 +1,26 @@
 atasnap:
   prefix_exec: /home/sonata/src/hashpipe/src/
-  prefix_lib: /home/sonata/dev/dm_hpguppi_daq/src/.libs/
+  prefix_lib: /home/sonata/src/hpguppi_daq/src/.libs/
   # hpguppi_plugin:
   logdir: /home/sonata/logs
   # command_prefix:
   setup_commands:
-    - ethtool -L $BINDHOST combined 32
-    - [
-      "set_irq_affinity_cpulist.sh 14,15 $BINDHOST",
-      "set_irq_affinity_cpulist.sh 30,31 $BINDHOST",
-    ]
+    - 16: 
+        - ethtool -L $BINDHOST combined 32
+        - [
+          "set_irq_affinity_cpulist.sh 14,15 $BINDHOST",
+          "set_irq_affinity_cpulist.sh 30,31 $BINDHOST",
+        ]
+        - cpupower -c 0-31 idle-set -d 2
+      24:
+        - ethtool -L $BINDHOST combined 48
+        - [
+          "set_irq_affinity_cpulist.sh 22,23 $BINDHOST",
+          "set_irq_affinity_cpulist.sh 46,47 $BINDHOST",
+        ]
+        - cpupower -c 0-47 idle-set -d 2
     - ethtool -C $BINDHOST adaptive-rx on rx-frames 8 rx-usecs 0
     - ethtool -G $BINDHOST rx 8192
-    - cpupower -c 0-31 idle-set -d 2
     - cpupower frequency-set -g performance
     - /opt/mnt/bin/kill_redis_gateway.sh $INSTANCE
   post_commands:
@@ -27,9 +35,10 @@ atasnap:
     - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/opt/mnt/lib
     - PATH=/opt/mnt/bin:$PATH:/home/sonata/.rvm/rubies/ruby-2.1.10/bin:/home/sonata/.rvm/bin:/home/sonata/.rvm/gems/ruby-2.1.10/bin
   options:
-    - IBVPKTSZ=42,16,8208
+    # - IBVPKTSZ=42,16,8208
+    - IBVPKTSZ=42,16,4112
     - BINDPORT=10000
-  instance_numanode_bind: [1, 0]
+  instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
   thread_mask_lengths:
@@ -37,34 +46,24 @@ atasnap:
       6
     hpguppi_atasnap_ibv_voltage_only_thread:
       6
+    hpguppi_atasnap_ibv_voltage_ftp_thread:
+      8
   subsystem_threads:
     ibv:
       - hpguppi_ibvpkt_thread
-      - hpguppi_atasnap_ibv_voltage_thread
-      - hpguppi_atasnap_pkt_to_FTP_transpose
-      - hpguppi_atasnap_rawdisk_thread
-    ibv_optimised:
+      - hpguppi_atasnap_ibv_voltage_ftp_thread
+      - hpguppi_atasnap_obs_rawdisk_thread
+    ibv_optimised_old: # These threads aren't compiled any-longer
       - hpguppi_ibvpkt_thread
       - hpguppi_atasnap_ibv_voltage_only_thread
+      - hpguppi_atasnap_pkt_to_FTP_transpose
       - hpguppi_atasnap_control_thread
-      - hpguppi_atasnap_pkt_to_FTP_transpose
       - hpguppi_atasnap_rawdisk_thread
-    pktsock:
-      - hpguppi_atasnap_pktsock_thread
-      - hpguppi_atasnap_pkt_to_FTP_transpose
-      - hpguppi_atasnap_rawdisk_thread
-    pktsock_optimised:
-      - hpguppi_atasnap_pktsock_only_thread
-      - hpguppi_atasnap_control_thread
-      - hpguppi_atasnap_pkt_to_FTP_transpose
-      - hpguppi_atasnap_rawdisk_thread
-  cpu_core_count_config: #[16]
+  cpu_core_count_config:
     16:
-      instance_cpu_core_0: [0, 16]
-      instance_subsystem_thread_masks:
-        ibv:
-          hpguppi_ibvpkt_thread: [10,26]
-          hpguppi_atasnap_ibv_voltage_thread: [0, 16]
+      instance_cpu_core_0: [1, 17]
+    24:
+      instance_cpu_core_0: [1, 25]
 
 ##################### Templates #####################
 template_singular: # Singular System Configuration Definition

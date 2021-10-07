@@ -32,20 +32,12 @@ hpguppi_support = hpguppi_atasnap.h \
 
 libsla_support = slalib.h sla.c f77.h
 
-hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
-		  hpguppi_atasnap_control_thread.c \
-		  hpguppi_atasnap_pktsock_only_thread.c \
-		  hpguppi_atasnap_pkt_to_FTP_transpose.c \
-		  hpguppi_atasnap_rawdisk_thread.c \
-		  hpguppi_atasnap_obs_rawdisk_thread.c \
+hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_net_thread.c \
-		  hpguppi_ibverbs_pkt_thread.c \
-		  hpguppi_atasnap_ibv_voltage_thread.c \
-		  hpguppi_atasnap_ibv_voltage_only_thread.c \
-		  hpguppi_atasnap_ibv_voltage_only_ftp_thread.c \
-		  hpguppi_atasnap_voltage_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
+		  hpguppi_atasnap_ibv_voltage_ftp_thread.c \
+		  hpguppi_atasnap_obs_rawdisk_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
 		  hpguppi_fildisk_only_thread.c

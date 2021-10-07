@@ -40,7 +40,9 @@
 #include "hpguppi_ibverbs_pkt_thread.h"
 
 #include <omp.h>
-#define VOLTAGE_THREAD_COUNT 12
+#define VOLTAGE_FOR_PACKET_THREAD_COUNT 8
+#define VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT 1
+#define VOLTAGE_THREAD_COUNT VOLTAGE_FOR_PACKET_THREAD_COUNT*VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT
 
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
@@ -227,7 +229,7 @@ int debug_i=0, debug_j=0;
 
   // Misc counters, etc
   int rv=0;
-  int i, pkt_chan_idx;
+  int i;//, pkt_chan_idx;
 
 #if 0
   uint64_t u64;
@@ -395,14 +397,13 @@ int debug_i=0, debug_j=0;
     return NULL;
   }
 
-
   hashpipe_status_lock_safe(st);
   {
     hputi4(st->buf, "NETTHRDS", VOLTAGE_THREAD_COUNT);
   }
   hashpipe_status_unlock_safe(st);
-  #if VOLTAGE_THREAD_COUNT > 1
-    omp_set_num_threads(VOLTAGE_THREAD_COUNT);
+  #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1 && VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
+    omp_set_nested(1);
   #endif
   
   // Main loop
@@ -457,6 +458,10 @@ int debug_i=0, debug_j=0;
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
             obs_info_validity = OBS_SEEMS_VALID;
+            
+            hashpipe_status_lock_safe(st);
+              hputs(st->buf, "OBSINFO", "VALID");
+            hashpipe_status_unlock_safe(st);
 
             PKT_OBS_FENG_flagged = 0;
             PKT_OBS_SCHAN_flagged = 0;
@@ -612,7 +617,7 @@ int debug_i=0, debug_j=0;
     }
 
     // For each packet: process all packets
-    #if VOLTAGE_THREAD_COUNT > 1
+    #if VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
       #pragma omp parallel for private (\
         p_pkt,\
         feng_info,\
@@ -622,11 +627,11 @@ int debug_i=0, debug_j=0;
         pkt_blk_num,\
         wblk_idx,\
         LATE_PKTIDX_flagged,\
-        pkt_chan_idx,\
         dest_feng_pktidx_offset\
       )\
       firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged)\
       reduction(min:obs_info_validity)\
+      num_threads (VOLTAGE_FOR_PACKET_THREAD_COUNT)
       // The above `reduction` initialises each local variable as MAX>OBS_SEEMS_VALID, 
       //  and reduces (merges local variables) with min operator which preserves the
       //  negative values that indicate invalid obs_info
@@ -669,12 +674,15 @@ int debug_i=0, debug_j=0;
               datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
               + feng_info.feng_id * fid_stride
               + ((pkt_seq_num - blk0_start_seq_num)%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
-            
+            #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
+              #pragma omp parallel for \
+              num_threads (VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT)
+            #endif
             COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(
                 pkt_chan_idx,
                 dest_feng_pktidx_offset,
                 p_payload,
-                feng_info.feng_chan,
+                feng_info.feng_chan-obs_info.schan,
                 obs_info.pkt_nchan,
                 channel_stride);
             // Count packet for block and for processing stats
@@ -798,7 +806,7 @@ int debug_i=0, debug_j=0;
     if(block_idx_in == N_INPUT_BLOCKS - 1) {
       hashpipe_status_lock_safe(st);
       {
-        hputr8(st->buf, "NETBLKMS",
+        hputr4(st->buf, "NETBLKMS",
             round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
       }
       hashpipe_status_unlock_safe(st);
@@ -825,7 +833,7 @@ int debug_i=0, debug_j=0;
 }
 
 static hashpipe_thread_desc_t thread_desc = {
-    name: "hpguppi_atasnap_ibv_voltage_only_ftp_thread",
+    name: "hpguppi_atasnap_ibv_voltage_ftp_thread",
     skey: "NETSTAT",
     init: init,
     run:  run,

@@ -111,6 +111,8 @@ static void *run(hashpipe_thread_args_t * args)
   time_t lasttime = 0;
   time_t curtime = 0;
   char timestr[32] = {0};
+  int ctrlbuf_full;
+  char ctrlbuf_status[80];
     
   uint32_t blocks_per_second = 0;
 
@@ -124,6 +126,8 @@ static void *run(hashpipe_thread_args_t * args)
       if(flag_state_update || curtime > lasttime) {// once per second
           flag_state_update = 0;
           lasttime = curtime;
+          ctrlbuf_full = hpguppi_input_databuf_total_status(outdb);
+          sprintf(ctrlbuf_status, "%d/%d", ctrlbuf_full, outdb->header.n_block);
 
           ctime_r(&curtime, timestr);
           timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
@@ -133,6 +137,7 @@ static void *run(hashpipe_thread_args_t * args)
               hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
               hputr4(st->buf, "BLKSPS", blocks_per_second);
               hputs(st->buf, "DAQPULSE", timestr);
+              hputs(st->buf, "CTRLBFST", ctrlbuf_status);
               HPUT_DAQ_STATE(st, state);
           }
           hashpipe_status_unlock_safe(st);
