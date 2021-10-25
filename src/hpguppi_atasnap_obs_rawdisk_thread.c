@@ -347,12 +347,6 @@ static void *run(hashpipe_thread_args_t * args)
         block_count=0;
       }
 
-      /* See how full databuf is */
-      //total_status = hpguppi_input_databuf_total_status(db);
-
-      /* Get full data block size */
-      hgeti4(datablock_header, "BLOCSIZE", &blocksize);
-
       /* If we got packet 0, write data to disk */
       if (got_packet_0) {
         waiting = -1;
