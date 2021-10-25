@@ -101,7 +101,7 @@ static void *run(hashpipe_thread_args_t * args)
   char *datablock_header;
   int blocksize=0, len=0;
   int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/BLOCK_DATA_SIZE) , filenum=0;
-  int got_packet_0=0, first=1;
+  int got_packet_0=0;
   char *hend;
   int open_flags = 0;
   int directio = 0;
@@ -236,6 +236,9 @@ static void *run(hashpipe_thread_args_t * args)
           }
           flag_state_update = 1;
           state = RECORD;
+          hgeti4(datablock_header, "STTVALID", &gp.stt_valid);
+          /* Get full data block size */
+          hgeti4(datablock_header, "BLOCSIZE", &blocksize);
         }
 
         hgetu4(datablock_header, "NPKT", &block_npacket);
@@ -255,30 +258,24 @@ static void *run(hashpipe_thread_args_t * args)
     
     if(state == RECORD){
       /*** RAW Disk write out BEGIN */
-      /* Read param struct for this block */
-      if (first) {
-        hpguppi_read_obs_params(datablock_header, &gp, &pf);
-        first = 0;
-      } else {
-        hpguppi_read_subint_params(datablock_header, &gp, &pf);
-        
-        if ( pf.hdr.start_day != mjd->stt_imjd 
-            || pf.hdr.start_sec != mjd->stt_smjd + mjd->stt_offs){// Observation timestamp has changed. Start new stem.
-          if(fdraw != -1) {
-            fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
-            close(fdraw);
-            // Reset fdraw, got_packet_0, filenum, block_count
-            fdraw = -1;
-            got_packet_0 = 0;
-            filenum = 0;
-            block_count=0;
+      hpguppi_read_subint_params(datablock_header, &gp, &pf);
+      
+      if (fdraw != -1 && // currently writing to file
+          (pf.hdr.start_day != mjd->stt_imjd 
+          || pf.hdr.start_sec != mjd->stt_smjd + mjd->stt_offs)// and Observation timestamp has changed
+          ){// Start new stem.
+          fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
+          close(fdraw);
+          // Reset fdraw, got_packet_0, filenum, block_count
+          fdraw = -1;
+          got_packet_0 = 0;
+          filenum = 0;
+          block_count=0;
 
-            // Copy over current STT values
-            mjd->stt_imjd = pf.hdr.start_day;
-            mjd->stt_smjd = (int) pf.hdr.start_sec; // floor
-            mjd->stt_offs = pf.hdr.start_sec - mjd->stt_smjd;
-          }
-        }
+          // Copy over current STT values
+          mjd->stt_imjd = pf.hdr.start_day;
+          mjd->stt_smjd = (int) pf.hdr.start_sec; // floor
+          mjd->stt_offs = pf.hdr.start_sec - mjd->stt_smjd;
       }
 
       /* Set up data ptr for quant routines */
