@@ -318,7 +318,7 @@ int debug_i=0, debug_j=0;
   char * datablock_header;
 
   // Variables for counting packets and bytes.
-  uint64_t npacket=0, npacket_total=0, ndrop_total=0;
+  uint64_t npacket=0, npacket_total=0, npacket_drop=0, ndrop_total=0;
   // uint32_t nbogus_size;
 
   // Variables for handing received packets
@@ -510,6 +510,8 @@ int debug_i=0, debug_j=0;
         hashpipe_status_lock_safe(st);
         {
           hputi8(st->buf, "NPKTS", npacket_total);
+          hgetu8(st->buf, "NDROP", &ndrop_total);
+          ndrop_total += npacket_drop;
           hputi8(st->buf, "NDROP", ndrop_total);
           hputr4(st->buf, "PHYSPKPS", npacket*(1e9/obs_info_refresh_elapsed_ns));
           hputr4(st->buf, "PHYSGBPS", (npacket*obs_info.pkt_data_size)/((float) obs_info_refresh_elapsed_ns));
@@ -520,6 +522,7 @@ int debug_i=0, debug_j=0;
         }
         hashpipe_status_unlock_safe(st);
         npacket = 0;
+        npacket_drop = 0;
       } // curtime != lasttime
 
       // Set status field to "waiting" if we are not getting packets
@@ -781,7 +784,7 @@ int debug_i=0, debug_j=0;
       // Finalize first working block
       finalize_block(wblk);
       // Update ndrop counter
-      ndrop_total += wblk->ndrop;
+      npacket_drop += wblk->ndrop;
       // hashpipe_info(thread_name, "Block dropped %d packets.", wblk->ndrop);
       // Shift working blocks
       block_stack_push(wblk, n_wblock);
