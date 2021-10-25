@@ -285,7 +285,7 @@ int debug_i=0, debug_j=0;
   struct datablock_stats wblk[n_wblock];
 
   // Packet block variables
-  uint64_t pkt_seq_num = 0;
+  uint64_t blk0_relative_pkt_seq_num = 0;
   unsigned long pkt_blk_num, last_pkt_blk_num = ~0;
   uint64_t obs_start_seq_num = 0, obs_stop_seq_num = 0, blk0_start_seq_num = 0;
   uint64_t prev_obs_start_seq_num, prev_obs_stop_seq_num;
@@ -440,7 +440,7 @@ int debug_i=0, debug_j=0;
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
         // write obs_info to overwrite any changes
-        observing = pkt_seq_num >= obs_start_seq_num && pkt_seq_num < obs_stop_seq_num;
+        observing = feng_info.pktidx >= obs_start_seq_num && feng_info.pktidx < obs_stop_seq_num;
         if (obs_info_validity == OBS_VALID && // if obs_info is valid
             observing ){ //and observing
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
@@ -575,21 +575,21 @@ int debug_i=0, debug_j=0;
       // Parse packet
       ata_snap_parse_ibv_packet(p_pkt, &feng_info);
       // Get packet index and absolute block number for packet
-      pkt_seq_num = feng_info.pktidx;
+      blk0_relative_pkt_seq_num = feng_info.pktidx - blk0_start_seq_num;
       // Get packet's block number relative to the first block's starting index.
-      pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
+      pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
 
       if(pkt_blk_num + 1 < wblk[0].block_num //TODO dont use pkt_blk_num due to underflow
           || pkt_blk_num > wblk[n_wblock-1].block_num + 1
         ) {
         flag_reinit_blks = 1;
-        blk0_start_seq_num = pkt_seq_num;
+        blk0_start_seq_num = feng_info.pktidx;
         align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
         // Should only happen when seeing first packet when obs_info is valid
         // warn in case it happens in other scenarios
         hashpipe_warn(thread_name,
             "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-            pkt_seq_num, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+            feng_info.pktidx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
       }
     }
     
@@ -597,7 +597,7 @@ int debug_i=0, debug_j=0;
       flag_reinit_blks = 0;
       // Re-init working blocks for block number of current packet's block,
       // and clear their data buffers
-      pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
+      pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
 
       for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
         wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
@@ -622,7 +622,7 @@ int debug_i=0, debug_j=0;
         p_pkt,\
         feng_info,\
         p_payload,\
-        pkt_seq_num,\
+        blk0_relative_pkt_seq_num,\
         pkt_stream,\
         pkt_blk_num,\
         wblk_idx,\
@@ -647,7 +647,7 @@ int debug_i=0, debug_j=0;
       p_payload = ata_snap_parse_ibv_packet(p_pkt, &feng_info);
 
       // Get packet index and absolute block number for packet
-      pkt_seq_num = feng_info.pktidx;
+      blk0_relative_pkt_seq_num = feng_info.pktidx - blk0_start_seq_num;
       pkt_stream = (feng_info.feng_chan - obs_info.schan) / obs_info.pkt_nchan;
 
       // Only copy packet data and count packet if its wblk_idx is valid
@@ -665,7 +665,7 @@ int debug_i=0, debug_j=0;
           // working block!
 
           // Get packet's block number relative to the first block's starting index.
-          pkt_blk_num = (pkt_seq_num - blk0_start_seq_num) / obs_info.pktidx_per_block;
+          pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
           wblk_idx = pkt_blk_num - wblk[0].block_num;
 
           if(0 <= wblk_idx && wblk_idx < n_wblock) {
@@ -673,7 +673,7 @@ int debug_i=0, debug_j=0;
             dest_feng_pktidx_offset = 
               datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
               + feng_info.feng_id * fid_stride
-              + ((pkt_seq_num - blk0_start_seq_num)%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+              + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
               #pragma omp parallel for \
               num_threads (VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT)
