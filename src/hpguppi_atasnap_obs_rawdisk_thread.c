@@ -38,6 +38,12 @@ static const char BACKEND_RECORD[] =
 #define DEBUG_RAWSPEC_CALLBACKS (0)
 #endif
 
+#define ELAPSED_S(start,stop) \
+  ((int64_t)stop.tv_sec-start.tv_sec)
+
+#define ELAPSED_NS(start,stop) \
+  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+
 static ssize_t write_all(int fd, const void *buf, size_t bytes_to_write)
 {
   size_t bytes_remaining = bytes_to_write;
@@ -122,6 +128,12 @@ static void *run(hashpipe_thread_args_t * args)
   
   char waiting=-1, flag_state_update=0;
   enum run_states state = IDLE;
+
+  // Used to calculate moving average of fill-to-free times for input blocks
+  uint64_t fill_to_free_elapsed_ns;
+  uint64_t fill_to_free_moving_sum_ns = 0;
+  uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
+  struct timespec ts_free_input = {0}, ts_block_recvd = {0};
   
   /* Heartbeat variables */
   time_t lasttime = 0;
@@ -152,7 +164,9 @@ static void *run(hashpipe_thread_args_t * args)
           {
               hputu8(st->buf, "OBSNPKTS", obs_npacket_total);
               hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
-              hputu4(st->buf, "OUTBLKPS", blocks_per_second);
+              hputu4(st->buf, "OBSBLKPS", blocks_per_second);
+              hputr4(st->buf, "OBSBLKMS",
+                round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
               hputs(st->buf, "DAQPULSE", timestr);
               HPUT_DAQ_STATE(st, state);
           }
@@ -162,6 +176,7 @@ static void *run(hashpipe_thread_args_t * args)
 
       // Waiting for input
       rv=hpguppi_input_databuf_wait_filled(indb, curblock_in);
+      clock_gettime(CLOCK_MONOTONIC, &ts_block_recvd);
       if (rv == HASHPIPE_TIMEOUT)
       {
         if(waiting != 1){
@@ -412,10 +427,19 @@ static void *run(hashpipe_thread_args_t * args)
       }
       /*** RAW Disk write out END*/
     }
-    
 
-    blocks_per_second ++;
     hpguppi_input_databuf_set_free(indb, curblock_in);
+    blocks_per_second ++;
+
+    // Update moving sum (for moving average)
+    clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
+    fill_to_free_elapsed_ns = ELAPSED_NS(ts_block_recvd, ts_free_input);
+    // Add new value, subtract old value
+    fill_to_free_moving_sum_ns +=
+        fill_to_free_elapsed_ns - fill_to_free_block_ns[curblock_in];
+    // Store new value
+    fill_to_free_block_ns[curblock_in] = fill_to_free_elapsed_ns;
+    
     curblock_in  = (curblock_in + 1) % indb->header.n_block;
 
     /* Will exit if thread has been cancelled */
