@@ -881,7 +881,8 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 //
 
 // Packet content constants
-#define ATASNAP_DEFAULT_SAMPLE_BYTESIZE sizeof(uint8_t) // this is the total width of the complex sample (4+4i = 8bit)
+#define ATASNAP_DEFAULT_SAMPLE_WIDTH_T uint16_t // this is the total width of the complex sample (8+8i = 16bit)
+#define ATASNAP_DEFAULT_SAMPLE_BYTESIZE sizeof(ATASNAP_DEFAULT_SAMPLE_WIDTH_T)
 #define ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE // this assumes that a packet's PKTIDX (ie timestamp) field increments in steps of NTIME
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
 
