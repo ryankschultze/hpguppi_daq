@@ -639,8 +639,18 @@ pksuwl_pktidx_to_timespec(uint64_t pktidx, struct timespec *ts)
 #endif
 
 
-char * datablock_stats_data(const struct datablock_stats *d);
-char * datablock_stats_header(const struct datablock_stats *d);
+// Returns pointer to datablock_stats's output data block
+static inline char * datablock_stats_data(const struct datablock_stats *d)
+{
+  return hpguppi_databuf_data(d->dbout, d->block_idx);
+}
+
+// Returns pointer to datablock_stats's header
+static inline char * datablock_stats_header(const struct datablock_stats *d)
+{
+  return hpguppi_databuf_header(d->dbout, d->block_idx);
+}
+
 void reset_datablock_stats(struct datablock_stats *d);
 void init_datablock_stats(struct datablock_stats *d,
     struct hpguppi_input_databuf *dbout, int block_idx, int64_t block_num,
@@ -651,12 +661,26 @@ void increment_block(struct datablock_stats *d, int64_t block_num);
 void wait_for_block_free(const struct datablock_stats * d,
   hashpipe_status_t * st, const char * status_key);
 
+static inline
 unsigned check_pkt_observability_sans_idx(
     const struct ata_snap_obs_info * ata_oi,
     const uint16_t feng_id,
     const int32_t stream,
     const uint16_t pkt_schan
-  );
+  )
+{
+  if(feng_id >= ata_oi->nants){
+    return PKT_OBS_FENG;
+  }
+  if(pkt_schan < ata_oi->schan){
+    return PKT_OBS_SCHAN;
+  }
+  if(stream >= ata_oi->nstrm){
+    return PKT_OBS_STREAM;
+  }
+  return PKT_OBS_OK;
+}
+
 unsigned check_pkt_observability(
     const struct ata_snap_obs_info * ata_oi,
     const uint64_t pkt_idx,

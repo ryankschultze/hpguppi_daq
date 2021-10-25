@@ -1,17 +1,5 @@
 #include "hpguppi_atasnap.h"
 
-// Returns pointer to datablock_stats's output data block
-char * datablock_stats_data(const struct datablock_stats *d)
-{
-  return hpguppi_databuf_data(d->dbout, d->block_idx);
-}
-
-// Returns pointer to datablock_stats's header
-char * datablock_stats_header(const struct datablock_stats *d)
-{
-  return hpguppi_databuf_header(d->dbout, d->block_idx);
-}
-
 // Reset counter(s) in datablock_stats
 void reset_datablock_stats(struct datablock_stats *d)
 {
@@ -142,25 +130,6 @@ void wait_for_block_free(const struct datablock_stats * d,
     memcpy(datablock_stats_header(d), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
   }
   hashpipe_status_unlock_safe(st);
-}
-
-unsigned check_pkt_observability_sans_idx(
-    const struct ata_snap_obs_info * ata_oi,
-    const uint16_t feng_id,
-    const int32_t stream,
-    const uint16_t pkt_schan
-  )
-{
-  if(feng_id >= ata_oi->nants){
-    return PKT_OBS_FENG;
-  }
-  if(pkt_schan < ata_oi->schan){
-    return PKT_OBS_SCHAN;
-  }
-  if(stream >= ata_oi->nstrm){
-    return PKT_OBS_STREAM;
-  }
-  return PKT_OBS_OK;
 }
 
 unsigned check_pkt_observability_silent(
