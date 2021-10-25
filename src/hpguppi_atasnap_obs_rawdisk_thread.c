@@ -349,11 +349,13 @@ static void *run(hashpipe_thread_args_t * args)
 
       /* If we got packet 0, write data to disk */
       if (got_packet_0) {
-        waiting = -1;
-        /* Note writing status */
-        hashpipe_status_lock_safe(st);
-        hputs(st->buf, status_key, "writing");
-        hashpipe_status_unlock_safe(st);
+        if(waiting != -1){
+          /* Note writing status */
+          waiting = -1;
+          hashpipe_status_lock_safe(st);
+          hputs(st->buf, status_key, "writing");
+          hashpipe_status_unlock_safe(st);
+        }
 
         /* Write header to file */
         hend = ksearch(datablock_header, "END");
