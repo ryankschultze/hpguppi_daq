@@ -924,4 +924,18 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
       );\
     }
 // define COPY_PACKET_DATA_TO_FTP_DATABUF
+
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
+
+#define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY(\
+        /*PKT_DCP_T*/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
+        /*PKT_DCP_T*/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+      )\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+      *(dest_feng_pktidx_offset) = *pkt_payload++; \
+      dest_feng_pktidx_offset += channel_stride;\
+    }
+// define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY
 #endif // _HPGUPPI_ATASNAP_H_

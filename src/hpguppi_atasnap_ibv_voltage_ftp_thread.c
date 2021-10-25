@@ -44,6 +44,8 @@
 #define VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT 1
 #define VOLTAGE_THREAD_COUNT VOLTAGE_FOR_PACKET_THREAD_COUNT*VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT
 
+// #define VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
+
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
 #define bzero_nt(d,l) memset(d,0,l)
@@ -324,8 +326,13 @@ int debug_i=0, debug_j=0;
   // Variables for handing received packets
   uint8_t * p_u8pkt;
   struct ata_snap_ibv_pkt * p_pkt = NULL;
+#ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+  PKT_DCP_T* p_payload = NULL;
+  PKT_DCP_T* dest_feng_pktidx_offset = NULL;
+#else
   const uint8_t * p_payload = NULL;
   char* dest_feng_pktidx_offset = NULL;
+#endif
 
   // Structure to hold observation info, init all fields to invalid values
   struct ata_snap_obs_info obs_info;
@@ -452,6 +459,9 @@ int debug_i=0, debug_j=0;
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
             
             channel_stride = obs_info.pktidx_per_block*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+            #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+            channel_stride /= sizeof(PKT_DCP_T);
+            #endif
             fid_stride = (obs_info.nstrm*obs_info.pkt_nchan)*channel_stride;
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
@@ -649,7 +659,11 @@ int debug_i=0, debug_j=0;
       p_pkt = (struct ata_snap_ibv_pkt *)(p_u8pkt+i*slot_size);
 
       // Parse packet
-      p_payload = ata_snap_parse_ibv_packet(p_pkt, &feng_info);
+      p_payload = 
+      #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+        (PKT_DCP_T*)
+      #endif
+        ata_snap_parse_ibv_packet(p_pkt, &feng_info);
 
       // Get packet index and absolute block number for packet
       blk0_relative_pkt_seq_num = feng_info.pktidx - blk0_start_seq_num;
@@ -676,18 +690,30 @@ int debug_i=0, debug_j=0;
           if(0 <= wblk_idx && wblk_idx < n_wblock) {
             // Copy packet data to data buffer of working block
             dest_feng_pktidx_offset = 
+            #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+              (PKT_DCP_T*)
+            #endif
               datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
-              + feng_info.feng_id * fid_stride
               + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+            dest_feng_pktidx_offset += feng_info.feng_id * fid_stride + (feng_info.feng_chan-obs_info.schan)*channel_stride;
+            
             #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
               #pragma omp parallel for \
               num_threads (VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT)
             #endif
-            COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(
-                dest_feng_pktidx_offset,
-                p_payload,
-                obs_info.pkt_nchan,
-                channel_stride);
+            #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+              COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY(
+                  dest_feng_pktidx_offset,
+                  p_payload,
+                  obs_info.pkt_nchan,
+                  channel_stride);
+            #else
+              COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(
+                  dest_feng_pktidx_offset,
+                  p_payload,
+                  obs_info.pkt_nchan,
+                  channel_stride);
+            #endif
             // Count packet for block and for processing stats
             #pragma omp critical
             wblk[wblk_idx].npacket++;
