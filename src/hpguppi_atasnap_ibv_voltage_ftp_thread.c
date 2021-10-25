@@ -679,10 +679,8 @@ int debug_i=0, debug_j=0;
               num_threads (VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT)
             #endif
             COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(
-                pkt_chan_idx,
                 dest_feng_pktidx_offset,
                 p_payload,
-                feng_info.feng_chan-obs_info.schan,
                 obs_info.pkt_nchan,
                 channel_stride);
             // Count packet for block and for processing stats

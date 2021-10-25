@@ -887,16 +887,14 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
 
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(\
-        /*size_t**/  pkt_chan_idx,\
-        /*const uint8_t**/  dest_feng_pktidx_offset,/*Indexed into [FENG, 0, PKTIDX, 0, 0]*/\
+        /*const uint8_t**/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*const uint8_t**/  pkt_payload,\
-        /*const uint16_t*/  pkt_schan,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       memcpy(\
-        dest_feng_pktidx_offset + channel_stride*(pkt_schan+pkt_chan_idx),\
+        dest_feng_pktidx_offset + channel_stride*pkt_chan_idx,\
         pkt_payload + pkt_chan_idx*ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE,\
         ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE\
       );\
