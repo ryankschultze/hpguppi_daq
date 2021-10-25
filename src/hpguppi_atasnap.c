@@ -312,15 +312,8 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
  */
 char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
-  uint32_t fenchan = obs_info->fenchan;
-  uint32_t nants = obs_info->nants;
-  uint32_t nstrm = obs_info->nstrm;
-  uint32_t pkt_npol = obs_info->pkt_npol;
-  uint32_t time_nbits = obs_info->time_nbits;
-  uint32_t pkt_ntime = obs_info->pkt_ntime;
-  uint32_t pkt_nchan = obs_info->pkt_nchan;
-  int schan = obs_info->schan;
-  float obs_bw = obs_info->obs_bw;
+  struct ata_snap_obs_info obs_info_old = {0};
+  memcpy(&obs_info_old, obs_info, sizeof(struct ata_snap_obs_info));
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -340,15 +333,15 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
 
   // if no change in obs_info
   if (*validity != OBS_UNKNOWN &&
-      fenchan == obs_info->fenchan &&
-      nants == obs_info->nants &&
-      nstrm == obs_info->nstrm &&
-      pkt_npol == obs_info->pkt_npol &&
-      time_nbits == obs_info->time_nbits &&
-      pkt_ntime == obs_info->pkt_ntime &&
-      pkt_nchan == obs_info->pkt_nchan &&
-      schan == obs_info->schan &&
-      obs_bw == obs_info->obs_bw)
+      obs_info_old.fenchan == obs_info->fenchan &&
+      obs_info_old.nants == obs_info->nants &&
+      obs_info_old.nstrm == obs_info->nstrm &&
+      obs_info_old.pkt_npol == obs_info->pkt_npol &&
+      obs_info_old.time_nbits == obs_info->time_nbits &&
+      obs_info_old.pkt_ntime == obs_info->pkt_ntime &&
+      obs_info_old.pkt_nchan == obs_info->pkt_nchan &&
+      obs_info_old.schan == obs_info->schan &&
+      obs_info_old.obs_bw == obs_info->obs_bw)
   {
     // then obs will continue to be invalid or valid
     return 0;
