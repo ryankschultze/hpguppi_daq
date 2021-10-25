@@ -514,7 +514,9 @@ int debug_i=0, debug_j=0;
           hputr4(st->buf, "PHYSPKPS", npacket*(1e9/obs_info_refresh_elapsed_ns));
           hputr4(st->buf, "PHYSGBPS", (npacket*obs_info.pkt_data_size)/((float) obs_info_refresh_elapsed_ns));
 
-          hputr4(st->buf, "BLKSPS", blocks_per_second);
+          hputr4(st->buf, "NETBLKPS", blocks_per_second);
+          hputr4(st->buf, "NETBLKMS",
+              round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
         }
         hashpipe_status_unlock_safe(st);
         npacket = 0;
@@ -800,15 +802,6 @@ int debug_i=0, debug_j=0;
         fill_to_free_elapsed_ns - fill_to_free_block_ns[block_idx_in];
     // Store new value
     fill_to_free_block_ns[block_idx_in] = fill_to_free_elapsed_ns;
-
-    if(block_idx_in == N_INPUT_BLOCKS - 1) {
-      hashpipe_status_lock_safe(st);
-      {
-        hputr4(st->buf, "NETBLKMS",
-            round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
-      }
-      hashpipe_status_unlock_safe(st);
-    }
 
 #if 0
     fprintf(stderr, "blkin %d fill at %ld free +%ld ns (%d packets)\n",
