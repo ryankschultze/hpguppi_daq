@@ -315,7 +315,7 @@ static void *run(hashpipe_thread_args_t * args)
           }
         }
         // TODO: check for file exist.
-        open_flags = O_CREAT|O_RDWR|O_SYNC;
+        open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
         if(directio) {
           open_flags |= O_DIRECT;
         }
@@ -334,7 +334,7 @@ static void *run(hashpipe_thread_args_t * args)
         char fname[256];
         sprintf(fname, "%s.%4.4d.raw", pf.basefilename, filenum);
         directio = hpguppi_read_directio_mode(datablock_header);
-        open_flags = O_CREAT|O_RDWR|O_SYNC;
+        open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
         if(directio) {
           open_flags |= O_DIRECT;
         }
