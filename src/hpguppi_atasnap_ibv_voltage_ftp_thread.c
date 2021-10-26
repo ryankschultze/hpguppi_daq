@@ -693,8 +693,8 @@ int debug_i=0, debug_j=0;
             #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
               (PKT_DCP_T*)
             #endif
-              datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
-              + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+              (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
+              + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE);
             dest_feng_pktidx_offset += feng_info.feng_id * fid_stride + (feng_info.feng_chan-obs_info.schan)*channel_stride;
             
             #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
