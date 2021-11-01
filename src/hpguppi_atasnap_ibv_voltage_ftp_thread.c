@@ -285,6 +285,7 @@ int debug_i=0, debug_j=0;
   int wblk_idx;
   const int n_wblock = 4;
   struct datablock_stats wblk[n_wblock];
+  uint32_t *thread_wblk_pkt_count = malloc(VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
 
   // Packet block variables
   uint64_t blk0_relative_pkt_seq_num = 0;
@@ -631,6 +632,7 @@ int debug_i=0, debug_j=0;
       // last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
     }
 
+    memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
     // For each packet: process all packets
     #if VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
       #pragma omp parallel for private (\
@@ -715,8 +717,7 @@ int debug_i=0, debug_j=0;
                   channel_stride);
             #endif
             // Count packet for block and for processing stats
-            #pragma omp critical
-            wblk[wblk_idx].npacket++;
+            thread_wblk_pkt_count[(omp_get_thread_num()*n_wblock) + wblk_idx] += 1;
           }
           else if(!LATE_PKTIDX_flagged){
             // Happens on the first packet that is outside of wblks' scope,
@@ -764,8 +765,11 @@ int debug_i=0, debug_j=0;
 
     // Mark input block free
     hpguppi_input_databuf_set_free(dbin, block_idx_in);
-
-    npacket += slots_per_block;
+    
+    for(i=0; i < VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock; i++){
+      npacket += thread_wblk_pkt_count[i];
+      wblk[i%n_wblock].npacket += thread_wblk_pkt_count[i];
+    }
 
     // Handle 'min' reduced OBS_flags
     if(obs_info_validity == OBS_INVALID_FENG){
