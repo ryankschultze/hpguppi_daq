@@ -226,13 +226,13 @@ enum pkt_obs_code { PKT_OBS_OK=0,
                     PKT_OBS_IDX,
                     PKT_OBS_FENG,
                     PKT_OBS_SCHAN,
-                    PKT_OBS_STREAM
+                    PKT_OBS_NCHAN
                   };
 enum obs_info_validity { 
                 OBS_UNKNOWN=-5,       //=-5
                 OBS_INVALID_FENG=-4,  //=-4
                 OBS_INVALID_SCHAN=-3, //=-3
-                OBS_INVALID_STREAM=-2,//=-2
+                OBS_INVALID_NCHAN=-2, //=-2
                 OBS_INVALID=-1,       //=-1
                 OBS_SEEMS_VALID=0,    //=0   sign bit for validity
                 OBS_VALID=1           //=1
@@ -286,7 +286,8 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
 };
 
 #define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   (uint64_t)__bswap_64(ata_snap_pkt->timestamp)
-#define ATA_SNAP_PKT_CHAN(ata_snap_pkt)     __bswap_16(ata_snap_pkt->chan)
+#define ATA_SNAP_PKT_SCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->chan)
+#define ATA_SNAP_PKT_NCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->n_chans)
 #define ATA_SNAP_PKT_FENG_ID(ata_snap_pkt)  __bswap_16(ata_snap_pkt->feng_id)
 
 // ATA SNAP header byte offset within (unpadded) packet
@@ -308,10 +309,11 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
 // TODO Why next power of two???
 #define MAX_PKT_SIZE (16384)
 
-struct ata_snap_feng_info {
+struct ata_snap_pkt_info {
   uint64_t pktidx;
-  uint64_t feng_id;
-  uint64_t feng_chan;
+  uint16_t feng_id;
+  uint16_t pkt_schan;
+  uint16_t pkt_nchan;
 };
 
 // Parameters describing various data dimensions for an ATA SNAP observation.
@@ -323,8 +325,8 @@ struct ata_snap_obs_info {
   uint32_t fenchan;
   // Total number of antennas in current subarray
   uint32_t nants;
-  // Total number of streams being processed
-  uint32_t nstrm;
+  // Number of F Engine channels to be processed
+  uint32_t nchan;
   // Number of polarisations per time sample
   uint32_t pkt_npol;
   // Number of bits per time sample component (real/imaginary)
@@ -348,7 +350,7 @@ struct ata_snap_obs_info {
 };
 
 #define ATASNAP_DEFAULT_FENCHAN         (  4096)
-#define ATASNAP_DEFAULT_NSTRM           (     1)
+#define ATASNAP_DEFAULT_NCHAN           (   128)
 #define ATASNAP_DEFAULT_PKTNPOL         (     2)
 #define ATASNAP_DEFAULT_TIME_NBITS      (     4)
 #define ATASNAP_DEFAULT_PKTNCHAN        (   256)
@@ -374,7 +376,7 @@ ata_snap_obs_info_init(struct ata_snap_obs_info * poi)
 {
   memset(poi, 0, sizeof(struct ata_snap_obs_info));
   poi->fenchan = ATASNAP_DEFAULT_FENCHAN;
-  poi->nstrm = ATASNAP_DEFAULT_NSTRM;
+  poi->nchan = ATASNAP_DEFAULT_NCHAN;
   poi->pkt_npol = ATASNAP_DEFAULT_PKTNPOL;
   poi->time_nbits = ATASNAP_DEFAULT_TIME_NBITS;
   poi->pkt_ntime = ATASNAP_DEFAULT_PKTNTIME;
@@ -392,7 +394,7 @@ ata_snap_obs_info_valid(const struct ata_snap_obs_info oi)
   return
     (oi.fenchan    != 0) &&
     (oi.nants      != 0) &&
-    (oi.nstrm      != 0) &&
+    (oi.nchan      != 0) &&
     (oi.pkt_npol   != 0) &&
     (oi.time_nbits != 0) &&
     (oi.pkt_ntime  != 0) &&
@@ -402,30 +404,30 @@ ata_snap_obs_info_valid(const struct ata_snap_obs_info oi)
 
 // For ATA SNAP, the OBSNCHAN parameter represents the total number of
 // frequency channels processed.  It is the number of antennas times the number
-// of streams per antenna times the number of channels per packet/stream.
+// of channels per antenna.
 static inline
 uint32_t
-calc_ata_snap_obsnchan(uint32_t nants, uint32_t nstrm, uint32_t pkt_nchan)
+calc_ata_snap_obsnchan(uint32_t nants, uint32_t nchan)
 {
-  return nants * nstrm * pkt_nchan;
+  return nants * nchan;
 }
 
 static inline
 uint32_t
 ata_snap_obsnchan(const struct ata_snap_obs_info oi)
 {
-  return calc_ata_snap_obsnchan(oi.nants, oi.nstrm, oi.pkt_nchan);
+  return calc_ata_snap_obsnchan(oi.nants, oi.nchan);
 }
 
 // This function doesn't assume each sample is 2 bytes ([4 bits real + 4 bits imag] *
 // 2 pols).
 static inline
 uint32_t
-calc_ata_snap_pkt_payload_bytes(uint32_t nchan,
+calc_ata_snap_pkt_payload_bytes(uint32_t pkt_nchan,
                                uint32_t pkt_ntime, uint32_t pkt_npol,
                                uint32_t time_nbits)
 { // each time sample is real
-  return (nchan * pkt_ntime * pkt_npol * 2 * time_nbits) / 8;
+  return (pkt_nchan * pkt_ntime * pkt_npol * 2 * time_nbits) / 8;
 }
 
 static inline
@@ -447,12 +449,12 @@ ata_snap_pkt_payload_bytes(const struct ata_snap_obs_info oi)
 // pktidx_per_block value is calculated.
 static inline
 uint32_t
-calc_ata_snap_pkt_per_block(size_t block_size, uint32_t nchan,
+calc_ata_snap_pkt_per_block(size_t block_size, uint32_t pkt_nchan,
                                uint32_t pkt_ntime, uint32_t pkt_npol,
                                uint32_t time_nbits)
 {
   uint32_t pkt_idxpblk = (uint32_t)(block_size /
-      calc_ata_snap_pkt_payload_bytes(nchan, pkt_ntime, pkt_npol, time_nbits));
+      calc_ata_snap_pkt_payload_bytes(pkt_nchan, pkt_ntime, pkt_npol, time_nbits));
   return pkt_idxpblk;
 }
 
@@ -467,15 +469,15 @@ ata_snap_pkt_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 
 static inline
 uint32_t
-calc_ata_snap_eff_pkt_per_block(size_t block_size, uint32_t nchan,
+calc_ata_snap_eff_pkt_per_block(size_t block_size, uint32_t pkt_nchan,
                                uint32_t pkt_ntime, uint32_t pkt_npol,
                                uint32_t time_nbits, uint32_t nants,
-                               uint32_t nstrm)
+                               uint32_t nchan)
 {
   // use integer division to round down to nearest multiple of (nants*nstrm)
-  uint32_t total_strms = nants * nstrm;
+  uint32_t total_strms = nants * (nchan/pkt_nchan);
   return total_strms *
-        (calc_ata_snap_pkt_per_block(block_size, nchan, pkt_ntime, pkt_npol, time_nbits)
+        (calc_ata_snap_pkt_per_block(block_size, pkt_nchan, pkt_ntime, pkt_npol, time_nbits)
         / total_strms);
 }
 
@@ -486,16 +488,16 @@ ata_snap_eff_pkt_per_block(size_t block_size, const struct ata_snap_obs_info oi)
   return calc_ata_snap_eff_pkt_per_block(
                   block_size, oi.pkt_nchan, oi.pkt_ntime,
                   oi.pkt_npol, oi.time_nbits,
-                  oi.nants, oi.nstrm);
+                  oi.nants, oi.nchan);
 }
 
 static inline
 uint32_t
-calc_ata_snap_pkt_bytes(uint32_t nchan,
+calc_ata_snap_pkt_bytes(uint32_t pkt_nchan,
                         uint32_t pkt_ntime, uint32_t pkt_npol,
                         uint32_t time_nbits)
 {
-  return calc_ata_snap_pkt_payload_bytes(nchan, pkt_ntime, pkt_npol, time_nbits) + 16;
+  return calc_ata_snap_pkt_payload_bytes(pkt_nchan, pkt_ntime, pkt_npol, time_nbits) + 16;
 }
 
 static inline
@@ -513,15 +515,14 @@ ata_snap_pkt_bytes(const struct ata_snap_obs_info oi)
 // evenly divide the max block size.
 static inline
 uint32_t
-calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t nchan, uint32_t pkt_ntime,
+calc_ata_snap_pktidx_per_block(size_t block_size, uint32_t pkt_nchan, uint32_t pkt_ntime,
                             uint32_t pkt_npol, uint32_t time_nbits,
-                            uint32_t nants, uint32_t nstrm)
+                            uint32_t nants, uint32_t nchan)
 {
-  uint32_t pkidx_per_block = (calc_ata_snap_eff_pkt_per_block(block_size, 
-                                            nchan, pkt_ntime, pkt_npol, time_nbits,
-                                            nants, nstrm)
-                              /(nants*nstrm)) * pkt_ntime;
-  return pkidx_per_block;
+  return (calc_ata_snap_eff_pkt_per_block(block_size, 
+                                            pkt_nchan, pkt_ntime, pkt_npol, time_nbits,
+                                            nants, nchan)
+                              /(nants*(nchan/pkt_nchan))) * pkt_ntime;
 }
 
 static inline
@@ -530,7 +531,7 @@ ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_pktidx_per_block(block_size, oi.pkt_nchan,
                                      oi.pkt_ntime, oi.pkt_npol, oi.time_nbits,
-                                     oi.nants, oi.nstrm);
+                                     oi.nants, oi.nchan);
 }
 
 // Calculate the effective block size for the given max block size, nchan, and
@@ -539,14 +540,14 @@ ata_snap_pktidx_per_block(size_t block_size, const struct ata_snap_obs_info oi)
 static inline
 uint32_t
 calc_ata_snap_block_size(size_t block_size, uint32_t pkt_nchan, uint32_t pkt_ntime,
-                         uint32_t pkt_npol, uint32_t time_nbits, uint32_t nants, uint32_t nstrm)
+                         uint32_t pkt_npol, uint32_t time_nbits, uint32_t nants, uint32_t nchan)
 {
   return    calc_ata_snap_pkt_payload_bytes(pkt_nchan, pkt_ntime,
                                             pkt_npol, time_nbits)
             * calc_ata_snap_eff_pkt_per_block(
                   block_size, pkt_nchan, pkt_ntime,
                   pkt_npol, time_nbits,
-                  nants, nstrm);
+                  nants, nchan);
 }
 
 static inline
@@ -555,7 +556,7 @@ ata_snap_block_size(size_t block_size, const struct ata_snap_obs_info oi)
 {
   return calc_ata_snap_block_size(block_size, oi.pkt_nchan,
                                      oi.pkt_ntime, oi.pkt_npol, oi.time_nbits,
-                                     oi.nants, oi.nstrm);
+                                     oi.nants, oi.nchan);
 }
 
 static inline
@@ -587,9 +588,10 @@ ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_in
   oi->pkt_data_size = ata_snap_pkt_bytes(*oi);
   oi->pkt_per_block = ata_snap_eff_pkt_per_block(block_size, *oi);
   oi->pktidx_per_block = ata_snap_pktidx_per_block(block_size, *oi);//inherently effective 
-  // Rather calculate the block_size to hold a power-of-2 packets
-  // // oi->pktidx_per_block = prevpow2(oi->pktidx_per_block);
-  // // oi->pkt_per_block = (oi->pktidx_per_block/oi->pkt_ntime)*oi->nants*oi->nstrm;
+  if(prevpow2(oi->pktidx_per_block) != oi->pktidx_per_block){
+    hashpipe_warn(__FUNCTION__, "Recommended that the BLOCK_DATA_SIZE be changed to %lu in order to have power of 2 (%d) packets per block.", 
+      (oi->pkt_data_size-16)*((prevpow2(oi->pktidx_per_block)/oi->pkt_ntime)*oi->nants*(oi->nchan/oi->pkt_nchan)), prevpow2(oi->pktidx_per_block));
+  }
   oi->eff_block_size = oi->pkt_per_block*(oi->pkt_data_size-16);
 }
 
@@ -599,11 +601,12 @@ ata_snap_populate_block_related_fields(size_t block_size, struct ata_snap_obs_in
 static inline
 const uint8_t *
 ata_snap_parse_ibv_packet(const struct ata_snap_ibv_pkt *p,
-    struct ata_snap_feng_info * fei)
+    struct ata_snap_pkt_info * fei)
 {
   fei->pktidx = ATA_SNAP_PKT_NUMBER(p);
   fei->feng_id = ATA_SNAP_PKT_FENG_ID(p);
-  fei->feng_chan = ATA_SNAP_PKT_CHAN(p);
+  fei->pkt_schan = ATA_SNAP_PKT_SCHAN(p);
+  fei->pkt_nchan = ATA_SNAP_PKT_NCHAN(p);
 
   return p->payload;
 }
@@ -665,7 +668,6 @@ static inline
 unsigned check_pkt_observability_sans_idx(
     const struct ata_snap_obs_info * ata_oi,
     const uint16_t feng_id,
-    const int32_t stream,
     const uint16_t pkt_schan
   )
 {
@@ -675,8 +677,8 @@ unsigned check_pkt_observability_sans_idx(
   if(pkt_schan < ata_oi->schan){
     return PKT_OBS_SCHAN;
   }
-  if(stream >= ata_oi->nstrm){
-    return PKT_OBS_STREAM;
+  if(pkt_schan + ata_oi->pkt_nchan > ata_oi->schan + ata_oi->nchan){
+    return PKT_OBS_NCHAN;
   }
   return PKT_OBS_OK;
 }
@@ -686,7 +688,6 @@ unsigned check_pkt_observability(
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
     const uint16_t feng_id,
-    const int32_t stream,
     const uint16_t pkt_schan
   );
 unsigned check_pkt_observability_silent(
@@ -694,7 +695,6 @@ unsigned check_pkt_observability_silent(
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
     const uint16_t feng_id,
-    const int32_t stream,
     const uint16_t pkt_schan
   );
 

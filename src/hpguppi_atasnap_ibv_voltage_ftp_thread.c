@@ -293,7 +293,6 @@ int debug_i=0, debug_j=0;
   uint64_t obs_start_seq_num = 0, obs_stop_seq_num = 0, blk0_start_seq_num = 0;
   uint64_t prev_obs_start_seq_num, prev_obs_stop_seq_num;
   uint32_t fid_stride, channel_stride;
-  uint32_t pkt_stream;
 
   // Heartbeat variables
   struct timespec ts_start_block = {0}, ts_stop_block = {0};
@@ -312,7 +311,7 @@ int debug_i=0, debug_j=0;
   char flag_state_update = 0;
   char  LATE_PKTIDX_flagged = 0;
   char  PKT_OBS_FENG_flagged,
-        PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged;
+        PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged;
 
   // Variables for working with the input databuf
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(dbin);
@@ -340,7 +339,7 @@ int debug_i=0, debug_j=0;
   ata_snap_obs_info_init(&obs_info);
 
   // Structure to hold feng info from packet
-  struct ata_snap_feng_info feng_info = {0};
+  struct ata_snap_pkt_info pkt_info = {0};
 
   // Variables for tracking timing stats
   //
@@ -448,7 +447,7 @@ int debug_i=0, debug_j=0;
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
         // write obs_info to overwrite any changes
-        observing = feng_info.pktidx >= obs_start_seq_num && feng_info.pktidx < obs_stop_seq_num;
+        observing = pkt_info.pktidx >= obs_start_seq_num && pkt_info.pktidx < obs_stop_seq_num;
         if (obs_info_validity == OBS_VALID && // if obs_info is valid
             observing ){ //and observing
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
@@ -463,7 +462,7 @@ int debug_i=0, debug_j=0;
             #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
             channel_stride /= sizeof(PKT_DCP_T);
             #endif
-            fid_stride = (obs_info.nstrm*obs_info.pkt_nchan)*channel_stride;
+            fid_stride = (obs_info.nchan)*channel_stride;
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
@@ -476,7 +475,7 @@ int debug_i=0, debug_j=0;
 
             PKT_OBS_FENG_flagged = 0;
             PKT_OBS_SCHAN_flagged = 0;
-            PKT_OBS_STREAM_flagged = 0;
+            PKT_OBS_NCHAN_flagged = 0;
           }
         }
 
@@ -589,9 +588,9 @@ int debug_i=0, debug_j=0;
     if(!flag_reinit_blks){
       p_pkt = (struct ata_snap_ibv_pkt *)p_u8pkt;
       // Parse packet
-      ata_snap_parse_ibv_packet(p_pkt, &feng_info);
+      ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
       // Get packet index and absolute block number for packet
-      blk0_relative_pkt_seq_num = feng_info.pktidx - blk0_start_seq_num;
+      blk0_relative_pkt_seq_num = pkt_info.pktidx - blk0_start_seq_num;
       // Get packet's block number relative to the first block's starting index.
       pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
 
@@ -599,13 +598,13 @@ int debug_i=0, debug_j=0;
           || pkt_blk_num > wblk[n_wblock-1].block_num + 1
         ) {
         flag_reinit_blks = 1;
-        blk0_start_seq_num = feng_info.pktidx;
+        blk0_start_seq_num = pkt_info.pktidx;
         align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
         // Should only happen when seeing first packet when obs_info is valid
         // warn in case it happens in other scenarios
         hashpipe_warn(thread_name,
             "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-            feng_info.pktidx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+            pkt_info.pktidx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
       }
     }
     
@@ -637,16 +636,15 @@ int debug_i=0, debug_j=0;
     #if VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
       #pragma omp parallel for private (\
         p_pkt,\
-        feng_info,\
+        pkt_info,\
         p_payload,\
         blk0_relative_pkt_seq_num,\
-        pkt_stream,\
         pkt_blk_num,\
         wblk_idx,\
         LATE_PKTIDX_flagged,\
         dest_feng_pktidx_offset\
       )\
-      firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_STREAM_flagged)\
+      firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged)\
       reduction(min:obs_info_validity)\
       num_threads (VOLTAGE_FOR_PACKET_THREAD_COUNT)
       // The above `reduction` initialises each local variable as MAX>OBS_SEEMS_VALID, 
@@ -665,14 +663,13 @@ int debug_i=0, debug_j=0;
       #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
         (PKT_DCP_T*)
       #endif
-        ata_snap_parse_ibv_packet(p_pkt, &feng_info);
+        ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
 
       // Get packet index and absolute block number for packet
-      blk0_relative_pkt_seq_num = feng_info.pktidx - blk0_start_seq_num;
-      pkt_stream = (feng_info.feng_chan - obs_info.schan) / obs_info.pkt_nchan;
+      blk0_relative_pkt_seq_num = pkt_info.pktidx - blk0_start_seq_num;
 
       // Only copy packet data and count packet if its wblk_idx is valid
-      switch(check_pkt_observability_sans_idx(&obs_info, feng_info.feng_id, pkt_stream, feng_info.feng_chan)){
+      switch(check_pkt_observability_sans_idx(&obs_info, pkt_info.feng_id, pkt_info.pkt_schan)){
         case PKT_OBS_OK:
 
           // Manage blocks based on pkt_blk_num
@@ -697,7 +694,7 @@ int debug_i=0, debug_j=0;
             #endif
               (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
               + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE);
-            dest_feng_pktidx_offset += feng_info.feng_id * fid_stride + (feng_info.feng_chan-obs_info.schan)*channel_stride;
+            dest_feng_pktidx_offset += pkt_info.feng_id * fid_stride + (pkt_info.pkt_schan-obs_info.schan)*channel_stride;
             
             #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
               #pragma omp parallel for \
@@ -732,7 +729,7 @@ int debug_i=0, debug_j=0;
             obs_info_validity = OBS_INVALID_FENG;
             hashpipe_error(thread_name, 
               "Packet ignored: PKT_OBS_FENG\n\tfeng_id (%u) >= (%u) obs_info.nants",
-              feng_info.feng_id, obs_info.nants
+              pkt_info.feng_id, obs_info.nants
             );
             PKT_OBS_FENG_flagged = 1;
           }
@@ -742,19 +739,19 @@ int debug_i=0, debug_j=0;
             obs_info_validity = OBS_INVALID_SCHAN;
             hashpipe_error(thread_name, 
               "Packet ignored: PKT_OBS_SCHAN\n\tpkt_schan (%d) < (%d) obs_info.schan",
-              feng_info.feng_chan, obs_info.schan
+              pkt_info.pkt_schan, obs_info.schan
             );
             PKT_OBS_SCHAN_flagged = 1;
           }
           break;
-        case PKT_OBS_STREAM:
-          if(!PKT_OBS_STREAM_flagged){
-            obs_info_validity = OBS_INVALID_STREAM;
+        case PKT_OBS_NCHAN:
+          if(!PKT_OBS_NCHAN_flagged){
+            obs_info_validity = OBS_INVALID_NCHAN;
             hashpipe_error(thread_name, 
-              "Packet ignored: PKT_OBS_STREAM\n\tstream (%d) >= (%d) obs_info.nstrm",
-              pkt_stream, obs_info.nstrm
+              "Packet ignored: PKT_OBS_NCHAN\n\tpkt_chans [%d-%d] <> [%d-%d] obs_info.schan-obs_info.nchan",
+              pkt_info.pkt_schan, pkt_info.pkt_schan + obs_info.pkt_nchan, obs_info.schan, obs_info.schan + obs_info.nchan
             );
-            PKT_OBS_STREAM_flagged = 1;
+            PKT_OBS_NCHAN_flagged = 1;
           }
           break;
         default:
@@ -784,10 +781,10 @@ int debug_i=0, debug_j=0;
         hputs(st->buf, "OBSINFO", "INVALID SCHAN");
       hashpipe_status_unlock_safe(st);
     }
-    else if(obs_info_validity == OBS_INVALID_STREAM){
-      obs_info_validity = OBS_INVALID_STREAM;
+    else if(obs_info_validity == OBS_INVALID_NCHAN){
+      obs_info_validity = OBS_INVALID_NCHAN;
       hashpipe_status_lock_safe(st);
-        hputs(st->buf, "OBSINFO", "INVALID NSTRM");
+        hputs(st->buf, "OBSINFO", "INVALID NCHAN");
       hashpipe_status_unlock_safe(st);
     }
 
