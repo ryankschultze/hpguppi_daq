@@ -35,11 +35,11 @@ static void *run(hashpipe_thread_args_t *args)
   int curblock_out=0;
 
 	/* Sundry flags */
-  int hpguppi_databuf_wait_rv, waiting=0, update_status=1;
+  int hpguppi_databuf_wait_rv, status_state=0, update_status=1;
 
 	/* Timestamp variables */
 	struct timespec ts_status_update = {0}, ts_now = {0};
-  const uint64_t status_update_period_ns = 500*1000*1000;
+  const uint64_t status_update_period_ns = 1e9;
 	
   uint64_t fill_to_free_elapsed_ns;
   uint64_t fill_to_free_moving_sum_ns = 0;
@@ -61,20 +61,16 @@ static void *run(hashpipe_thread_args_t *args)
   module_t mod = blade_init(batch_size);
 
 	const size_t beamformer_input_dim_NANTS = get_input_dim_NANTS(mod);
-	int32_t input_buffer_dim_NANTS;
+	int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
 	const size_t beamformer_input_dim_NCHANS = get_input_dim_NCHANS(mod);
-	int32_t input_buffer_dim_NCHANS;
+	int32_t input_buffer_dim_NCHAN, prev_flagged_NCHAN;
 	const size_t beamformer_input_dim_NTIME = get_input_dim_NTIME(mod);
-	int32_t input_buffer_dim_NTIME;
+	int32_t input_buffer_dim_NTIME, prev_flagged_NTIME;
 	const size_t beamformer_input_dim_NPOLS = get_input_dim_NPOLS(mod);
-	int32_t input_buffer_dim_NPOLS;
+	int32_t input_buffer_dim_NPOLS, prev_flagged_NPOLS;
 
   while (run_threads())
   {
-    hashpipe_status_lock_safe(&st);
-    hputs(st.buf, status_key, "waiting");
-    hashpipe_status_unlock_safe(&st);
-
 		do {
       hpguppi_databuf_wait_rv = hpguppi_input_databuf_wait_filled(
           indb, curblock_in);
@@ -84,8 +80,7 @@ static void *run(hashpipe_thread_args_t *args)
 
       update_status = ELAPSED_NS(ts_status_update, ts_now) > status_update_period_ns;
 
-
-      if(hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && update_status) {
+      if(hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && !update_status) {
         // No, continue receiving
         continue;
       }
@@ -95,22 +90,22 @@ static void *run(hashpipe_thread_args_t *args)
 				hashpipe_status_lock_safe(&st);
 				{
               hputr4(st.buf, "BMBLKMS",
-                round((double)fill_to_free_moving_sum_ns / (batch_size * N_INPUT_BLOCKS)) / 1e6);
+                round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
 				}
 				hashpipe_status_unlock_safe(&st);
 			}
 
-			// Set status field to "waiting" if we are not getting packets
-      if(hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && run_threads() && !waiting) {
+			// Set status field to "status_state" if we are not getting packets
+      if(hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && run_threads() && !status_state) {
         hashpipe_status_lock_safe(&st);
         {
-          hputs(st.buf, status_key, "waiting");
+          hputs(st.buf, status_key, "inblocked");
         }
         hashpipe_status_unlock_safe(&st);
-        waiting=1;
+        status_state=1;
       }
 			else if (hpguppi_databuf_wait_rv != HASHPIPE_TIMEOUT && hpguppi_databuf_wait_rv != HASHPIPE_OK) {
-        hashpipe_error(thread_name, "error waiting for input buffer, rv: %i", hpguppi_databuf_wait_rv);
+        hashpipe_error(thread_name, "error status_state for input buffer, rv: %i", hpguppi_databuf_wait_rv);
 	      pthread_exit(NULL);
 			}
 
@@ -122,29 +117,38 @@ static void *run(hashpipe_thread_args_t *args)
 		
 		databuf_header = hpguppi_databuf_header(indb, curblock_in);
     hgeti4(databuf_header, "NANTS", &input_buffer_dim_NANTS);
-    hgeti4(databuf_header, "NCHANS", &input_buffer_dim_NCHANS);
-    hgeti4(databuf_header, "NTIME", &input_buffer_dim_NTIME);
-    hgeti4(databuf_header, "NPOLS", &input_buffer_dim_NPOLS);
+    hgeti4(databuf_header, "NCHAN", &input_buffer_dim_NCHAN);
+    hgeti4(databuf_header, "PIPERBLK", &input_buffer_dim_NTIME);
+    hgeti4(databuf_header, "NPOL", &input_buffer_dim_NPOLS);
 
-		if(input_buffer_dim_NANTS != beamformer_input_dim_NANTS){
+		if(input_buffer_dim_NANTS != beamformer_input_dim_NANTS && prev_flagged_NANTS != input_buffer_dim_NANTS){
+			prev_flagged_NANTS = input_buffer_dim_NANTS;
 			hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, beamformer_input_dim_NANTS);
 			hpguppi_input_databuf_set_free(indb, curblock_in);
 		}
-		else if(input_buffer_dim_NCHANS != beamformer_input_dim_NCHANS){
-			hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHANS, beamformer_input_dim_NCHANS);
+		else if(input_buffer_dim_NCHAN != beamformer_input_dim_NCHANS && prev_flagged_NCHAN != input_buffer_dim_NCHAN){
+			prev_flagged_NCHAN = input_buffer_dim_NCHAN;
+			hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, beamformer_input_dim_NCHANS);
 			hpguppi_input_databuf_set_free(indb, curblock_in);
 		}
-		else if(input_buffer_dim_NTIME != beamformer_input_dim_NTIME){
+		else if(input_buffer_dim_NTIME != beamformer_input_dim_NTIME && prev_flagged_NTIME != input_buffer_dim_NTIME){
+			prev_flagged_NTIME = input_buffer_dim_NTIME;
 			hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, beamformer_input_dim_NTIME);
 			hpguppi_input_databuf_set_free(indb, curblock_in);
 		}
-		else if(input_buffer_dim_NPOLS != beamformer_input_dim_NPOLS){
+		else if(input_buffer_dim_NPOLS != beamformer_input_dim_NPOLS && prev_flagged_NPOLS != input_buffer_dim_NPOLS){
+			prev_flagged_NPOLS = input_buffer_dim_NPOLS;
 			hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, beamformer_input_dim_NPOLS);
 			hpguppi_input_databuf_set_free(indb, curblock_in);
 		}
 		else{
+			prev_flagged_NANTS = input_buffer_dim_NANTS;
+			prev_flagged_NCHAN = input_buffer_dim_NCHAN;
+			prev_flagged_NTIME = input_buffer_dim_NTIME;
+			prev_flagged_NPOLS = input_buffer_dim_NPOLS;
 			blade_input_buffers[inputs_batched] = hpguppi_databuf_data(indb, curblock_in);
 			batched_input_buffer_indices[inputs_batched] = curblock_in;
+			// hashpipe_info(thread_name, "batched block #%d as input #%d.", curblock_in, inputs_batched);
 			inputs_batched += 1;
 		}
 		curblock_in  = (curblock_in + 1) % indb->header.n_block;
@@ -155,16 +159,17 @@ static void *run(hashpipe_thread_args_t *args)
 		
 		// wait for `batch_size` output_buffers to be free
 
-    // Waiting for output
+    // waiting for output
 		while(outputs_batched < batch_size){
 			while ((hpguppi_databuf_wait_rv=hpguppi_blade_output_databuf_wait_free(outdb, curblock_out)) !=
 					HASHPIPE_OK)
 			{
-				if (hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT)
+				if (hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && status_state != 2)
 				{
 					hashpipe_status_lock_safe(&st);
 					hputs(st.buf, status_key, "outblocked");
 					hashpipe_status_unlock_safe(&st);
+					status_state = 2;
 					continue;
 				}
 				else
@@ -178,33 +183,38 @@ static void *run(hashpipe_thread_args_t *args)
 			if(hpguppi_databuf_wait_rv == HASHPIPE_OK){
 				blade_output_buffers[outputs_batched] = hpguppi_blade_databuf_data(outdb, curblock_out);
 				batched_output_buffer_indices[outputs_batched] = curblock_out;
+				// hashpipe_info(thread_name, "batched block #%d as output #%d.", curblock_out, outputs_batched);
 				outputs_batched += 1;
 				curblock_out = (curblock_out + 1) % outdb->header.n_block;
 			}
 			else {
-				// presume an error occurred while waiting for a free output buffer
+				// presume an error occurred while status_state for a free output buffer
 				break;
 			}
 		}
 
-    hashpipe_status_lock_safe(&st);
-    hputs(st.buf, status_key, "beamforming");
-    hashpipe_status_unlock_safe(&st);
+		if(status_state != 3){
+			hashpipe_status_lock_safe(&st);
+			hputs(st.buf, status_key, "beamforming");
+			hashpipe_status_unlock_safe(&st);
+			status_state = 3;
+		}
 
-		
     blade_process(mod, blade_input_buffers, blade_output_buffers);
 
 		for (size_t b = 0; b < batch_size; b++)
 		{
 			// copy across the header
-			memcpy(hpguppi_blade_databuf_header(outdb, batched_input_buffer_indices[b]), 
-						hpguppi_databuf_header(indb, batched_output_buffer_indices[b]), 
+			memcpy(hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[b]), 
+						hpguppi_databuf_header(indb, batched_input_buffer_indices[b]), 
 						HASHPIPE_STATUS_TOTAL_SIZE);	
 			
 			//TODO upate output_buffer headers to reflect that they contain beams
 			
 			hpguppi_input_databuf_set_free(indb, batched_input_buffer_indices[b]);
 			hpguppi_blade_output_databuf_set_filled(outdb, batched_output_buffer_indices[b]);
+			inputs_batched --;
+			outputs_batched --;
 
 			// Update moving sum (for moving average)
 			clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
@@ -218,7 +228,7 @@ static void *run(hashpipe_thread_args_t *args)
   }
 
   hashpipe_info(thread_name, "returning");
-
+	blade_deinit(mod);
   return NULL;
 }
 
