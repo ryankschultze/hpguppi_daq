@@ -11,10 +11,13 @@ AM_CFLAGS += -Wno-stringop-truncation
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
-		  hpguppi_databuf.c
+		  hpguppi_databuf.c \
+			hpguppi_blade_databuf.c \
+			hpguppi_blade_databuf.h
 
 hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_atasnap.c \
+		  hpguppi_blade.h \
 		  hpguppi_params.c \
 		  hpguppi_mkfeng.h \
 		  hpguppi_pksuwl.h \
@@ -40,15 +43,29 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_atasnap_obs_rawdisk_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
-		  hpguppi_fildisk_only_thread.c
+		  hpguppi_fildisk_only_thread.c \
+		  hpguppi_ata_blade_beamformer_thread.c \
+		  hpguppi_ata_blade_obs_rawdisk_thread.c
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
 hpguppi_daq_la_SOURCES  = $(hpguppi_databuf) $(hpguppi_support) $(libsla_support) $(hpguppi_threads)
-hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
+hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs -lblade
+hpguppi_daq_la_LIBADD   += libbladeapi.la
+hpguppi_daq_la_CFLAGS   = $(AM_CFLAGS) -I"/usr/local/cuda-11.4.1/include"
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
+hpguppi_daq_la_LDFLAGS += -L"/home/sonata/dev/blade/build" -Wl,-rpath,"/home/sonata/dev/blade/build"
+
+
+# This is the bladeapi library
+hpguppi_blade_c_api_files = hpguppi_blade_c_api.cpp hpguppi_blade_c_api.hpp
+noinst_LTLIBRARIES = libbladeapi.la
+libbladeapi_la_SOURCES = $(hpguppi_blade_c_api_files)
+libbladeapi_la_CXXFLAGS = -std=c++20 -I"/home/sonata/dev/blade/include" -I"/usr/local/cuda-11.4.1/include"
+libbladeapi_la_LDFLAGS = -L"/home/sonata/dev/blade/build"
+libbladeapi_la_LIBADD = -lblade
 
 # Installed scripts
 dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \
