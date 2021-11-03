@@ -53,6 +53,77 @@ AC_CHECK_LIB([sla], [sla_obs_],
              AC_MSG_ERROR([SLA library not found]))
 LDFLAGS="${orig_LDFLAGS}"
 
+AC_ARG_WITH([libblade],
+            AC_HELP_STRING([--with-libblade=DIR],
+                           [Location of BLADE library]),
+            [
+              LIBBLADEDIR="$withval"
+              has_libblade=1
+            ],
+            [
+              LIBBLADEDIR=""
+              has_libblade=0
+            ])
+
+AC_ARG_WITH([blade-include],
+            AC_HELP_STRING([--with-blade-include=DIR],
+                           [Location of BLADE include directory]),
+            [BLADEINCDIR="$withval"],
+            [BLADEINCDIR="${LIBBLADEDIR}/../include"])
+
+AC_ARG_WITH([cuda-include],
+            AC_HELP_STRING([--with-cuda-include=DIR],
+                           [Location of CUDA include directory]),
+            [
+              CUDAINCDIR="$withval"
+              has_cuda_include=1
+            ],
+            [
+              CUDAINCDIR=""
+              has_cuda_include=0
+            ])
+
+#AC_MSG_CHECKING([for libblade])
+#AC_LANG_PUSH(C++)
+#orig_LDFLAGS="$LDFLAGS"
+#LDFLAGS="${orig_LDFLAGS} -L${LIBBLADEDIR}"
+#orig_LIBS="$LIBS"
+#LIBS="${orig_LIBS} -lblade"
+#AC_TRY_LINK([#include "blade/manager.hh"], 
+#        [Blade::Manager object;],
+#        has_libblade=1,
+#        has_libblade=0)
+#AC_LANG_POP(C++)
+#LIBS="${orig_LIBS}"
+#LDFLAGS="${orig_LDFLAGS}"
+
+if test $has_libblade = 0; then
+  #AC_MSG_RESULT([no])
+  AC_MSG_NOTICE([Library BLADE not provided. BLADE will not be enabled.])
+  blade_enabled=1;
+else
+  #AC_MSG_RESULT([yes])
+  if test $has_cuda_include = 0; then
+    AC_MSG_ERROR([BLADE library provided but not CUDA include directory!])
+  fi
+  AC_MSG_NOTICE([BLADE will be enabled.])
+  AC_SUBST(LIBBLADEDIR,${LIBBLADEDIR})
+  
+  AC_SUBST(BLADEINCDIR,${BLADEINCDIR})
+  AC_MSG_NOTICE([BLADE include directory set to ${BLADEINCDIR}])
+  AC_SUBST(CUDAINCDIR,${CUDAINCDIR})
+  AC_MSG_NOTICE([CUDA include directory set to ${CUDAINCDIR}])
+  blade_enabled=1;
+fi
+AS_IF([test $blade_enabled = 1],
+  [
+    AM_CONDITIONAL(BLADE_ENABLED, true)
+    AC_DEFINE(BLADE_ENABLED,[],[Use BLADE])
+  ],
+  [
+    AM_CONDITIONAL(BLADE_ENABLED, false)
+  ])
+
 ## Checks for header files.
 #AC_CHECK_HEADERS([netdb.h stdint.h stdlib.h string.h sys/socket.h sys/time.h unistd.h zlib.h])
 
