@@ -66,6 +66,10 @@ void blade_deinit(module_t mod) {
     delete self;
 }
 
+int blade_pin_memory(module_t mod, void* buffer, size_t size) {
+    return cudaHostRegister(buffer, size, cudaHostRegisterDefault);
+}
+
 size_t get_input_size(module_t mod) {
     auto self = static_cast<State*>(mod);
     return self->swapchain[0]->getInputSize();

@@ -25,6 +25,19 @@ module_t blade_init(size_t batch_size);
 //
 void blade_deinit(module_t mod);
 
+// Pin host memory to the device poll.
+//
+// Arguments
+// ---------
+// mod : module_t
+//      pointer to the internal state
+// buffer : void*
+//      buffer pointer
+// size : size_t
+//      size of the pointer
+//
+int blade_pin_memory(module_t mod, void* buffer, size_t size);
+
 // Get the expected size of each input buffer.
 //
 // Arguments
