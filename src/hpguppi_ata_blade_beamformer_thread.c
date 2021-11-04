@@ -33,6 +33,7 @@ static void *run(hashpipe_thread_args_t *args)
 
   int curblock_in=0;
   int curblock_out=0;
+  size_t i;
 
   /* Sundry flags */
   int hpguppi_databuf_wait_rv, status_state=0, update_status=1;
@@ -49,7 +50,7 @@ static void *run(hashpipe_thread_args_t *args)
   /* BLADE variables */
   const size_t batch_size = 2;
 
-  struct timespec *ts_blocks_recvd = (struct timespec *)malloc(batch_size * sizeof(struct timespec));
+  struct timespec ts_blocks_recvd = {0};
   
   size_t inputs_batched = 0;
   size_t outputs_batched = 0;
@@ -59,6 +60,13 @@ static void *run(hashpipe_thread_args_t *args)
   void **blade_output_buffers = (void**)malloc(batch_size * sizeof(void*));
   
   module_t mod = blade_init(batch_size);
+
+  for(i = 0; i < N_INPUT_BLOCKS; i++)
+  {
+    blade_pin_memory(mod, hpguppi_databuf_data(indb, i), BLOCK_DATA_SIZE);
+    blade_pin_memory(mod, hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
+  }
+  
 
   const size_t beamformer_input_dim_NANTS = get_input_dim_NANTS(mod);
   int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
@@ -76,7 +84,6 @@ static void *run(hashpipe_thread_args_t *args)
           indb, curblock_in);
       
       clock_gettime(CLOCK_MONOTONIC, &ts_now);
-      memcpy(ts_blocks_recvd+inputs_batched, &ts_now, sizeof(struct timespec));
 
       update_status = ELAPSED_NS(ts_status_update, ts_now) > status_update_period_ns;
 
@@ -199,31 +206,33 @@ static void *run(hashpipe_thread_args_t *args)
       hashpipe_status_unlock_safe(&st);
       status_state = 3;
     }
+    
+    clock_gettime(CLOCK_MONOTONIC, &ts_blocks_recvd);
 
     blade_process(mod, blade_input_buffers, blade_output_buffers);
 
-    for (size_t b = 0; b < batch_size; b++)
+    // Update elapsed_ns (for moving average)
+    clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
+    fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd, ts_free_input)/batch_size;
+    for (i = 0; i < batch_size; i++)
     {
       // copy across the header
-      memcpy(hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[b]), 
-            hpguppi_databuf_header(indb, batched_input_buffer_indices[b]), 
+      memcpy(hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[i]), 
+            hpguppi_databuf_header(indb, batched_input_buffer_indices[i]), 
             HASHPIPE_STATUS_TOTAL_SIZE);	
       
       //TODO upate output_buffer headers to reflect that they contain beams
       
-      hpguppi_input_databuf_set_free(indb, batched_input_buffer_indices[b]);
-      hpguppi_blade_output_databuf_set_filled(outdb, batched_output_buffer_indices[b]);
+      hpguppi_input_databuf_set_free(indb, batched_input_buffer_indices[i]);
+      hpguppi_blade_output_databuf_set_filled(outdb, batched_output_buffer_indices[i]);
       inputs_batched --;
       outputs_batched --;
 
       // Update moving sum (for moving average)
-      clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
-      fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd[b], ts_free_input);
-      // Add new value, subtract old value
       fill_to_free_moving_sum_ns +=
-          fill_to_free_elapsed_ns - fill_to_free_block_ns[batched_input_buffer_indices[b]];
+          fill_to_free_elapsed_ns - fill_to_free_block_ns[batched_input_buffer_indices[i]];
       // Store new value
-      fill_to_free_block_ns[batched_input_buffer_indices[b]] = fill_to_free_elapsed_ns;
+      fill_to_free_block_ns[batched_input_buffer_indices[i]] = fill_to_free_elapsed_ns;
     }
   }
 
