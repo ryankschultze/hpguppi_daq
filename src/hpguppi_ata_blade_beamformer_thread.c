@@ -16,11 +16,6 @@
 #define ELAPSED_NS(start,stop) \
   (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
-static int init(hashpipe_thread_args_t *args){
-  cudaSetDevice(args->instance_id);
-  return 0;
-}
-
 static void *run(hashpipe_thread_args_t *args)
 {
   hpguppi_input_databuf_t *indb  = (hpguppi_input_databuf_t *)args->ibuf;
@@ -59,6 +54,36 @@ static void *run(hashpipe_thread_args_t *args)
   int *batched_output_buffer_indices = (int *)malloc(batch_size * sizeof(int));
   void **blade_output_buffers = (void**)malloc(batch_size * sizeof(void*));
   
+  int cudaDeviceId = args->instance_id, cudaDeviceCount, cudaRv;
+  
+  hashpipe_status_lock_safe(&st);
+  {
+    hgeti4(st.buf, "CUDADEV", &cudaDeviceId);
+  }
+  hashpipe_status_unlock_safe(&st);
+  if(cudaDeviceId >= 0){
+    cudaGetDeviceCount(&cudaDeviceCount);
+    if(cudaDeviceId < cudaDeviceCount){
+      cudaRv = cudaSetDevice(cudaDeviceId);
+      if(cudaRv == cudaSuccess){
+        hashpipe_info(args->thread_desc->name, "Set CUDA device to %d.", cudaDeviceId);
+      }
+      else{
+        cudaDeviceId = -2;
+        hashpipe_info(args->thread_desc->name, "Failed to set CUDA device to %d: rv %d.", cudaDeviceId, cudaRv);
+      }
+    }
+    else{
+      hashpipe_info(args->thread_desc->name, "Cannot set CUDA device to %d/%d.", cudaDeviceId, cudaDeviceCount-1);
+      cudaDeviceId = -3;
+    }
+  }
+  hashpipe_status_lock_safe(&st);
+  {
+    hputi4(st.buf, "CUDADEV", cudaDeviceId);
+  }
+  hashpipe_status_unlock_safe(&st);
+
   module_t mod = blade_init(batch_size);
 
   for(i = 0; i < N_INPUT_BLOCKS; i++)
@@ -244,7 +269,7 @@ static void *run(hashpipe_thread_args_t *args)
 static hashpipe_thread_desc_t blade_beamformer_thread = {
   name: "hpguppi_ata_blade_beamformer_thread",
   skey: "BEAMSTAT",
-  init: init,
+  init: NULL,
   run: run,
   ibuf_desc: {hpguppi_input_databuf_create},
   obuf_desc: {hpguppi_blade_output_databuf_create}
