@@ -25,7 +25,8 @@ static void *run(hashpipe_thread_args_t *args)
   hashpipe_status_t st = args->st;
   const char* status_key = args->thread_desc->skey;
   const char* thread_name = args->thread_desc->name;
-
+  char buf_status[80];
+  
   int curblock_in=0;
   int curblock_out=0;
   size_t i;
@@ -119,10 +120,14 @@ static void *run(hashpipe_thread_args_t *args)
 
       // We perform some status buffer updates every second
       if(update_status) {
+        sprintf(buf_status, "%d/%d", hpguppi_blade_output_databuf_total_status(outdb), N_INPUT_BLOCKS);
+
         hashpipe_status_lock_safe(&st);
         {
-              hputr4(st.buf, "BMBLKMS",
-                round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
+          hputi4(st.buf, "BLDBLKSZ", BLADE_BLOCK_DATA_SIZE);
+          hputs(st.buf, "BLDBUFST", buf_status);
+          hputr4(st.buf, "BLDBLKMS",
+            round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
         }
         hashpipe_status_unlock_safe(&st);
       }
@@ -242,11 +247,18 @@ static void *run(hashpipe_thread_args_t *args)
     for (i = 0; i < batch_size; i++)
     {
       // copy across the header
-      memcpy(hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[i]), 
+      databuf_header = hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[i]);
+      memcpy(databuf_header, 
             hpguppi_databuf_header(indb, batched_input_buffer_indices[i]), 
-            HASHPIPE_STATUS_TOTAL_SIZE);	
+            BLOCK_HDR_SIZE);	
       
       //TODO upate output_buffer headers to reflect that they contain beams
+      hchange(databuf_header, "NANTS", "NBEAMS");
+      hputi4(databuf_header, "NBEAMS", 16);
+      hputi4(databuf_header, "NBITS", 16);
+      hputs(databuf_header, "DATATYPE", "FLOAT");
+      hputs(databuf_header, "SMPLTYPE", "CF16");
+      hputi4(databuf_header, "BLOCSIZE", BLADE_BLOCK_DATA_SIZE);
       
       hpguppi_input_databuf_set_free(indb, batched_input_buffer_indices[i]);
       hpguppi_blade_output_databuf_set_filled(outdb, batched_output_buffer_indices[i]);
