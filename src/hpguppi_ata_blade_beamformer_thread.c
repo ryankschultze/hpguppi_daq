@@ -6,9 +6,7 @@
 
 #include "hashpipe.h"
 #include "hpguppi_blade_databuf.h"
-#include "hpguppi_blade.h"
-
-#include <cuda_runtime.h>
+#include "blade/pipelines/ata/mode_b.h"
 
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
@@ -55,7 +53,7 @@ static void *run(hashpipe_thread_args_t *args)
   int *batched_output_buffer_indices = (int *)malloc(batch_size * sizeof(int));
   void **blade_output_buffers = (void**)malloc(batch_size * sizeof(void*));
   
-  int cudaDeviceId = args->instance_id, cudaDeviceCount, cudaRv;
+  int cudaDeviceId = args->instance_id;
   
   hashpipe_status_lock_safe(&st);
   {
@@ -63,20 +61,12 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
   if(cudaDeviceId >= 0){
-    cudaGetDeviceCount(&cudaDeviceCount);
-    if(cudaDeviceId < cudaDeviceCount){
-      cudaRv = cudaSetDevice(cudaDeviceId);
-      if(cudaRv == cudaSuccess){
-        hashpipe_info(args->thread_desc->name, "Set CUDA device to %d.", cudaDeviceId);
-      }
-      else{
-        cudaDeviceId = -2;
-        hashpipe_info(args->thread_desc->name, "Failed to set CUDA device to %d: rv %d.", cudaDeviceId, cudaRv);
-      }
+    if(blade_use_device(cudaDeviceId)){
+      hashpipe_info(args->thread_desc->name, "Successfully set CUDA device to %d.", cudaDeviceId);
     }
     else{
-      hashpipe_info(args->thread_desc->name, "Cannot set CUDA device to %d/%d.", cudaDeviceId, cudaDeviceCount-1);
-      cudaDeviceId = -3;
+      hashpipe_info(args->thread_desc->name, "Failed to set CUDA device to %d.", cudaDeviceId);
+      cudaDeviceId = -1;
     }
   }
   hashpipe_status_lock_safe(&st);
@@ -85,22 +75,26 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
-  module_t mod = blade_init(batch_size);
+  blade_module_t mod = blade_ata_b_initialize(batch_size);
+
+  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size(mod)*sizeof(uint16_t)*2){
+    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size(mod)*sizeof(uint16_t)*2);
+    pthread_exit(NULL);
+  }
 
   for(i = 0; i < N_INPUT_BLOCKS; i++)
   {
-    blade_pin_memory(mod, hpguppi_databuf_data(indb, i), BLOCK_DATA_SIZE);
-    blade_pin_memory(mod, hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
+    blade_pin_memory(hpguppi_databuf_data(indb, i), BLOCK_DATA_SIZE);
+    blade_pin_memory(hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
   }
-  
 
-  const size_t beamformer_input_dim_NANTS = get_input_dim_NANTS(mod);
+  const size_t beamformer_input_dim_NANTS = blade_ata_b_get_input_dim_NANTS(mod);
   int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
-  const size_t beamformer_input_dim_NCHANS = get_input_dim_NCHANS(mod);
+  const size_t beamformer_input_dim_NCHANS = blade_ata_b_get_input_dim_NCHANS(mod);
   int32_t input_buffer_dim_NCHAN, prev_flagged_NCHAN;
-  const size_t beamformer_input_dim_NTIME = get_input_dim_NTIME(mod);
+  const size_t beamformer_input_dim_NTIME = blade_ata_b_get_input_dim_NTIME(mod);
   int32_t input_buffer_dim_NTIME, prev_flagged_NTIME;
-  const size_t beamformer_input_dim_NPOLS = get_input_dim_NPOLS(mod);
+  const size_t beamformer_input_dim_NPOLS = blade_ata_b_get_input_dim_NPOLS(mod);
   int32_t input_buffer_dim_NPOLS, prev_flagged_NPOLS;
 
   while (run_threads())
@@ -239,7 +233,7 @@ static void *run(hashpipe_thread_args_t *args)
     
     clock_gettime(CLOCK_MONOTONIC, &ts_blocks_recvd);
 
-    blade_process(mod, blade_input_buffers, blade_output_buffers);
+    blade_ata_b_process(mod, blade_input_buffers, blade_output_buffers);
 
     // Update elapsed_ns (for moving average)
     clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
@@ -253,7 +247,6 @@ static void *run(hashpipe_thread_args_t *args)
             BLOCK_HDR_SIZE);	
       
       //TODO upate output_buffer headers to reflect that they contain beams
-      hchange(databuf_header, "NANTS", "NBEAMS");
       hputi4(databuf_header, "NBEAMS", 16);
       hputi4(databuf_header, "NBITS", 16);
       hputs(databuf_header, "DATATYPE", "FLOAT");
@@ -273,8 +266,13 @@ static void *run(hashpipe_thread_args_t *args)
     }
   }
 
+  free(batched_input_buffer_indices);
+  free(blade_input_buffers);
+  free(batched_output_buffer_indices);
+  free(blade_output_buffers);
+
   hashpipe_info(thread_name, "returning");
-  blade_deinit(mod);
+  blade_ata_b_terminate(mod);
   return NULL;
 }
 

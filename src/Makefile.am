@@ -34,10 +34,6 @@ hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_vdif.h   \
 		  polyco_struct.h  \
 		  psrfits.h
-if BLADE_ENABLED
-hpguppi_support += \
-		hpguppi_blade.h
-endif
 
 libsla_support = slalib.h sla.c f77.h
 
@@ -50,36 +46,28 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
 		  hpguppi_fildisk_only_thread.c
-if BLADE_ENABLED
-hpguppi_threads += \
-		hpguppi_ata_blade_beamformer_thread.c \
-		hpguppi_ata_blade_obs_rawdisk_thread.c
-endif
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
 hpguppi_daq_la_SOURCES  = $(hpguppi_databuf) $(hpguppi_support) $(libsla_support) $(hpguppi_threads)
 hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
-if BLADE_ENABLED
-hpguppi_daq_la_CFLAGS = $(AM_CFLAGS) -I "@CUDAINCDIR@"
-endif
+hpguppi_daq_la_CFLAGS 	= $(AM_CFLAGS)
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
 
-
-# This is the bladeapi library
 if BLADE_ENABLED
-hpguppi_daq_la_LIBADD  += libbladeapi.la
+hpguppi_threads += \
+		hpguppi_ata_blade_beamformer_thread.c \
+		hpguppi_ata_blade_obs_rawdisk_thread.c
+
+hpguppi_daq_la_LIBADD  += -lblade
 hpguppi_daq_la_LDFLAGS += -L"@LIBBLADEDIR@" -Wl,-rpath,"@LIBBLADEDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@BLADEINCDIR@" # -I "@CUDAINCDIR@"
+endif
 
-hpguppi_blade_c_api_files = hpguppi_blade_c_api.cpp hpguppi_blade_c_api.hpp
-
-noinst_LTLIBRARIES = libbladeapi.la
-libbladeapi_la_SOURCES = $(hpguppi_blade_c_api_files)
-libbladeapi_la_CXXFLAGS = -std=c++20 -I"/home/sonata/dev/blade/include" -I"/usr/local/cuda-11.4.1/include"
-libbladeapi_la_LDFLAGS = -L"@LIBBLADEDIR@"
-libbladeapi_la_LIBADD = -lblade
+if CUDA_ENABLED
+hpguppi_daq_la_CFLAGS  += -I "@CUDAINCDIR@"
 endif
 
 # Installed scripts

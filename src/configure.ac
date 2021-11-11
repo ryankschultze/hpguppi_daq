@@ -19,7 +19,6 @@ AS_VAR_SET_IF(CFLAGS,[],[CFLAGS=])
 
 # Checks for programs.
 AC_PROG_CC
-AC_PROG_CXX
 
 # Check processor flags
 AX_CHECK_X86_FEATURES
@@ -103,18 +102,20 @@ if test $has_libblade = 0; then
   blade_enabled=1;
 else
   #AC_MSG_RESULT([yes])
-  if test $has_cuda_include = 0; then
-    AC_MSG_ERROR([BLADE library provided but not CUDA include directory!])
-  fi
   AC_MSG_NOTICE([BLADE will be enabled.])
   AC_SUBST(LIBBLADEDIR,${LIBBLADEDIR})
   
   AC_SUBST(BLADEINCDIR,${BLADEINCDIR})
   AC_MSG_NOTICE([BLADE include directory set to ${BLADEINCDIR}])
-  AC_SUBST(CUDAINCDIR,${CUDAINCDIR})
-  AC_MSG_NOTICE([CUDA include directory set to ${CUDAINCDIR}])
   blade_enabled=1;
 fi
+
+if test $has_cuda_include = 1; then
+  AC_SUBST(CUDAINCDIR,${CUDAINCDIR})
+  AC_MSG_NOTICE([CUDA include directory set to ${CUDAINCDIR}])
+  cuda_enabled=1;
+fi
+
 AS_IF([test $blade_enabled = 1],
   [
     AM_CONDITIONAL(BLADE_ENABLED, true)
@@ -122,6 +123,15 @@ AS_IF([test $blade_enabled = 1],
   ],
   [
     AM_CONDITIONAL(BLADE_ENABLED, false)
+  ])
+
+AS_IF([test $cuda_enabled = 1],
+  [
+    AM_CONDITIONAL(CUDA_ENABLED, true)
+    AC_DEFINE(CUDA_ENABLED,[],[Use CUDA])
+  ],
+  [
+    AM_CONDITIONAL(CUDA_ENABLED, false)
   ])
 
 ## Checks for header files.
