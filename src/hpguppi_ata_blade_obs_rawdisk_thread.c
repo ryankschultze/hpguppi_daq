@@ -61,11 +61,7 @@ static ssize_t write_all(int fd, const void *buf, size_t bytes_to_write)
   return bytes_to_write;
 }
 
-static int safe_close(int *pfd) {
-    if (pfd==NULL) return 0;
-    fsync(*pfd);
-    return close(*pfd);
-}
+ 
 
 #define HPUT_DAQ_STATE(st, state)\
   hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
@@ -93,19 +89,26 @@ static void *run(hashpipe_thread_args_t * args)
   pthread_cleanup_push((void *)hpguppi_free_psrfits, &pf);
 
   /* Init output file descriptor (-1 means no file open) */
-  static int fdraw = -1;
-  pthread_cleanup_push((void *)safe_close, &fdraw);
+  int* fdraws = malloc(sizeof(int));
+  int nbeams = 1;
+  // pthread_cleanup_push((void *)safe_close, fdraws, &nbeams);
 
   /* Set I/O priority class for this thread to "real time" */
   if(ioprio_set(IOPRIO_WHO_PROCESS, 0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 7))) {
     hashpipe_error(thread_name, "ioprio_set IOPRIO_CLASS_RT");
   }
 
+  /* I/O buffers etc*/
+  char fname[256];
+  char datadir[1024];
+  char *last_slash;
+
+  int i = 0;
   int rv = 0;
   int curblock_in=0;
 
   char *datablock_header;
-  int blocksize=0, len=0;
+  int beam_blocksize=0, len=0;
   int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/BLOCK_DATA_SIZE) , filenum=0;
   int got_packet_0=0;
   char *hend;
@@ -217,11 +220,13 @@ static void *run(hashpipe_thread_args_t * args)
         if(state != IDLE){
           if(state == RECORD){//and recording, finalise block
             // If file open, close it
-            if(fdraw != -1) {
-              // Close file
-              close(fdraw);
-              // Reset fdraw, got_packet_0, filenum, block_count
-              fdraw = -1;
+            if(fdraws[0] != -1) {
+              for(i = 0; i < nbeams; i++){
+                // Close file
+                close(fdraws[i]);
+                // Reset fdraw, got_packet_0, filenum, block_count
+                fdraws[i] = -1;
+              }
               got_packet_0 = 0;
               filenum = 0;
               block_count=0;
@@ -251,9 +256,29 @@ static void *run(hashpipe_thread_args_t * args)
           }
           flag_state_update = 1;
           state = RECORD;
+          directio = hpguppi_read_directio_mode(datablock_header);
           hgeti4(datablock_header, "STTVALID", &gp.stt_valid);
           /* Get full data block size */
-          hgeti4(datablock_header, "BLOCSIZE", &blocksize);
+          hgeti4(datablock_header, "BLOCSIZE", &beam_blocksize);
+
+          // free previous fdraws
+          free(fdraws);
+
+          nbeams = 1;
+          hgeti4(datablock_header, "NBEAMS", &nbeams);
+          if(beam_blocksize % nbeams == 0){
+            hashpipe_warn(thread_name, "BLOCSIZE %d split per NBEAMS %d.", beam_blocksize, nbeams);
+            beam_blocksize /= nbeams;
+          }
+          else{
+            hashpipe_warn(thread_name, "NBEAMS %d is not a factor of BLOCSIZE %d. Outputting a single file.", nbeams, beam_blocksize);
+            nbeams = 1;
+          }
+
+          fdraws = malloc(nbeams*sizeof(int));
+          for(i = 0; i < nbeams; i++){
+            fdraws[i] = -1;
+          }
         }
 
         hgetu4(datablock_header, "NPKT", &block_npacket);
@@ -275,14 +300,16 @@ static void *run(hashpipe_thread_args_t * args)
       /*** RAW Disk write out BEGIN */
       hpguppi_read_subint_params(datablock_header, &gp, &pf);
       
-      if (fdraw != -1 && // currently writing to file
+      if (fdraws[0] != -1 && // currently writing to file
           (pf.hdr.start_day != mjd->stt_imjd 
           || pf.hdr.start_sec != mjd->stt_smjd + mjd->stt_offs)// and Observation timestamp has changed
           ){// Start new stem.
           fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
-          close(fdraw);
+          for(i = 0; i < nbeams; i++){
+            close(fdraws[i]);
+            fdraws[i] = -1;
+          }
           // Reset fdraw, got_packet_0, filenum, block_count
-          fdraw = -1;
           got_packet_0 = 0;
           filenum = 0;
           block_count=0;
@@ -293,7 +320,7 @@ static void *run(hashpipe_thread_args_t * args)
           mjd->stt_offs = pf.hdr.start_sec - mjd->stt_smjd;
       }
 
-      /* Set up data ptr for quant routines */
+      /* Set up data ptr for qubeam routines */
       pf.sub.data = (unsigned char *)hpguppi_blade_databuf_data(indb, curblock_in);
 
       // Wait for packet 0 before starting write
@@ -302,10 +329,6 @@ static void *run(hashpipe_thread_args_t * args)
       if (got_packet_0==0 && gp.stt_valid==1) {
         got_packet_0 = 1;
         hpguppi_read_obs_params(datablock_header, &gp, &pf);
-        directio = hpguppi_read_directio_mode(datablock_header);
-        char fname[256];
-        sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
-        fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
         
         // finds last '/'
         base_filename_stem_start = strlen(pf.basefilename);
@@ -318,9 +341,8 @@ static void *run(hashpipe_thread_args_t * args)
         hashpipe_status_unlock_safe(st);
 
         // Create the output directory if needed
-        char datadir[1024];
         strncpy(datadir, pf.basefilename, 1023);
-        char *last_slash = strrchr(datadir, '/');
+        last_slash = strrchr(datadir, '/');
         if (last_slash!=NULL && last_slash!=datadir) {
           *last_slash = '\0';
           printf("Using directory '%s' for output.\n", datadir);
@@ -334,36 +356,56 @@ static void *run(hashpipe_thread_args_t * args)
         if(directio) {
           open_flags |= O_DIRECT;
         }
-        fdraw = open(fname, open_flags, 0644);
-        if (fdraw==-1) {
-          hashpipe_error(thread_name, "Error opening file.");
-          pthread_exit(NULL);
+        for(i = 0; i < nbeams; i++){
+          if(nbeams > 1){
+            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
+          }
+          else{
+            sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
+          }
+
+          fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
+          fdraws[i] = open(fname, open_flags, 0644);
+          if (fdraws[i]==-1) {
+            hashpipe_error(thread_name, "Error opening file.");
+            pthread_exit(NULL);
+          }
         }
 
       }
 
       /* See if we need to open next file */
       if (block_count >= blocks_per_file) {
-        close(fdraw);
         filenum++;
-        char fname[256];
-        sprintf(fname, "%s.%4.4d.raw", pf.basefilename, filenum);
-        directio = hpguppi_read_directio_mode(datablock_header);
-        open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
-        if(directio) {
-          open_flags |= O_DIRECT;
-        }
-        fprintf(stderr, "Opening next raw file '%s' (directio=%d)\n", fname, directio);
-        fdraw = open(fname, open_flags, 0644);
-        if (fdraw==-1) {
-          hashpipe_error(thread_name, "Error opening file.");
-          pthread_exit(NULL);
+        for(i = 0; i < nbeams; i++){
+          close(fdraws[i]);
+          if(nbeams > 1){
+            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
+          }
+          else{
+            sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
+          }
+
+          open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
+          if(directio) {
+            open_flags |= O_DIRECT;
+          }
+          fprintf(stderr, "Opening next raw file '%s' (directio=%d)\n", fname, directio);
+          fdraws[i] = open(fname, open_flags, 0644);
+          if (fdraws[i]==-1) {
+            hashpipe_error(thread_name, "Error opening file.");
+            pthread_exit(NULL);
+          }
         }
         block_count=0;
       }
 
       /* If we got packet 0, write data to disk */
       if (got_packet_0) {
+        // Overwrite the incomming datablock headers to be appropriate for output
+        hputi4(datablock_header, "NBEAMS", 1);
+        hputi4(datablock_header, "BLOCSIZE", beam_blocksize);
+        
         if(waiting != -1){
           /* Note writing status */
           waiting = -1;
@@ -392,34 +434,40 @@ static void *run(hashpipe_thread_args_t * args)
             // Round up to next multiple of 512
             len = (len+511) & ~511;
         }
-
-        /* Write header (and padding, if any) */
-        rv = write_all(fdraw, datablock_header, len);
-        if (rv != len) {
-            char msg[100];
-            perror(thread_name);
-            sprintf(msg, "Error writing data (datablock_header=%p, len=%d, rv=%d)", datablock_header, len, rv);
-            hashpipe_error(thread_name, msg);
+        for(i = 0; i < nbeams; i++){
+          /* Write header (and padding, if any) */
+          rv = write_all(fdraws[i], datablock_header, len);
+          if (rv != len) {
+              char msg[100];
+              perror(thread_name);
+              sprintf(msg, "Error writing header (datablock_header=%p, len=%d, rv=%d)", datablock_header, len, rv);
+              hashpipe_error(thread_name, msg);
+          }
         }
 
         /* Write data */
         datablock_header = hpguppi_blade_databuf_data(indb, curblock_in);
-        len = blocksize;
+        len = beam_blocksize;
         if(directio) {
             // Round up to next multiple of 512
             len = (len+511) & ~511;
         }
-        rv = write_all(fdraw, datablock_header, (size_t)len);
-        if (rv != len) {
-            char msg[100];
-            perror(thread_name);
-            sprintf(msg, "Error writing data (datablock_header=%p, len=%d, rv=%d)", datablock_header, len, rv);
-            hashpipe_error(thread_name, msg);
-        }
+        for(i = 0; i < nbeams; i++){
+          rv = write_all(fdraws[i], datablock_header, (size_t)len);
+          if (rv != len) {
+              char msg[100];
+              perror(thread_name);
+              sprintf(msg, "Error writing data (datablock_header=%p, beam=%d, len=%d, rv=%d)", datablock_header, i, len, rv);
+              hashpipe_error(thread_name, msg);
+          }
 
-        if(!directio) {
-          /* flush output */
-          fsync(fdraw);
+          if(!directio) {
+            /* flush output */
+            fsync(fdraws[i]);
+          }
+
+          // offset data pointer to the next beam's data
+          datablock_header += beam_blocksize;
         }
 
         /* Increment counter */
@@ -449,7 +497,7 @@ static void *run(hashpipe_thread_args_t * args)
   hashpipe_info(thread_name, "exiting!");
   pthread_exit(NULL);
 
-  pthread_cleanup_pop(0); /* Closes safe_close */
+  // pthread_cleanup_pop(0); /* Closes safe_close */
   pthread_cleanup_pop(0); /* Closes hpguppi_free_psrfits */
 }
 
