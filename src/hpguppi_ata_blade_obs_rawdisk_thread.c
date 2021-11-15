@@ -122,6 +122,8 @@ static void *run(hashpipe_thread_args_t * args)
   /* Misc counters, etc */
   uint64_t obs_npacket_total=0, obs_ndrop_total=0;
   uint32_t block_npacket=0, block_ndrop=0;
+  int32_t block_write_batch_size=1, block_write_batched_count=0;
+  size_t batched_len=0;
 
   uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
   uint64_t block_start_pktidx = 0, block_stop_pktidx = 0;
@@ -145,7 +147,14 @@ static void *run(hashpipe_thread_args_t * args)
   // Reset STTVALID so that update_stt_status_keys works
   hashpipe_status_lock_safe(st);
     hputu4(st->buf, "STTVALID", 0);
+    hgeti4(st->buf, "DSKBATCH", &block_write_batch_size);
   hashpipe_status_unlock_safe(st);
+  if (block_write_batch_size <= 0 || block_write_batch_size > blocks_per_file){
+    block_write_batch_size = 1;
+  }
+
+  char* batch_write_buffer = malloc(block_write_batch_size*sizeof(hpguppi_blade_block_t));
+  memset(batch_write_buffer, 0, block_write_batch_size*sizeof(hpguppi_blade_block_t));
 
   /* Main loop */
   while (run_threads()) {
@@ -167,6 +176,7 @@ static void *run(hashpipe_thread_args_t * args)
               hputu4(st->buf, "OBSBLKPS", blocks_per_second);
               hputr4(st->buf, "OBSBLKMS",
                 round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
+              hputi4(st->buf, "DSKBATCH", block_write_batch_size);
               hputs(st->buf, "DAQPULSE", timestr);
               HPUT_DAQ_STATE(st, state);
           }
@@ -218,6 +228,23 @@ static void *run(hashpipe_thread_args_t * args)
           if(state == RECORD){//and recording, finalise block
             // If file open, close it
             if(fdraw != -1) {
+              if(block_write_batched_count > 0){
+                rv = write_all(fdraw, batch_write_buffer, batched_len);
+                if (rv != batched_len) {
+                    char msg[100];
+                    perror(thread_name);
+                    sprintf(msg, "Error writing data (datablock_header=%p, batched_len=%lu, rv=%d)", batch_write_buffer, batched_len, rv);
+                    hashpipe_error(thread_name, msg);
+                }
+
+                if(!directio) {
+                  /* flush output */
+                  fsync(fdraw);
+                }
+                block_write_batched_count = 0;
+                batched_len = 0;
+              }
+
               // Close file
               close(fdraw);
               // Reset fdraw, got_packet_0, filenum, block_count
@@ -393,33 +420,32 @@ static void *run(hashpipe_thread_args_t * args)
             len = (len+511) & ~511;
         }
 
-        /* Write header (and padding, if any) */
-        rv = write_all(fdraw, datablock_header, len);
-        if (rv != len) {
-            char msg[100];
-            perror(thread_name);
-            sprintf(msg, "Error writing data (datablock_header=%p, len=%d, rv=%d)", datablock_header, len, rv);
-            hashpipe_error(thread_name, msg);
-        }
+        /* Buffer header (and padding, if any) */
+        memcpy(batch_write_buffer+batched_len, datablock_header, BLOCK_HDR_SIZE);
+        batched_len += len;
 
         /* Write data */
         datablock_header = hpguppi_blade_databuf_data(indb, curblock_in);
-        len = blocksize;
-        if(directio) {
-            // Round up to next multiple of 512
-            len = (len+511) & ~511;
-        }
-        rv = write_all(fdraw, datablock_header, (size_t)len);
-        if (rv != len) {
-            char msg[100];
-            perror(thread_name);
-            sprintf(msg, "Error writing data (datablock_header=%p, len=%d, rv=%d)", datablock_header, len, rv);
-            hashpipe_error(thread_name, msg);
-        }
+        memcpy(batch_write_buffer+batched_len, datablock_header, BLADE_BLOCK_DATA_SIZE);
+        batched_len += directio ? (blocksize+511) & ~511 : blocksize;
 
-        if(!directio) {
-          /* flush output */
-          fsync(fdraw);
+        block_write_batched_count += 1;
+
+        if(block_write_batched_count == block_write_batch_size){
+          rv = write_all(fdraw, batch_write_buffer, batched_len);
+          if (rv != batched_len) {
+              char msg[100];
+              perror(thread_name);
+              sprintf(msg, "Error writing data (datablock_header=%p, batched_len=%lu, rv=%d)", batch_write_buffer, batched_len, rv);
+              hashpipe_error(thread_name, msg);
+          }
+
+          if(!directio) {
+            /* flush output */
+            fsync(fdraw);
+          }
+          block_write_batched_count = 0;
+          batched_len = 0;
         }
 
         /* Increment counter */
@@ -445,7 +471,9 @@ static void *run(hashpipe_thread_args_t * args)
     /* Will exit if thread has been cancelled */
     pthread_testcancel();
   }
-    
+  
+  free(batch_write_buffer);
+
   hashpipe_info(thread_name, "exiting!");
   pthread_exit(NULL);
 
