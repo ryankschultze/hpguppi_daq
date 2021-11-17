@@ -26,7 +26,7 @@ hashpipe_databuf_t *hpguppi_blade_output_databuf_create(int instance_id, int dat
 
     /* Zero out blocks */
     for(i=0; i<n_block; i++) {
-      memset(&(d->block[i]), 0, sizeof(hpguppi_input_block_t));
+      memset(&(d->block[i]), 0, sizeof(hpguppi_blade_block_t));
     }
 
     /* Init headers of each databuf block */
