@@ -18,7 +18,13 @@
 
 #include "hpguppi_databuf.h"
 
-#define BLADE_BLOCK_DATA_SIZE (4*48*1024*1024) // in bytes, from guppi_daq_server
+#include "blade/pipelines/ata/mode_b_config.h"
+
+#define BLADE_BLOCK_DATA_SIZE (BLADE_OUTPUT_NBEAM *\
+                               BLADE_ANT_NCHAN *\
+                               BLADE_NTIME *\
+                               BLADE_NPOL *\
+                               BLADE_OUTPUT_NCOMPLEX_BYTES)
 
 typedef struct {
   char hdr[BLOCK_HDR_SIZE];
