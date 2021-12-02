@@ -20,11 +20,11 @@
 
 #include "blade/pipelines/ata/mode_b_config.h"
 
-#define BLADE_BLOCK_DATA_SIZE (BLADE_OUTPUT_NBEAM *\
-                               BLADE_ANT_NCHAN *\
-                               BLADE_NTIME *\
-                               BLADE_NPOL *\
-                               BLADE_OUTPUT_NCOMPLEX_BYTES)
+#define BLADE_BLOCK_DATA_SIZE (BLADE_ATA_MODE_B_OUTPUT_NBEAM *\
+                               BLADE_ATA_MODE_B_ANT_NCHAN *\
+                               BLADE_ATA_MODE_B_NTIME *\
+                               BLADE_ATA_MODE_B_NPOL *\
+                               BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES)
 
 typedef struct {
   char hdr[BLOCK_HDR_SIZE];

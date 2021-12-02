@@ -77,8 +77,8 @@ static void *run(hashpipe_thread_args_t *args)
 
   blade_module_t mod = blade_ata_b_initialize(batch_size);
 
-  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size(mod)*BLADE_OUTPUT_NCOMPLEX_BYTES){
-    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size(mod)*BLADE_OUTPUT_NCOMPLEX_BYTES);
+  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size(mod)*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
+    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size(mod)*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
     pthread_exit(NULL);
   }
 
