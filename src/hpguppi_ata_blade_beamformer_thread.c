@@ -40,17 +40,14 @@ static void *run(hashpipe_thread_args_t *args)
   uint64_t fill_to_free_moving_sum_ns = 0;
   uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
   struct timespec ts_free_input = {0};
-  struct timespec ts_blocks_recvd = {0};
+  struct timespec ts_blocks_recvd[N_INPUT_BLOCKS] = {0};
+
+  char indb_data_dims_good_flag = 0;
 
   /* BLADE variables */
   const size_t batch_size = 2;
-  
-  size_t inputs_batched = 0;
-  size_t outputs_batched = 0;
-  int *batched_input_buffer_indices = (int *)malloc(batch_size * sizeof(int));
-  void **blade_input_buffers = (void**)malloc(batch_size * sizeof(void*));
-  int *batched_output_buffer_indices = (int *)malloc(batch_size * sizeof(int));
-  void **blade_output_buffers = (void**)malloc(batch_size * sizeof(void*));
+  int dequeued_input_id = 0;
+  int dequeued_output_id = 0;
   
   int cudaDeviceId = args->instance_id;
   
@@ -143,9 +140,8 @@ static void *run(hashpipe_thread_args_t *args)
       // Will exit if thread has been cancelled
       pthread_testcancel();
     } while (hpguppi_databuf_wait_rv != HASHPIPE_OK && run_threads()); // end wait for data loop
-
-    // collect new input_buffer until there are `batch_size` input_buffers to process
     
+    indb_data_dims_good_flag = 1; // innocent until proven guilty
     databuf_header = hpguppi_databuf_header(indb, curblock_in);
     hgeti4(databuf_header, "NANTS", &input_buffer_dim_NANTS);
     hgeti4(databuf_header, "NCHAN", &input_buffer_dim_NCHAN);
@@ -155,73 +151,59 @@ static void *run(hashpipe_thread_args_t *args)
     if(input_buffer_dim_NANTS != beamformer_input_dim_NANTS && prev_flagged_NANTS != input_buffer_dim_NANTS){
       prev_flagged_NANTS = input_buffer_dim_NANTS;
       hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, beamformer_input_dim_NANTS);
-      hpguppi_input_databuf_set_free(indb, curblock_in);
+      indb_data_dims_good_flag = 0;
     }
     else if(input_buffer_dim_NCHAN != beamformer_input_dim_NCHANS && prev_flagged_NCHAN != input_buffer_dim_NCHAN){
       prev_flagged_NCHAN = input_buffer_dim_NCHAN;
       hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, beamformer_input_dim_NCHANS);
-      hpguppi_input_databuf_set_free(indb, curblock_in);
+      indb_data_dims_good_flag = 0;
     }
     else if(input_buffer_dim_NTIME != beamformer_input_dim_NTIME && prev_flagged_NTIME != input_buffer_dim_NTIME){
       prev_flagged_NTIME = input_buffer_dim_NTIME;
       hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, beamformer_input_dim_NTIME);
-      hpguppi_input_databuf_set_free(indb, curblock_in);
+      indb_data_dims_good_flag = 0;
     }
     else if(input_buffer_dim_NPOLS != beamformer_input_dim_NPOLS && prev_flagged_NPOLS != input_buffer_dim_NPOLS){
       prev_flagged_NPOLS = input_buffer_dim_NPOLS;
       hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, beamformer_input_dim_NPOLS);
+      indb_data_dims_good_flag = 0;
+    }
+
+    if (!indb_data_dims_good_flag) {
       hpguppi_input_databuf_set_free(indb, curblock_in);
+      curblock_in  = (curblock_in + 1) % indb->header.n_block;
+      continue;
     }
     else{
       prev_flagged_NANTS = input_buffer_dim_NANTS;
       prev_flagged_NCHAN = input_buffer_dim_NCHAN;
       prev_flagged_NTIME = input_buffer_dim_NTIME;
       prev_flagged_NPOLS = input_buffer_dim_NPOLS;
-      blade_input_buffers[inputs_batched] = hpguppi_databuf_data(indb, curblock_in);
-      batched_input_buffer_indices[inputs_batched] = curblock_in;
-      // hashpipe_info(thread_name, "batched block #%d as input #%d.", curblock_in, inputs_batched);
-      inputs_batched += 1;
     }
-    curblock_in  = (curblock_in + 1) % indb->header.n_block;
 
-    if(inputs_batched < batch_size){
-      continue;
-    }
-    
-    // wait for `batch_size` output_buffers to be free
-
-    // waiting for output
-    while(outputs_batched < batch_size){
-      while ((hpguppi_databuf_wait_rv=hpguppi_blade_output_databuf_wait_free(outdb, curblock_out)) !=
-          HASHPIPE_OK)
+    // waiting for output buffer to be free
+    while ((hpguppi_databuf_wait_rv=hpguppi_blade_output_databuf_wait_free(outdb, curblock_out)) !=
+        HASHPIPE_OK)
+    {
+      if (hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && status_state != 2)
       {
-        if (hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && status_state != 2)
-        {
-          hashpipe_status_lock_safe(&st);
-          hputs(st.buf, status_key, "outblocked");
-          hashpipe_status_unlock_safe(&st);
-          status_state = 2;
-          continue;
-        }
-        else
-        {
-          hashpipe_error(thread_name, "error waiting for output buffer, rv: %i", hpguppi_databuf_wait_rv);
-          pthread_exit(NULL);
-          break;
-        }
+        hashpipe_status_lock_safe(&st);
+        hputs(st.buf, status_key, "outblocked");
+        hashpipe_status_unlock_safe(&st);
+        status_state = 2;
+        continue;
       }
-      // collect free output_buffer 
-      if(hpguppi_databuf_wait_rv == HASHPIPE_OK){
-        blade_output_buffers[outputs_batched] = hpguppi_blade_databuf_data(outdb, curblock_out);
-        batched_output_buffer_indices[outputs_batched] = curblock_out;
-        // hashpipe_info(thread_name, "batched block #%d as output #%d.", curblock_out, outputs_batched);
-        outputs_batched += 1;
-        curblock_out = (curblock_out + 1) % outdb->header.n_block;
-      }
-      else {
-        // presume an error occurred while status_state for a free output buffer
+      else
+      {
+        hashpipe_error(thread_name, "error waiting for output buffer, rv: %i", hpguppi_databuf_wait_rv);
+        pthread_exit(NULL);
         break;
       }
+    }
+    // collect free output_buffer 
+    if(hpguppi_databuf_wait_rv != HASHPIPE_OK){
+      // presume an error occurred while status_state for a free output buffer
+      break;
     }
 
     if(status_state != 3){
@@ -230,46 +212,61 @@ static void *run(hashpipe_thread_args_t *args)
       hashpipe_status_unlock_safe(&st);
       status_state = 3;
     }
-    
-    clock_gettime(CLOCK_MONOTONIC, &ts_blocks_recvd);
 
-    blade_ata_b_process(mod, blade_input_buffers, blade_output_buffers);
+    // Asynchronously queue
+    while(!
+      blade_ata_b_enqueue_with_id(
+        mod,
+        (void*) hpguppi_databuf_data(indb, curblock_in),
+        (void*) hpguppi_blade_databuf_data(outdb, curblock_out),
+        curblock_in,
+        curblock_out
+      )
+    ){
+      if(status_state != 4){
+        hashpipe_status_lock_safe(&st);
+        hputs(st.buf, status_key, "beamforming blocked");
+        hashpipe_status_unlock_safe(&st);
+        status_state = 4;
+      } 
+    }
+    clock_gettime(CLOCK_MONOTONIC, &ts_blocks_recvd[curblock_in]);
 
-    // Update elapsed_ns (for moving average)
-    clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
-    fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd, ts_free_input)/batch_size;
-    for (i = 0; i < batch_size; i++)
-    {
+    {// Asynchronous CPU work 
       // copy across the header
-      databuf_header = hpguppi_blade_databuf_header(outdb, batched_output_buffer_indices[i]);
+      databuf_header = hpguppi_blade_databuf_header(outdb, curblock_out);
       memcpy(databuf_header, 
-            hpguppi_databuf_header(indb, batched_input_buffer_indices[i]), 
-            BLOCK_HDR_SIZE);	
+            hpguppi_databuf_header(indb, curblock_in), 
+            BLOCK_HDR_SIZE);
       
       //TODO upate output_buffer headers to reflect that they contain beams
       hputi4(databuf_header, "NBEAMS", 16);
       hputi4(databuf_header, "NBITS", 16);
       hputs(databuf_header, "DATATYPE", "FLOAT");
-      hputs(databuf_header, "SMPLTYPE", "CF16");
+      hputs(databuf_header, "SMPLTYPE", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES == 8 ? "CF32" : "CF16");
       hputi4(databuf_header, "BLOCSIZE", BLADE_BLOCK_DATA_SIZE);
-      
-      hpguppi_input_databuf_set_free(indb, batched_input_buffer_indices[i]);
-      hpguppi_blade_output_databuf_set_filled(outdb, batched_output_buffer_indices[i]);
-      inputs_batched --;
-      outputs_batched --;
+    }
+
+    // hashpipe_info(thread_name, "batched block #%d as input #%d.", curblock_in, inputs_batched);
+    curblock_in  = (curblock_in + 1) % indb->header.n_block;
+    // hashpipe_info(thread_name, "batched block #%d as output #%d.", curblock_out, outputs_batched);
+    curblock_out = (curblock_out + 1) % outdb->header.n_block;
+
+    // Dequeue all completed buffers
+    while (blade_ata_b_dequeue_with_id(mod, NULL, NULL, &dequeued_input_id, &dequeued_output_id))
+    {
+      hpguppi_input_databuf_set_free(indb, dequeued_input_id);
+      hpguppi_blade_output_databuf_set_filled(outdb, dequeued_output_id);
 
       // Update moving sum (for moving average)
+      clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
+      fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd[dequeued_input_id], ts_free_input);
       fill_to_free_moving_sum_ns +=
-          fill_to_free_elapsed_ns - fill_to_free_block_ns[batched_input_buffer_indices[i]];
+          fill_to_free_elapsed_ns - fill_to_free_block_ns[dequeued_input_id];
       // Store new value
-      fill_to_free_block_ns[batched_input_buffer_indices[i]] = fill_to_free_elapsed_ns;
+      fill_to_free_block_ns[dequeued_input_id] = fill_to_free_elapsed_ns;
     }
   }
-
-  free(batched_input_buffer_indices);
-  free(blade_input_buffers);
-  free(batched_output_buffer_indices);
-  free(blade_output_buffers);
 
   hashpipe_info(thread_name, "returning");
   blade_ata_b_terminate(mod);
