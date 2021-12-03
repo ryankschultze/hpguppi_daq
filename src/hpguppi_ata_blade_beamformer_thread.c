@@ -40,11 +40,10 @@ static void *run(hashpipe_thread_args_t *args)
   uint64_t fill_to_free_moving_sum_ns = 0;
   uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
   struct timespec ts_free_input = {0};
+  struct timespec ts_blocks_recvd = {0};
 
   /* BLADE variables */
   const size_t batch_size = 2;
-
-  struct timespec ts_blocks_recvd = {0};
   
   size_t inputs_batched = 0;
   size_t outputs_batched = 0;
@@ -72,6 +71,7 @@ static void *run(hashpipe_thread_args_t *args)
   hashpipe_status_lock_safe(&st);
   {
     hputi4(st.buf, "CUDADEV", cudaDeviceId);
+    hputi4(st.buf, "BLDBLKSZ", BLADE_BLOCK_DATA_SIZE);
   }
   hashpipe_status_unlock_safe(&st);
 
