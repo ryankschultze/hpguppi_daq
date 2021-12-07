@@ -1,17 +1,5 @@
 #include "hpguppi_atasnap.h"
 
-// Returns pointer to datablock_stats's output data block
-char * datablock_stats_data(const struct datablock_stats *d)
-{
-  return hpguppi_databuf_data(d->dbout, d->block_idx);
-}
-
-// Returns pointer to datablock_stats's header
-char * datablock_stats_header(const struct datablock_stats *d)
-{
-  return hpguppi_databuf_header(d->dbout, d->block_idx);
-}
-
 // Reset counter(s) in datablock_stats
 void reset_datablock_stats(struct datablock_stats *d)
 {
@@ -144,31 +132,11 @@ void wait_for_block_free(const struct datablock_stats * d,
   hashpipe_status_unlock_safe(st);
 }
 
-unsigned check_pkt_observability_sans_idx(
-    const struct ata_snap_obs_info * ata_oi,
-    const uint16_t feng_id,
-    const int32_t stream,
-    const uint16_t pkt_schan
-  )
-{
-  if(feng_id >= ata_oi->nants){
-    return PKT_OBS_FENG;
-  }
-  if(pkt_schan < ata_oi->schan){
-    return PKT_OBS_SCHAN;
-  }
-  if(stream >= ata_oi->nstrm){
-    return PKT_OBS_STREAM;
-  }
-  return PKT_OBS_OK;
-}
-
 unsigned check_pkt_observability_silent(
     const struct ata_snap_obs_info * ata_oi,
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
     const uint16_t feng_id,
-    const int32_t stream,
     const uint16_t pkt_schan
   )
 {
@@ -177,7 +145,6 @@ unsigned check_pkt_observability_silent(
   }
   return check_pkt_observability_sans_idx(ata_oi,
                                           feng_id,
-                                          stream,
                                           pkt_schan);
 }
 
@@ -186,7 +153,6 @@ unsigned check_pkt_observability(
     const uint64_t pkt_idx,
     const uint64_t obs_start_pktidx,
     const uint16_t feng_id,
-    const int32_t stream,
     const uint16_t pkt_schan
   )
 {
@@ -195,7 +161,6 @@ unsigned check_pkt_observability(
     pkt_idx,
     obs_start_pktidx,
     feng_id,
-    stream,
     pkt_schan
   );
   switch(obs_code){
@@ -208,8 +173,9 @@ unsigned check_pkt_observability(
     case PKT_OBS_SCHAN:
       hashpipe_warn(__FUNCTION__, "pkt_schan (%d) < (%d) ata_oi->schan", pkt_schan, ata_oi->schan);
       break;
-    case PKT_OBS_STREAM:
-      hashpipe_warn(__FUNCTION__, "stream (%d) >= (%d) ata_oi->nstrm", stream, ata_oi->nstrm);
+    case PKT_OBS_NCHAN:
+      hashpipe_warn(__FUNCTION__, "pkt_chans [%d-%d] <> [%d-%d] ata_oi->chans",
+              pkt_schan, pkt_schan + ata_oi->pkt_nchan, ata_oi->schan, ata_oi->schan + ata_oi->nchan);
       break;
     default:
       break;
@@ -343,15 +309,8 @@ int ata_snap_obs_info_write(hashpipe_status_t *st, struct ata_snap_obs_info *obs
  */
 char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap_obs_info *obs_info, enum obs_info_validity *validity)
 {
-  uint32_t fenchan = obs_info->fenchan;
-  uint32_t nants = obs_info->nants;
-  uint32_t nstrm = obs_info->nstrm;
-  uint32_t pkt_npol = obs_info->pkt_npol;
-  uint32_t time_nbits = obs_info->time_nbits;
-  uint32_t pkt_ntime = obs_info->pkt_ntime;
-  uint32_t pkt_nchan = obs_info->pkt_nchan;
-  int schan = obs_info->schan;
-  float obs_bw = obs_info->obs_bw;
+  struct ata_snap_obs_info obs_info_old = {0};
+  memcpy(&obs_info_old, obs_info, sizeof(struct ata_snap_obs_info));
 
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
@@ -359,7 +318,7 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
     // Read (no change if not present)
     hgetu4(st->buf, "FENCHAN",  &obs_info->fenchan);
     hgetu4(st->buf, "NANTS",    &obs_info->nants);
-    hgetu4(st->buf, "NSTRM",    &obs_info->nstrm);
+    hgetu4(st->buf, "NCHAN",    &obs_info->nchan);
     hgetu4(st->buf, "NPOL",     &obs_info->pkt_npol);
     hgetu4(st->buf, "NBITS",    &obs_info->time_nbits);
     hgetu4(st->buf, "PKTNTIME", &obs_info->pkt_ntime);
@@ -371,15 +330,15 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
 
   // if no change in obs_info
   if (*validity != OBS_UNKNOWN &&
-      fenchan == obs_info->fenchan &&
-      nants == obs_info->nants &&
-      nstrm == obs_info->nstrm &&
-      pkt_npol == obs_info->pkt_npol &&
-      time_nbits == obs_info->time_nbits &&
-      pkt_ntime == obs_info->pkt_ntime &&
-      pkt_nchan == obs_info->pkt_nchan &&
-      schan == obs_info->schan &&
-      obs_bw == obs_info->obs_bw)
+      obs_info_old.fenchan == obs_info->fenchan &&
+      obs_info_old.nants == obs_info->nants &&
+      obs_info_old.nchan == obs_info->nchan &&
+      obs_info_old.pkt_npol == obs_info->pkt_npol &&
+      obs_info_old.time_nbits == obs_info->time_nbits &&
+      obs_info_old.pkt_ntime == obs_info->pkt_ntime &&
+      obs_info_old.pkt_nchan == obs_info->pkt_nchan &&
+      obs_info_old.schan == obs_info->schan &&
+      obs_info_old.obs_bw == obs_info->obs_bw)
   {
     // then obs will continue to be invalid or valid
     return 0;
@@ -416,7 +375,7 @@ void ata_snap_obs_info_write_with_validity(hashpipe_status_t *st, struct ata_sna
     hputu4(st->buf, "OBSNCHAN", obsnchan);
     hputu4(st->buf, "FENCHAN",  obs_info->fenchan);
     hputu4(st->buf, "NANTS",    obs_info->nants);
-    hputu4(st->buf, "NSTRM",    obs_info->nstrm);
+    hputu4(st->buf, "NCHAN",    obs_info->nchan);
     hputu4(st->buf, "NPOL",     obs_info->pkt_npol);
     hputu4(st->buf, "NBITS",    obs_info->time_nbits);
     hputu4(st->buf, "PKTNTIME", obs_info->pkt_ntime);
