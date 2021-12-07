@@ -8,6 +8,7 @@ AM_CFLAGS = -fopenmp -ggdb -fPIC -O3 -Wall -Werror -Wno-error=cpp -fno-strict-al
 AM_CFLAGS += -Wno-address-of-packed-member 
 AM_CFLAGS += -Wno-unused-const-variable
 AM_CFLAGS += -Wno-stringop-truncation
+AM_CPPFLAGS += -I"/home/sonata/src/4bit_xgpu/xGPU/src"
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
@@ -36,6 +37,8 @@ hpguppi_threads = hpguppi_atasnap_pktsock_thread.c \
 		  hpguppi_atasnap_control_thread.c \
 		  hpguppi_atasnap_pktsock_only_thread.c \
 		  hpguppi_atasnap_pkt_to_FTP_transpose.c \
+		  hpguppi_atasnap_pkt_to_xgpu_transpose.c \
+		  hpguppi_atasnap_xgpu_thread.c \
 		  hpguppi_atasnap_rawdisk_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_ibverbs_pkt_thread.c \
@@ -55,6 +58,7 @@ hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
+hpguppi_daq_la_LDFLAGS += -L/usr/local/cuda-11.1.1/lib64 -L/home/sonata/src/4bit_xgpu/xGPU/src -lxgpu -Xlinker -lrt
 
 # Installed scripts
 dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \

@@ -48,7 +48,7 @@ def run(
 		print('Error trying to get the cpu core count.')
 		exit(0)
 
-	# Gather system configuration for the cpu_core_count
+	# Gather system configuration for the cores_per_cpu
 	assert 'cpu_core_count_config' in system, '{} not defined for system {} in {}'.format('cpu_core_count_config', system_name, config_filename)
 	if cores_per_cpu not in system['cpu_core_count_config']:
 		print('{}[{}] not defined for system {} in {}'.format('cpu_core_count_config', cores_per_cpu, system_name, config_filename))
@@ -167,12 +167,12 @@ def run(
 	hpguppi_plugin = system['hpguppi_plugin'] if 'hpguppi_plugin' in system else 'hpguppi_daq.so'
 
 	# Gather required instance-sensitive instantiation variables
-	assert 'instance_datadir' in system, '{} for system {} ({} core) in {}'.format('instance_datadir', system_name, cpu_core_count, config_filename)
+	assert 'instance_datadir' in system, '{} for system {} ({} core) in {}'.format('instance_datadir', system_name, cores_per_cpu, config_filename)
 	instance_datadir = system['instance_datadir'][instance]
 	assert os.path.exists(instance_datadir), '{} datadir path does not exist for instance {} of system {} ({} core) in {}'.format(
-		instance_datadir, instance, system_name, cpu_core_count, config_filename)
+		instance_datadir, instance, system_name, cores_per_cpu, config_filename)
 
-	assert 'instance_bindhost' in system, '{} for system {} ({} core) in {}'.format('instance_bindhost', system_name, cpu_core_count, config_filename)
+	assert 'instance_bindhost' in system, '{} for system {} ({} core) in {}'.format('instance_bindhost', system_name, cores_per_cpu, config_filename)
 	instance_bindhost = system['instance_bindhost'][instance]
 
 	# Gather optional instance-sensitive instantiation variables
@@ -284,6 +284,7 @@ def run(
 	if not dry_run:
 		subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
 	else:
+		print(hashpipe_env)
 		print('^^^ Dry run ^^^')
 		err_logio.write('Dry run')
 		err_logio.write('Dry run')
