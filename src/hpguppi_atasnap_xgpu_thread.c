@@ -98,7 +98,7 @@ static void *run(hashpipe_thread_args_t * args)
 {
     // Local aliases to shorten access to args fields
     // Our output buffer happens to be a hpguppi_input_databuf
-    hpguppi_input_databuf_t *db = (hpguppi_input_databuf_t *)args->ibuf;
+    hpguppi_input_xgpu_databuf_t *db = (hpguppi_input_xgpu_databuf_t *)args->ibuf;
     hashpipe_status_t *st = &args->st;
     const char * thread_name = args->thread_desc->name;
     const char * status_key = args->thread_desc->skey;
@@ -111,7 +111,7 @@ static void *run(hashpipe_thread_args_t * args)
     // Get sizing info from library
     xgpuInfo(&xgpu_info);
 
-    printf("Correlating %u stations with %u channels and integration length %u\n",
+    printf("Using xgpu: %u stations with %u channels and integration length %u\n",
 	    xgpu_info.nstation, xgpu_info.nfrequency, xgpu_info.ntime);
 
     XGPUContext xgpu_context;
@@ -157,10 +157,12 @@ static void *run(hashpipe_thread_args_t * args)
     int open_flags = 0;
     int directio = 0;
     int rv = 0;
-    //char* tmp_data = malloc(BLOCK_DATA_SIZE*2); //XXX
+    //char* tmp_data = malloc(xgpu_info.vecLength*sizeof(char)); //XXX
 
     int mjd_d, mjd_s;
     double mjd_fs;
+
+    char hdr_buffer[BLOCK_HDR_SIZE];
 
     while (run_threads()) {
 
@@ -170,12 +172,12 @@ static void *run(hashpipe_thread_args_t * args)
         hashpipe_status_unlock_safe(st);
 
         /* Wait for buf to have data */
-        rv = hpguppi_input_databuf_wait_filled(db, curblock);
+        rv = hpguppi_input_xgpu_databuf_wait_filled(db, curblock);
         if (rv!=0) continue;
         
 
         /* Read param struct for this block */
-        ptr = hpguppi_databuf_header(db, curblock);
+        ptr = hpguppi_xgpu_databuf_header(db, curblock);
         if (first) {
           hpguppi_read_obs_params(ptr, &gp, &pf);
           hashpipe_info(thread_name, "First block");
@@ -183,9 +185,9 @@ static void *run(hashpipe_thread_args_t * args)
         } else {
           hpguppi_read_subint_params(ptr, &gp, &pf);
           
-          mjd_d = pf.hdr.start_day;
-          mjd_s = 0;
-          mjd_fs = pf.hdr.start_sec;
+          // mjd_d = pf.hdr.start_day;
+          // mjd_s = 0;
+          // mjd_fs = pf.hdr.start_sec;
 
           hgeti4(ptr, "STT_IMJD", &mjd_d);
           hgeti4(ptr, "STT_SMJD", &mjd_s);
@@ -206,9 +208,10 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         /* Read pktidx, pktstart, pktstop from header */
-        hgetu8(ptr, "PKTIDX", &pktidx);
-        hgetu8(ptr, "PKTSTART", &pktstart);
-        hgetu8(ptr, "PKTSTOP", &pktstop);
+        memcpy(hdr_buffer, ptr, BLOCK_HDR_SIZE);
+        hgetu8(hdr_buffer, "PKTIDX", &pktidx);
+        hgetu8(hdr_buffer, "PKTSTART", &pktstart);
+        hgetu8(hdr_buffer, "PKTSTOP", &pktstop);
 
         // If packet idx is NOT within start/stop range
         if(pktidx < pktstart || pktstop <= pktidx) {
@@ -226,6 +229,18 @@ static void *run(hashpipe_thread_args_t * args)
               hashpipe_info(thread_name, "recording stopped: "
                 "pktstart %lu pktstop %lu pktidx %lu",
                 pktstart, pktstop, pktidx);
+              fprintf(stderr, "xgpu thread: status buffer follows\n");
+
+              hgetu8(hdr_buffer, "PKTIDX", &pktidx);
+              fprintf(stderr, "hgetu8(PKTIDX) buffered: %lu\n", pktidx);
+              fprintf(stderr, "buffered:\n%s", hdr_buffer);
+
+              fprintf(stderr, "\nlive ptr below:\n");
+
+              hgetu8(ptr, "PKTIDX", &pktidx);
+              fprintf(stderr, "hgetu8(PKTIDX): %lu\n", pktidx);
+              fprintf(stderr, "%s", ptr);
+              
             }
             else{
               hashpipe_info(thread_name, "Block not recorded: "
@@ -233,7 +248,7 @@ static void *run(hashpipe_thread_args_t * args)
                 pktstart, pktstop, pktidx);
             }
             /* Mark as free */
-            hpguppi_input_databuf_set_free(db, curblock);
+            hpguppi_input_xgpu_databuf_set_free(db, curblock);
 
             /* Go to next block */
             curblock = (curblock + 1) % db->header.n_block;
@@ -243,7 +258,7 @@ static void *run(hashpipe_thread_args_t * args)
 
         /* Set up data ptr for quant routines */
 
-        pf.sub.data = (unsigned char *)hpguppi_databuf_data(db, curblock);
+        pf.sub.data = (unsigned char *)hpguppi_xgpu_databuf_data(db, curblock);
 
 	hgeti4(ptr, "BLOCSIZE", &blocksize);
 
@@ -257,7 +272,7 @@ static void *run(hashpipe_thread_args_t * args)
           hpguppi_read_obs_params(ptr, &gp, &pf);
           hgetu4(ptr, "NANTS", &nstation);
           if(xgpu_info.npol != pf.hdr.npol ||
-              xgpu_info.nstation != nstation ||
+              //xgpu_info.nstation != nstation ||
               xgpu_info.nfrequency != pf.hdr.nchan/nstation ||
               xgpu_info.ntime != gp.packets_per_block
               ){
@@ -267,7 +282,7 @@ static void *run(hashpipe_thread_args_t * args)
             got_packet_0 = 0;
 
             /* Mark as free */
-            hpguppi_input_databuf_set_free(db, curblock);
+            hpguppi_input_xgpu_databuf_set_free(db, curblock);
 
             /* Go to next block */
             curblock = (curblock + 1) % db->header.n_block;
@@ -332,8 +347,11 @@ static void *run(hashpipe_thread_args_t * args)
           hputs(st->buf, status_key, "processing");
           hashpipe_status_unlock_safe(st);
 
-          //patch_ants(tmp_data, pf.sub.data, nstation, 4,
-          //   2, pf.hdr.nchan/nstation, gp.packets_per_block); //XXX
+	  //memcpy(tmp_data, pf.sub.data, BLOCK_DATA_SIZE);
+
+	  // fprintf(stderr, "xGPU thread [%d]: %i %i %i %i %i\n", curblock, pf.sub.data[0],
+		// 	  pf.sub.data[100], pf.sub.data[200], pf.sub.data[300], 
+		// 	  pf.sub.data[400]);
 
           xgpu_context.array_h = (ComplexInput*) pf.sub.data;
           //xgpu_context.array_h = (ComplexInput*) tmp_data; //XXX
@@ -356,6 +374,10 @@ static void *run(hashpipe_thread_args_t * args)
 
           //len = xgpu_context.matrix_len*sizeof(Complex); //
 	  len = xgpu_info.triLength*sizeof(Complex);
+	  //int triLength_valid = pf.hdr.npol * pf.hdr.npol * nstation *
+	//	  (nstation + 1) / 2 * (pf.hdr.nchan/nstation);
+	  //len = triLength_valid *sizeof(Complex);
+
           // Adjust length for any padding required for DirectIO
           if(directio) {
               // Round up to next multiple of 512
@@ -380,7 +402,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         /* Mark as free */
-        hpguppi_input_databuf_set_free(db, curblock);
+        hpguppi_input_xgpu_databuf_set_free(db, curblock);
 
         /* Go to next block */
         curblock = (curblock + 1) % db->header.n_block;
@@ -403,7 +425,7 @@ static hashpipe_thread_desc_t xgpu_thread = {
     skey: "XGPUSTAT",
     init: NULL,
     run:  run,
-    ibuf_desc: {hpguppi_input_databuf_create},
+    ibuf_desc: {hpguppi_input_xgpu_databuf_create},
     obuf_desc: {NULL}
 };
 

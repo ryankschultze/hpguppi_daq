@@ -21,7 +21,7 @@ typedef struct {TIME_WIDTH_T num[NPOL*NTIME];} CP_DTYPE;
 typedef uint16_t CP_DTYPE_XGPU; //This is for xGPU
 
 #define USE_MULTI_THREAD
-#define MULTI_THREAD_COUNT 8
+#define MULTI_THREAD_COUNT 10
 
 typedef struct
 {
@@ -74,6 +74,7 @@ int transpose_to_xgpu(db_transpose_t * ctx, const void* in, void* out_void)
   CP_DTYPE_XGPU *inp_p;
 
   inp_p = inp;
+  size_t NANTS_XGPU = 32; //XXX Number of ants xGPU is expecting
 
 
 #ifdef USE_MULTI_THREAD
@@ -92,8 +93,10 @@ int transpose_to_xgpu(db_transpose_t * ctx, const void* in, void* out_void)
           for (pkt_tm=0; pkt_tm<NTIME; pkt_tm++)
           {
             t = pktidx * NTIME + pkt_tm;
-            ostride = t*(ctx->nstrm*pktchs)*ctx->nants
-              + ch*ctx->nants + feng;
+            //ostride = t*(ctx->nstrm*pktchs)*ctx->nants
+            //  + ch*ctx->nants + feng;
+            ostride = t*(ctx->nstrm*pktchs)*NANTS_XGPU
+              + ch*NANTS_XGPU + feng;
 
             out[ostride] = *inp_p++;
             // The following is to check whether input is properly
@@ -112,7 +115,7 @@ int transpose_to_xgpu(db_transpose_t * ctx, const void* in, void* out_void)
 static void *run(hashpipe_thread_args_t *args)
 {
   hpguppi_input_databuf_t *indb  = (hpguppi_input_databuf_t *)args->ibuf;
-  hpguppi_input_databuf_t *outdb = (hpguppi_input_databuf_t *)args->obuf;
+  hpguppi_input_xgpu_databuf_t *outdb = (hpguppi_input_xgpu_databuf_t *)args->obuf;
 
   hashpipe_status_t st = args->st;
   const char* status_key = args->thread_desc->skey;
@@ -167,7 +170,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     // Waiting for output
-    while ((rv=hpguppi_input_databuf_wait_free(outdb, curblock_out)) !=
+    while ((rv=hpguppi_input_xgpu_databuf_wait_free(outdb, curblock_out)) !=
 		    HASHPIPE_OK)
     {
       if (rv == HASHPIPE_TIMEOUT)
@@ -192,33 +195,46 @@ static void *run(hashpipe_thread_args_t *args)
 
     // create context
     databuf_header = hpguppi_databuf_header(indb, curblock_in);
-    hgeti4(databuf_header, "OBSNCHAN", &ctx.obsnchan);
+    // hgeti4(databuf_header, "OBSNCHAN", &ctx.obsnchan);
     hgeti4(databuf_header, "PIPERBLK", &ctx.piperblk);
     hgeti4(databuf_header, "PKTNCHAN", &ctx.pktnchan);
     hgeti4(databuf_header, "NANTS", &ctx.nants);
     hgeti4(databuf_header, "NSTRM", &ctx.nstrm);
+    // fprintf(stderr, "Sample In %d\n", hpguppi_databuf_data(indb, curblock_in)[0]);
+    // fprintf(stderr, "Sample In %d\n", hpguppi_databuf_data(indb, curblock_in)[100]);
+    // fprintf(stderr, "Sample In %d\n", hpguppi_databuf_data(indb, curblock_in)[200]);
+    // fprintf(stderr, "Sample In %d\n", hpguppi_databuf_data(indb, curblock_in)[300]);
+    // fprintf(stderr, "Sample In %d\n", hpguppi_databuf_data(indb, curblock_in)[400]);
   
     // copy across the header
-    memcpy(hpguppi_databuf_header(outdb, curblock_out), 
+    memcpy(hpguppi_xgpu_databuf_header(outdb, curblock_out), 
            databuf_header, 
-           BLOCK_HDR_SIZE);//HASHPIPE_STATUS_TOTAL_SIZE);
+          HASHPIPE_STATUS_TOTAL_SIZE);
+          //  BLOCK_HDR_SIZE);
 
     // hgeti4(databuf_header, "XSWITCH", &correlate_not_transpose_switch);
     // switch(correlate_not_transpose_switch){
     //   case 1:
         transpose_to_xgpu(&ctx, hpguppi_databuf_data(indb, curblock_in), 
-            hpguppi_databuf_data(outdb, curblock_out));
+            hpguppi_xgpu_databuf_data(outdb, curblock_out));
     //     break;
     //   default:
     //     transpose(&ctx, hpguppi_databuf_data(indb, curblock_in), 
     //         hpguppi_databuf_data(outdb, curblock_out));
     //     break;
     // }
+    // fprintf(stderr, "Transpose Sample Out [%d] %i %i %i %i %i\n",
+    //           curblock_out,
+    //           (unsigned char) hpguppi_xgpu_databuf_data(outdb, curblock_in)[0],
+    //           (unsigned char) hpguppi_xgpu_databuf_data(outdb, curblock_in)[100],
+    //           (unsigned char) hpguppi_xgpu_databuf_data(outdb, curblock_in)[200],
+    //           (unsigned char) hpguppi_xgpu_databuf_data(outdb, curblock_in)[300],
+    //           (unsigned char) hpguppi_xgpu_databuf_data(outdb, curblock_in)[400]);
 
     hpguppi_input_databuf_set_free(indb, curblock_in);
     curblock_in  = (curblock_in + 1) % indb->header.n_block;
 
-    hpguppi_input_databuf_set_filled(outdb, curblock_out);
+    hpguppi_input_xgpu_databuf_set_filled(outdb, curblock_out);
     curblock_out = (curblock_out + 1) % outdb->header.n_block;
   }
 
@@ -233,7 +249,7 @@ static hashpipe_thread_desc_t pkt_xgpu_transpose_thread = {
   init: NULL,
   run: run,
   ibuf_desc: {hpguppi_input_databuf_create},
-  obuf_desc: {hpguppi_input_databuf_create}
+  obuf_desc: {hpguppi_input_xgpu_databuf_create}
 };
 
 static __attribute__((constructor)) void ctor()
