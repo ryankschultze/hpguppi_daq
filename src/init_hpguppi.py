@@ -324,7 +324,22 @@ def run(
 		out_logio.close()
 
 	if 'post_commands' in system:
-		for post_command in system['post_commands']:
+		post_commands = system['post_commands']
+		post_command_index = 0
+		while post_command_index < len(post_commands):
+			post_command = post_commands[post_command_index]
+			post_command_index += 1
+
+			if isinstance(post_command, dict): # cores_per_cpu dict, insert commands next and continue
+				assert cores_per_cpu in post_command, 'Missing an entry for {} cores in the {} Dict of for system {} in {}\n'.format(cores_per_cpu, 'post_commands', system_name, config_filename, post_command)
+				if isinstance(post_command[cores_per_cpu], list):
+					post_commands[post_command_index:post_command_index] = post_command[cores_per_cpu]
+				else:
+					post_commands.insert(post_command_index, post_command[cores_per_cpu])
+				continue
+			if isinstance(post_command, list): # instance-indexed list of commands, select appropriately
+				post_command = post_command[instance]
+			
 			for var,val in _keyword_variable_dict.items():
 				post_command = post_command.replace('${}'.format(var), str(val))
 			print('#', post_command)
