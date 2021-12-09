@@ -214,10 +214,17 @@ def run(
 	}
 
 	if 'options' in system:
-		for option in system['options']:
-			for var,keyword_val in _keyword_variable_dict.items():
-					option = option.replace('${}'.format(var), str(keyword_val))
-			options.append(option)
+		new_options = system['options']
+		new_options_index = 0
+		while new_options_index < len(new_options):
+			new_option = new_options[new_options_index]
+			new_options_index += 1
+			if isinstance(new_option, dict) and subsystem in new_option: # cores_per_cpu dict, insert commands next and continue
+				options.extend(new_option[subsystem])
+			else:
+				options.append(new_option)
+			# if isinstance(new_option, list): # instance-indexed list of commands, select appropriately
+			# 	new_option = new_option
 
 	# Print empty line to conclude setup and assumption prints
 	print()
