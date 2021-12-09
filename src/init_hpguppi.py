@@ -128,6 +128,10 @@ def run(
 																				)
 				hpguppi_threads_cmd_segment.append('{}'.format(thread))
 			else:
+				if thread_instance_mask_dict[thread] is False:
+					hpguppi_threads_cmd_segment.append(thread)
+					continue
+				
 				assert isinstance(thread_instance_mask_dict[thread], list), '{}[{}] must define a mask for each instance as a list for system {} ({} core) in {}.'.format(
 																					thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, config_filename
 																				)
