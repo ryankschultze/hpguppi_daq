@@ -204,8 +204,16 @@ def run(
 	if instance_port_bind is not None:
 		options.append('BINDPORT={}'.format(instance_port_bind))
 
+	_keyword_variable_dict = {
+		'BINDHOST': instance_bindhost,
+		'INSTANCE': instance,
+	}
+
 	if 'options' in system:
-		options.extend(system['options'])
+		for option in system['options']:
+			for var,keyword_val in _keyword_variable_dict.items():
+					option = option.replace('${}'.format(var), str(keyword_val))
+			options.append(option)
 
 	# Print empty line to conclude setup and assumption prints
 	print()
@@ -261,12 +269,6 @@ def run(
 		environment_keys.append('HASHPIPE_KEYFILE={}'.format(system['hashpipe_keyfile']))
 	if 'environment' in system:
 		environment_keys.extend(system['environment'])
-
-
-	_keyword_variable_dict = {
-		'BINDHOST': instance_bindhost,
-		'INSTANCE': instance,
-	}
 
 	hashpipe_env = os.environ
 	for env_kv in environment_keys:
