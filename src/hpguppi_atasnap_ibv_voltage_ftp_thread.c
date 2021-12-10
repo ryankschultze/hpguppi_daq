@@ -286,6 +286,7 @@ int debug_i=0, debug_j=0;
   const int n_wblock = 4;
   struct datablock_stats wblk[n_wblock];
   uint32_t *thread_wblk_pkt_count = malloc(VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
+  memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
 
   // Packet block variables
   uint64_t blk0_relative_pkt_seq_num = 0;
@@ -587,7 +588,7 @@ int debug_i=0, debug_j=0;
     ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
 
     // If the packet's timestamps is safely past the observation range, don't do the work!
-    if(pkt_info.pktidx <= obs_stop_seq_num + 4*obs_info.pktidx_per_block) {
+    if(pkt_info.pktidx <= obs_stop_seq_num + 2*n_wblock*obs_info.pktidx_per_block) {
       // Check the first packet's timestamp, to determine reinit_blocks
       //  This works because it is figured that a block filled with packets
       //  will contain packets with indices that place them in two adjacent downstream blocks.
@@ -634,7 +635,6 @@ int debug_i=0, debug_j=0;
         // last_pkt_blk_num = pkt_blk_num + n_wblock + 1;
       }
 
-      memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
       // For each packet: process all packets
       #if VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
         #pragma omp parallel for private (\
@@ -762,15 +762,16 @@ int debug_i=0, debug_j=0;
             break;
         }
       } // end for each packet
+      
+      for(i=0; i < VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock; i++){
+        npacket += thread_wblk_pkt_count[i];
+        wblk[i%n_wblock].npacket += thread_wblk_pkt_count[i];
+      }
+      memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
     } // end if not idle
 
     // Mark input block free
     hpguppi_input_databuf_set_free(dbin, block_idx_in);
-    
-    for(i=0; i < VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock; i++){
-      npacket += thread_wblk_pkt_count[i];
-      wblk[i%n_wblock].npacket += thread_wblk_pkt_count[i];
-    }
 
     // Handle 'min' reduced OBS_flags
     if(obs_info_validity == OBS_INVALID_FENG){
