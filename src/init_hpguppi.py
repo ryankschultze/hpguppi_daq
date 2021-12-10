@@ -126,8 +126,12 @@ def run(
 																					thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, config_filename
 																					)
 																				)
-				hpguppi_threads_cmd_segment.append('{}'.format(thread))
+				hpguppi_threads_cmd_segment.append(str(thread))
 			else:
+				if thread_instance_mask_dict[thread] is False:
+					hpguppi_threads_cmd_segment.append(thread)
+					continue
+				
 				assert isinstance(thread_instance_mask_dict[thread], list), '{}[{}] must define a mask for each instance as a list for system {} ({} core) in {}.'.format(
 																					thread_instance_mask_dict_name, thread, system_full_name, cores_per_cpu, config_filename
 																				)
@@ -137,31 +141,31 @@ def run(
 				thread_mask = thread_instance_mask_dict[thread][instance]
 				if isinstance(thread_mask, int):
 					if thread not in thread_mask_length_dict:
-						hpguppi_threads_cmd_segment.append('-c {} {}'.format(thread_mask, thread))
+						hpguppi_threads_cmd_segment.extend(['-c', str(thread_mask), str(thread)])
 						cpu_core = thread_mask + 1
 					else: # implies a mask of 'thread_mask_length' consequetive cores
 						mask_val = 0
 						for core_idx in range(thread_mask, thread_mask+thread_mask_length_dict[thread]):
 							mask_val += 2**core_idx
-						hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+						hpguppi_threads_cmd_segment.extend(['-m', str(mask_val), str(thread)])
 						cpu_core = thread_mask + thread_mask_length_dict[thread]
 				elif isinstance(thread_mask, list):
 					mask_val = 0
 					for core_idx in thread_mask:
 						mask_val += 2**core_idx
 						cpu_core = core_idx + 1
-					hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+					hpguppi_threads_cmd_segment.extend(['-m', str(mask_val), str(thread)])
 		else: # sequential core masks
 			if thread_instance_mask_dict is not None:
 				print('Fallback masking thread {} from core {}'.format(thread, cpu_core))
 			if thread not in thread_mask_length_dict:
-				hpguppi_threads_cmd_segment.append('-c {} {}'.format(cpu_core, thread))
+				hpguppi_threads_cmd_segment.extend(['-c', str(cpu_core), str(thread)])
 				cpu_core += 1
 			else:
 				mask_val = 0
 				for core_idx in range(cpu_core, cpu_core+thread_mask_length_dict[thread]):
 					mask_val += 2**core_idx
-				hpguppi_threads_cmd_segment.append('-m {} {}'.format(mask_val, thread))
+				hpguppi_threads_cmd_segment.extend(['-m', str(mask_val), str(thread)])
 				cpu_core += thread_mask_length_dict[thread]
 
 	# Gather instance-agnostic instantiation variables
@@ -180,7 +184,7 @@ def run(
 	instance_datadir = instance_datadir[instance]
 
 	assert os.path.exists(instance_datadir), '{} datadir path does not exist for instance {} of system {} ({} core) in {}'.format(
-		instance_datadir, instance, system_name, cpu_core_count, config_filename)
+		instance_datadir, instance, system_name, cores_per_cpu, config_filename)
 
 	assert 'instance_bindhost' in system, '{} for system {} ({} core) in {}'.format('instance_bindhost', system_name, cpu_core_count, config_filename)
 	instance_bindhost = system['instance_bindhost']
@@ -204,8 +208,23 @@ def run(
 	if instance_port_bind is not None:
 		options.append('BINDPORT={}'.format(instance_port_bind))
 
+	_keyword_variable_dict = {
+		'BINDHOST': instance_bindhost,
+		'INSTANCE': instance,
+	}
+
 	if 'options' in system:
-		options.extend(system['options'])
+		for option in system['options']:
+			if isinstance(option, dict) and subsystem in option: # cores_per_cpu/subsystem dict, collect list
+				options.extend(option[subsystem])
+			else:
+				options.append(option)
+
+		# replace keywords
+		for (option_idx, option) in enumerate(options):
+			for var,keyword_val in _keyword_variable_dict.items():
+					option = option.replace('${}'.format(var), str(keyword_val))
+			options[option_idx] = option
 
 	# Print empty line to conclude setup and assumption prints
 	print()
@@ -213,15 +232,22 @@ def run(
 	# Build hpguppi_daq command
 	cmd = [
 		command_prefix,
-		'{}hashpipe -p {} -I {}'.format(prefix_exec, os.path.join(prefix_lib, hpguppi_plugin), instance),
-		' '.join(['-o {}'.format(opt) for opt in options]),
-		' '.join(additional_arguments),
-		' '.join(hpguppi_threads_cmd_segment),
+		'{}hashpipe'.format(prefix_exec),
+		'-p',
+		os.path.join(prefix_lib, hpguppi_plugin),
+		'-I',
+		str(instance),
 	]
+	
+	for opt in options:
+		cmd.extend(['-o', '"{}"'.format(opt)])
+	cmd.extend(additional_arguments)
+	cmd.extend(hpguppi_threads_cmd_segment)
+
 	if isinstance(instance_numanode_bind, str):
-		cmd.insert(0, 'numactl --interleave={}'.format(instance_numanode_bind))
+		cmd = ['numactl', '--interleave={}'.format(instance_numanode_bind)] + cmd
 	elif instance_numanode_bind is not False:
-		cmd.insert(0, 'numactl --cpunodebind={} --membind={}'.format(instance_numanode_bind, instance_numanode_membind))
+		cmd = ['numactl', '--cpunodebind={}'.format(instance_numanode_bind), '--membind={}'.format(instance_numanode_membind)] + cmd
 
 	cmd = [seg for seg in cmd if seg != '']
 
@@ -261,12 +287,6 @@ def run(
 		environment_keys.append('HASHPIPE_KEYFILE={}'.format(system['hashpipe_keyfile']))
 	if 'environment' in system:
 		environment_keys.extend(system['environment'])
-
-
-	_keyword_variable_dict = {
-		'BINDHOST': instance_bindhost,
-		'INSTANCE': instance,
-	}
 
 	hashpipe_env = os.environ
 	for env_kv in environment_keys:
@@ -308,11 +328,10 @@ def run(
 		print()
 		out_logio.write('%'*20+'\n')
 
-	cmd = ' '.join(cmd)
-	print(cmd)
+	print(' '.join(cmd))
 
 	if not dry_run:
-		subprocess.Popen(cmd.split(' '), env=hashpipe_env, stdout=out_logio, stderr=err_logio)
+		subprocess.Popen(cmd, env=hashpipe_env, stdout=out_logio, stderr=err_logio)
 	else:
 		print(hashpipe_env)
 		print('^^^ Dry run ^^^')
@@ -322,7 +341,22 @@ def run(
 		out_logio.close()
 
 	if 'post_commands' in system:
-		for post_command in system['post_commands']:
+		post_commands = system['post_commands']
+		post_command_index = 0
+		while post_command_index < len(post_commands):
+			post_command = post_commands[post_command_index]
+			post_command_index += 1
+
+			if isinstance(post_command, dict): # cores_per_cpu dict, insert commands next and continue
+				assert cores_per_cpu in post_command, 'Missing an entry for {} cores in the {} Dict of for system {} in {}\n'.format(cores_per_cpu, 'post_commands', system_name, config_filename, post_command)
+				if isinstance(post_command[cores_per_cpu], list):
+					post_commands[post_command_index:post_command_index] = post_command[cores_per_cpu]
+				else:
+					post_commands.insert(post_command_index, post_command[cores_per_cpu])
+				continue
+			if isinstance(post_command, list): # instance-indexed list of commands, select appropriately
+				post_command = post_command[instance]
+			
 			for var,val in _keyword_variable_dict.items():
 				post_command = post_command.replace('${}'.format(var), str(val))
 			print('#', post_command)
