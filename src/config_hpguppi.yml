@@ -1,4 +1,4 @@
-atasnap:
+ata:
   prefix_exec: /home/sonata/src/hashpipe/src/
   prefix_lib: /home/sonata/src/hpguppi_daq/src/.libs/
   # hpguppi_plugin:
@@ -28,13 +28,16 @@ atasnap:
     - ATASHAREDIR="/opt/mnt"
     - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/opt/mnt/lib
   options:
+    - ibv:
+        - HPCONFIG=IBV->FTP->DISK
+      ibv_blade:
+        - HPCONFIG=IBV->FTP->BLADE->DISK
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
+    - CUDADEV=$INSTANCE
     - BINDPORT=10000
     - PROJID=dmpauto
-    - ibv:
-      - "HPCONFIG=voltage record"
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
@@ -50,6 +53,11 @@ atasnap:
       - hpguppi_ibvpkt_thread
       - hpguppi_atasnap_ibv_voltage_ftp_thread
       - hpguppi_atasnap_obs_rawdisk_thread
+    ibv_blade:
+      - hpguppi_ibvpkt_thread
+      - hpguppi_atasnap_ibv_voltage_ftp_thread
+      - hpguppi_ata_blade_beamformer_thread
+      - hpguppi_ata_blade_obs_rawdisk_thread
   cpu_core_count_config:
     16:
       instance_cpu_core_0: [1, 17]
