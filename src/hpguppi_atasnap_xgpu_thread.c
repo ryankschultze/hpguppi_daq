@@ -18,7 +18,7 @@
 
 #include "hashpipe.h"
 
-#include "hpguppi_databuf.h"
+#include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_params.h"
 //#include "hpguppi_pksuwl.h"
 #include "hpguppi_util.h"
