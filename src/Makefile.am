@@ -44,7 +44,7 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
-		  hpguppi_atasnap_ibv_voltage_ftp_thread.c \
+		  hpguppi_ata_ibv_payload_order_thread.c \
 		  hpguppi_atasnap_obs_rawdisk_thread.c \
 		  hpguppi_atasnap_xgpu_thread.c \
 		  hpguppi_rawdisk_thread.c \

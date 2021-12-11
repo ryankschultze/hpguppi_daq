@@ -1,4 +1,4 @@
-// hpguppi_atasnap_ibv_voltage_thread.c
+// hpguppi_atasnap_ibv_payload_order_thread.c
 //
 // A Hashpipe thread that proceeses "voltage mode" packets sent by the ATA SNAP
 // design from an input buffer (populated by hpguppi_ibverbs_pkt_thread) and
@@ -884,7 +884,7 @@ int debug_i=0, debug_j=0;
 }
 
 static hashpipe_thread_desc_t thread_desc = {
-    name: "hpguppi_atasnap_ibv_voltage_ftp_thread",
+    name: "hpguppi_ata_ibv_payload_order_thread",
     skey: "NETSTAT",
     init: init,
     run:  run,
