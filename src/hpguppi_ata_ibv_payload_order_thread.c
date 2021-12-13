@@ -40,11 +40,11 @@
 #include "hpguppi_ibverbs_pkt_thread.h"
 
 #include <omp.h>
-#define VOLTAGE_FOR_PACKET_THREAD_COUNT 8
-#define VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT 1
-#define VOLTAGE_THREAD_COUNT VOLTAGE_FOR_PACKET_THREAD_COUNT*VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT
+#define ATA_IBV_FOR_PACKET_THREAD_COUNT 8
+#define ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT 1
+#define ATA_IBV_THREAD_COUNT ATA_IBV_FOR_PACKET_THREAD_COUNT*ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT
 
-// #define VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
+// #define ATA_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
 
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
@@ -186,7 +186,7 @@ int debug_i=0, debug_j=0;
   // Local aliases to shorten access to args fields
   // Our input and output buffers happen to be a hpguppi_input_databuf
   hpguppi_input_databuf_t *dbin  = (hpguppi_input_databuf_t *)args->ibuf;
-  hpguppi_input_databuf_t *dbout = (hpguppi_input_databuf_t *)args->obuf;
+  ATA_IBV_OUT_DATABUF_T *dbout = (ATA_IBV_OUT_DATABUF_T *)args->obuf;
   hashpipe_status_t *st = &args->st;
   const char * thread_name = args->thread_desc->name;
   const char * status_key = args->thread_desc->skey;
@@ -285,8 +285,8 @@ int debug_i=0, debug_j=0;
   int wblk_idx;
   const int n_wblock = 4;
   struct datablock_stats wblk[n_wblock];
-  uint32_t *thread_wblk_pkt_count = malloc(VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
-  memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
+  uint32_t *thread_wblk_pkt_count = malloc(ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
+  memset(thread_wblk_pkt_count, 0, ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
 
   // Packet block variables
   uint64_t blk0_relative_pkt_seq_num = 0;
@@ -331,7 +331,7 @@ int debug_i=0, debug_j=0;
   // Variables for handing received packets
   uint8_t * p_u8pkt;
   struct ata_snap_ibv_pkt * p_pkt = NULL;
-#ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+#ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
   PKT_DCP_T* p_payload = NULL;
   PKT_DCP_T* dest_feng_pktidx_offset = NULL;
 #else
@@ -410,10 +410,10 @@ int debug_i=0, debug_j=0;
 
   hashpipe_status_lock_safe(st);
   {
-    hputi4(st->buf, "NETTHRDS", VOLTAGE_THREAD_COUNT);
+    hputi4(st->buf, "NETTHRDS", ATA_IBV_THREAD_COUNT);
   }
   hashpipe_status_unlock_safe(st);
-  #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1 && VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
+  #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1 && ATA_IBV_FOR_PACKET_THREAD_COUNT > 1
     omp_set_nested(1);
   #endif
 
@@ -466,7 +466,7 @@ int debug_i=0, debug_j=0;
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
             
             channel_stride = obs_info.pktidx_per_block*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
-            #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+            #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
             channel_stride /= sizeof(PKT_DCP_T);
             #endif
             fid_stride = (obs_info.nchan)*channel_stride;
@@ -662,7 +662,7 @@ int debug_i=0, debug_j=0;
       }
 
       // For each packet: process all packets
-      #if VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
+      #if ATA_IBV_FOR_PACKET_THREAD_COUNT > 1
         #pragma omp parallel for private (\
           p_pkt,\
           pkt_info,\
@@ -675,7 +675,7 @@ int debug_i=0, debug_j=0;
         )\
         firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged)\
         reduction(min:obs_info_validity)\
-        num_threads (VOLTAGE_FOR_PACKET_THREAD_COUNT)
+        num_threads (ATA_IBV_FOR_PACKET_THREAD_COUNT)
         // The above `reduction` initialises each local variable as MAX>OBS_SEEMS_VALID, 
         //  and reduces (merges local variables) with min operator which preserves the
         //  negative values that indicate invalid obs_info
@@ -689,7 +689,7 @@ int debug_i=0, debug_j=0;
 
         // Parse packet
         p_payload = 
-        #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+        #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
           (PKT_DCP_T*)
         #endif
           ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
@@ -718,25 +718,25 @@ int debug_i=0, debug_j=0;
             if(0 <= wblk_idx && wblk_idx < n_wblock) {
               // Copy packet data to data buffer of working block
               dest_feng_pktidx_offset = 
-              #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
+              #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
                 (PKT_DCP_T*)
               #endif
                 (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
                 + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE);
               dest_feng_pktidx_offset += pkt_info.feng_id * fid_stride + (pkt_info.pkt_schan-obs_info.schan)*channel_stride;
               
-              #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1
+              #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
                 #pragma omp parallel for \
-                num_threads (VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT)
+                num_threads (ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT)
               #endif
-              #ifdef VOLTAGE_PACKET_PAYLOAD_DIRECT_COPY
-                COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY(
+              #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
+                COPY_PACKET_PAYLOAD_FORLOOP_DIRECT_COPY(
                     dest_feng_pktidx_offset,
                     p_payload,
                     obs_info.pkt_nchan,
                     channel_stride);
               #else
-                COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(
+                COPY_PACKET_PAYLOAD_FORLOOP(
                     dest_feng_pktidx_offset,
                     p_payload,
                     obs_info.pkt_nchan,
@@ -789,11 +789,11 @@ int debug_i=0, debug_j=0;
         }
       } // end for each packet
       
-      for(i=0; i < VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock; i++){
+      for(i=0; i < ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock; i++){
         npacket += thread_wblk_pkt_count[i];
         wblk[i%n_wblock].npacket += thread_wblk_pkt_count[i];
       }
-      memset(thread_wblk_pkt_count, 0, VOLTAGE_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
+      memset(thread_wblk_pkt_count, 0, ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
     } // end if not idle
 
     // Mark input block free
@@ -889,7 +889,7 @@ static hashpipe_thread_desc_t thread_desc = {
     init: init,
     run:  run,
     ibuf_desc: {hpguppi_input_databuf_create},
-    obuf_desc: {hpguppi_input_databuf_create}
+    obuf_desc: {ATA_IBV_OUT_DATABUF_CREATE}
 };
 
 static __attribute__((constructor)) void ctor()

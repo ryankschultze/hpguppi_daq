@@ -171,12 +171,15 @@
 #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP
 #define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
+#define PKT_DCP_T PKT_DCP_FTP_T
 #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
 #define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
+#define PKT_DCP_T PKT_DCP_TFP_T
 #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DF4A
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DF4A_DATABUF_FORLOOP
 #define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DF4A_DATABUF_DIRECT_FORLOOP
+#define PKT_DCP_T PKT_DCP_TFP_DF4A_T
 #endif
 
 #include <stdlib.h>
@@ -188,6 +191,107 @@
 #include "hpguppi_time.h"
 #include "hpguppi_util.h"
 #include "hashpipe_packet.h"
+
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
+#define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_databuf_create
+#define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_databuf
+#else
+#define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_xgpu_databuf_create
+#define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_xgpu_databuf
+#endif
+
+hashpipe_databuf_t *hpguppi_ata_ibv_output_databuf_create(int instance_id, int databuf_id);
+
+static inline ATA_IBV_OUT_DATABUF_T *hpguppi_ata_ibv_output_databuf_attach(int instance_id, int databuf_id)
+{
+    return (ATA_IBV_OUT_DATABUF_T *)hashpipe_databuf_attach(instance_id, databuf_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_detach(ATA_IBV_OUT_DATABUF_T *d)
+{
+    return hashpipe_databuf_detach((hashpipe_databuf_t *)d);
+}
+
+static inline void hpguppi_ata_ibv_output_databuf_clear(ATA_IBV_OUT_DATABUF_T *d)
+{
+    hashpipe_databuf_clear((hashpipe_databuf_t *)d);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_block_status(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_block_status((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_total_status(ATA_IBV_OUT_DATABUF_T *d)
+{
+    return hashpipe_databuf_total_status((hashpipe_databuf_t *)d);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_free_timeout(
+    ATA_IBV_OUT_DATABUF_T *d, int block_id, struct timespec *timeout)
+{
+    return hashpipe_databuf_wait_free_timeout((hashpipe_databuf_t *)d,
+        block_id, timeout);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_wait_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_busywait_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_busywait_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_filled_timeout(
+    ATA_IBV_OUT_DATABUF_T *d, int block_id, struct timespec *timeout)
+{
+    return hashpipe_databuf_wait_filled_timeout((hashpipe_databuf_t *)d,
+        block_id, timeout);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_wait_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_busywait_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_busywait_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_set_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_set_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_set_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_set_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline char *hpguppi_ata_ibv_output_databuf_header(ATA_IBV_OUT_DATABUF_T *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[block_id].hdr;
+    }
+}
+
+static inline char *hpguppi_ata_ibv_output_databuf_data(ATA_IBV_OUT_DATABUF_T *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[block_id].data;
+    }
+}
 
 // Define run states.  Currently three run states are defined: IDLE, LISTEN,
 // and RECORD.
@@ -268,7 +372,7 @@ struct __attribute__ ((__packed__)) ata_snap_payload_header {
  * active blocks being filled
  */
 struct datablock_stats {
-    struct hpguppi_input_databuf *dbout; // Pointer to overall shared mem databuf
+    ATA_IBV_OUT_DATABUF_T *dbout; // Pointer to overall shared mem databuf
     int block_idx;                    // Block index number in databuf
     int64_t block_num;                // Absolute block number
     uint64_t packet_idx;              // Index of first packet number in block
@@ -678,18 +782,26 @@ static inline void hget_obsdone(hashpipe_status_t * st, int *flag)
 // Returns pointer to datablock_stats's output data block
 static inline char * datablock_stats_data(const struct datablock_stats *d)
 {
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_data(d->dbout, d->block_idx);
+#else
+  return hpguppi_xgpu_databuf_data(d->dbout, d->block_idx);
+#endif
 }
 
 // Returns pointer to datablock_stats's header
 static inline char * datablock_stats_header(const struct datablock_stats *d)
 {
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_header(d->dbout, d->block_idx);
+#else
+  return hpguppi_xgpu_databuf_header(d->dbout, d->block_idx);
+#endif
 }
 
 void reset_datablock_stats(struct datablock_stats *d);
 void init_datablock_stats(struct datablock_stats *d,
-    struct hpguppi_input_databuf *dbout, int block_idx, int64_t block_num,
+    ATA_IBV_OUT_DATABUF_T *dbout, int block_idx, int64_t block_num,
     uint64_t pkts_per_block);
 void block_stack_push(struct datablock_stats *d, int nblock);
 void finalize_block(struct datablock_stats *d);
@@ -797,7 +909,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
     }
 // define COPY_PACKET_DATA_TO_FTP_DATABUF
 
-typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_FTP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
 
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP(\
         /*PKT_DCP_T*/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\

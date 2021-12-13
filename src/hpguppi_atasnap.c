@@ -13,7 +13,7 @@ void reset_datablock_stats(struct datablock_stats *d)
 // d->block_num is always set and the stats are always reset.
 // d->pkts_per_block is set of pkt_size > 0.
 void init_datablock_stats(struct datablock_stats *d,
-    struct hpguppi_input_databuf *dbout, int block_idx, int64_t block_num,
+    ATA_IBV_OUT_DATABUF_T *dbout, int block_idx, int64_t block_num,
     uint64_t pkts_per_block)
 {
   if(dbout) {
@@ -57,7 +57,7 @@ void finalize_block(struct datablock_stats *d)
   hputi4(header, "NPKT", d->npacket);
   hputi4(header, "NDROP", d->ndrop);
   hputs(header, "DROPSTAT", dropstat);
-  hpguppi_input_databuf_set_filled(d->dbout, d->block_idx);
+  hpguppi_ata_ibv_output_databuf_set_filled(d->dbout, d->block_idx);
 }
 
 // Advance to next block in data buffer.  This new block will contain
@@ -97,7 +97,7 @@ void wait_for_block_free(const struct datablock_stats * d,
   int rv;
   char netstat[80] = {0};
   char netbuf_status[80];
-  int netbuf_full = hpguppi_input_databuf_total_status(d->dbout);
+  int netbuf_full = hpguppi_ata_ibv_output_databuf_total_status(d->dbout);
   sprintf(netbuf_status, "%d/%d", netbuf_full, d->dbout->header.n_block);
 
   hashpipe_status_lock_safe(st);
@@ -108,10 +108,10 @@ void wait_for_block_free(const struct datablock_stats * d,
   }
   hashpipe_status_unlock_safe(st);
 
-  while ((rv=hpguppi_input_databuf_wait_free(d->dbout, d->block_idx))
+  while ((rv=hpguppi_ata_ibv_output_databuf_wait_free(d->dbout, d->block_idx))
       != HASHPIPE_OK) {
     if (rv==HASHPIPE_TIMEOUT) {
-    //   netbuf_full = hpguppi_input_databuf_total_status(d->dbout);
+    //   netbuf_full = hpguppi_ata_ibv_output_databuf_total_status(d->dbout);
     //   sprintf(netbuf_status, "%d/%d", netbuf_full, d->dbout->header.n_block););
       hashpipe_status_lock_safe(st);
       hputs(st->buf, status_key, "outblocked");
