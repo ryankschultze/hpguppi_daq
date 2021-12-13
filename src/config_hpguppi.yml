@@ -63,7 +63,6 @@ ata:
     xgpu:
       - hpguppi_ibvpkt_thread
       - hpguppi_ata_ibv_payload_order_thread
-      - hpguppi_atasnap_pkt_to_xgpu_transpose
       - hpguppi_atasnap_xgpu_thread
   cpu_core_count_config:
     16:

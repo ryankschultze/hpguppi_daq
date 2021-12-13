@@ -187,7 +187,7 @@
 #include <string.h>
 #include <pthread.h>
 #include "hashpipe.h"
-#include "hpguppi_databuf.h"
+#include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_time.h"
 #include "hpguppi_util.h"
 #include "hashpipe_packet.h"
@@ -923,3 +923,47 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
     }
 // define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
 #endif // _HPGUPPI_ATASNAP_H_
+
+#define XGPU_BLOCK_NANTS 32
+#define XGPU_BLOCK_CHANNEL_STRIDE (XGPU_BLOCK_NANTS*ATASNAP_DEFAULT_PKTNPOL)
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL];} PKT_DCP_TFP_T;
+
+// 
+// to xGPU-Correlator input:
+//    [Slowest ---> Fastest]
+//    Time        [0 ... PIPERBLK*PKTNTIME]
+//    Channel     [0 ... NSTRM*PKTNCHAN]
+//    FENG        [0 ... NANT]
+//    POL         [0 ... NPOL]
+//
+// The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
+//
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP(\
+        /*const uint8_t**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*const uint8_t**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  nchan\
+      )\
+    for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
+      memcpy(\
+        dest_feng_pktidx_offset + (\
+            (pkt_npol_sample_idx/pkt_nchan)*XGPU_BLOCK_CHANNEL_STRIDE + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*nchan*XGPU_BLOCK_CHANNEL_STRIDE\
+          )*sizeof(PKT_DCP_TFP_T),\
+        pkt_payload + pkt_npol_sample_idx*sizeof(PKT_DCP_TFP_T),\
+        sizeof(PKT_DCP_TFP_T)\
+      );\
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
+
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP(\
+        /*PKT_DCP_TFP_T**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_T**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  nchan\
+      )\
+    for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
+      dest_feng_pktidx_offset \
+        [(pkt_npol_sample_idx/pkt_nchan)*XGPU_BLOCK_CHANNEL_STRIDE + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*nchan*XGPU_BLOCK_CHANNEL_STRIDE] = \
+          pkt_payload[pkt_npol_sample_idx]; \
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
