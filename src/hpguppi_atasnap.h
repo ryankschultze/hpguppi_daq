@@ -950,7 +950,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
     for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
       memcpy(\
         dest_feng_pktidx_offset + (\
-            (pkt_npol_sample_idx/pkt_nchan)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride\
+            (pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride\
           )*sizeof(PKT_DCP_TFP_T),\
         pkt_payload + pkt_npol_sample_idx*sizeof(PKT_DCP_TFP_T),\
         sizeof(PKT_DCP_TFP_T)\
@@ -967,7 +967,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
       )\
     for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
       dest_feng_pktidx_offset \
-        [(pkt_npol_sample_idx/pkt_nchan)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride] = \
+        [(pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride] = \
           pkt_payload[pkt_npol_sample_idx]; \
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
