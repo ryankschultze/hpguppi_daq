@@ -162,6 +162,8 @@
 #ifndef _HPGUPPI_ATASNAP_H_
 #define _HPGUPPI_ATASNAP_H_
 
+#define XGPU_BLOCK_NANTS 32 // TFP transposition related definition
+
 #define ATA_PAYLOAD_TRANSPOSE_FTP 0
 #define ATA_PAYLOAD_TRANSPOSE_TFP 1
 #define ATA_PAYLOAD_TRANSPOSE_TFP_DF4A 2
@@ -898,7 +900,8 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
         /*const uint8_t**/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*const uint8_t**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE */\
+        /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  time_stride /* Unused as copy strides TIME*POLE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       memcpy(\
@@ -915,7 +918,8 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
         /*PKT_DCP_T*/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*PKT_DCP_T*/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  time_stride /* Unused as copy strides TIME*POLE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       *(dest_feng_pktidx_offset) = *pkt_payload++; \
@@ -924,16 +928,14 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
 // define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
 #endif // _HPGUPPI_ATASNAP_H_
 
-#define XGPU_BLOCK_NANTS 32
-#define XGPU_BLOCK_CHANNEL_STRIDE (XGPU_BLOCK_NANTS*ATASNAP_DEFAULT_PKTNPOL)
 typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL];} PKT_DCP_TFP_T;
 
 // 
 // to xGPU-Correlator input:
 //    [Slowest ---> Fastest]
 //    Time        [0 ... PIPERBLK*PKTNTIME]
-//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    FENG        [0 ... NANT]
+//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    POL         [0 ... NPOL]
 //
 // The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
@@ -942,12 +944,13 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
         /*const uint8_t**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*const uint8_t**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  nchan\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
       )\
     for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
       memcpy(\
         dest_feng_pktidx_offset + (\
-            (pkt_npol_sample_idx/pkt_nchan)*XGPU_BLOCK_CHANNEL_STRIDE + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*nchan*XGPU_BLOCK_CHANNEL_STRIDE\
+            (pkt_npol_sample_idx/pkt_nchan)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride\
           )*sizeof(PKT_DCP_TFP_T),\
         pkt_payload + pkt_npol_sample_idx*sizeof(PKT_DCP_TFP_T),\
         sizeof(PKT_DCP_TFP_T)\
@@ -959,11 +962,12 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
         /*PKT_DCP_TFP_T**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*PKT_DCP_TFP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  nchan\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
       )\
     for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
       dest_feng_pktidx_offset \
-        [(pkt_npol_sample_idx/pkt_nchan)*XGPU_BLOCK_CHANNEL_STRIDE + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*nchan*XGPU_BLOCK_CHANNEL_STRIDE] = \
+        [(pkt_npol_sample_idx/pkt_nchan)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride] = \
           pkt_payload[pkt_npol_sample_idx]; \
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP

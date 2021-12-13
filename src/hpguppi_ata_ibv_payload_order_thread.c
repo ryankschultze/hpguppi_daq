@@ -293,7 +293,7 @@ int debug_i=0, debug_j=0;
   unsigned long pkt_blk_num, last_pkt_blk_num = ~0;
   uint64_t obs_start_seq_num = 0, obs_stop_seq_num = 0, blk0_start_seq_num = 0;
   uint64_t prev_obs_start_seq_num, prev_obs_stop_seq_num;
-  uint32_t fid_stride, channel_stride;
+  uint32_t channel_byte_stride, time_byte_stride;
 
   // Heartbeat variables
   struct timespec ts_start_block = {0}, ts_stop_block = {0};
@@ -465,11 +465,13 @@ int debug_i=0, debug_j=0;
             // (ie at least once before valid observation)
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
             
-            channel_stride = obs_info.pktidx_per_block*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
-            #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-            channel_stride /= sizeof(PKT_DCP_T);
+            #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
+            time_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+            channel_byte_stride = obs_info.pktidx_per_block*time_byte_stride;
+            #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
+            channel_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+            time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride;
             #endif
-            fid_stride = (obs_info.nchan)*channel_stride;
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
@@ -721,26 +723,28 @@ int debug_i=0, debug_j=0;
               #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
                 (PKT_DCP_T*)
               #endif
-                (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
-                + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE);
-              dest_feng_pktidx_offset += pkt_info.feng_id * fid_stride + (pkt_info.pkt_schan-obs_info.schan)*channel_stride;
+                datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
+                + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*time_byte_stride // offset for time
+                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride; // offset for frequency
               
               #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
                 #pragma omp parallel for \
                 num_threads (ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT)
               #endif
               #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-                COPY_PACKET_PAYLOAD_FORLOOP_DIRECT_COPY(
+                COPY_PACKET_PAYLOAD_DIRECT_FORLOOP(
                     dest_feng_pktidx_offset,
                     p_payload,
                     obs_info.pkt_nchan,
-                    channel_stride);
+                    channel_byte_stride/sizeof(PKT_DCP_T),
+                    time_byte_stride/sizeof(PKT_DCP_T));
               #else
                 COPY_PACKET_PAYLOAD_FORLOOP(
                     dest_feng_pktidx_offset,
                     p_payload,
                     obs_info.pkt_nchan,
-                    channel_stride);
+                    channel_byte_stride,
+                    time_byte_stride);
               #endif
               // Count packet for block and for processing stats
               thread_wblk_pkt_count[(omp_get_thread_num()*n_wblock) + wblk_idx] += 1;
