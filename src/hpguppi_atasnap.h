@@ -166,7 +166,7 @@
 
 #define ATA_PAYLOAD_TRANSPOSE_FTP 0
 #define ATA_PAYLOAD_TRANSPOSE_TFP 1
-#define ATA_PAYLOAD_TRANSPOSE_TFP_DF4A 2
+#define ATA_PAYLOAD_TRANSPOSE_TFP_DP4A 2
 
 #define ATA_PAYLOAD_TRANSPOSE ATA_PAYLOAD_TRANSPOSE_FTP
 
@@ -178,10 +178,10 @@
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
 #define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
 #define PKT_DCP_T PKT_DCP_TFP_T
-#elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DF4A
-#define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DF4A_DATABUF_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DF4A_DATABUF_DIRECT_FORLOOP
-#define PKT_DCP_T PKT_DCP_TFP_DF4A_T
+#elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
+#define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP
+#define PKT_DCP_T PKT_DCP_TFP_DP4A_T
 #endif
 
 #include <stdlib.h>
@@ -897,7 +897,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
 
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(\
-        /*const uint8_t**/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
+        /*const uint8_t**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*const uint8_t**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
@@ -905,7 +905,7 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       memcpy(\
-        dest_feng_pktidx_offset + channel_stride*pkt_chan_idx,\
+        payload_dest + channel_stride*pkt_chan_idx,\
         pkt_payload + pkt_chan_idx*ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE,\
         ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE\
       );\
@@ -915,15 +915,15 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_FTP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
 
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP(\
-        /*PKT_DCP_T*/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
-        /*PKT_DCP_T*/  pkt_payload,\
+        /*PKT_DCP_T**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
+        /*PKT_DCP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
         /*const uint32_t*/  time_stride /* Unused as copy strides TIME*POLE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
-      *(dest_feng_pktidx_offset) = *pkt_payload++; \
-      dest_feng_pktidx_offset += channel_stride;\
+      *(payload_dest) = *pkt_payload++; \
+      payload_dest += channel_stride;\
     }
 // define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
 #endif // _HPGUPPI_ATASNAP_H_
@@ -941,7 +941,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
 // The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
 //
 #define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP(\
-        /*const uint8_t**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*const uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*const uint8_t**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride,\
@@ -949,25 +949,92 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
       )\
     for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
       memcpy(\
-        dest_feng_pktidx_offset + (\
-            (pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride\
-          )*sizeof(PKT_DCP_TFP_T),\
-        pkt_payload + pkt_npol_sample_idx*sizeof(PKT_DCP_TFP_T),\
-        sizeof(PKT_DCP_TFP_T)\
+        payload_dest + \
+            (pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride,\
+        pkt_payload + pkt_npol_sample_idx*ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE, \
+        ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE \
       );\
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
 
 #define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP(\
-        /*PKT_DCP_TFP_T**/  dest_pktidx_offset,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*PKT_DCP_TFP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride,\
         /*const uint32_t*/  time_stride\
       )\
-    for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
-      dest_feng_pktidx_offset \
-        [(pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride] = \
-          pkt_payload[pkt_npol_sample_idx]; \
+		for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+      for(int pkt_timeXnpol_idx = 0; pkt_timeXnpol_idx < ATASNAP_DEFAULT_PKTNTIME; pkt_timeXnpol_idx++){\
+        *(payload_dest + pkt_timeXnpol_idx*time_stride) = *pkt_payload++;\
+      }\
+      payload_dest += channel_stride;\
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
+
+typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of the complex sample (8+8i = 16bit)/2 = 8bit
+
+// to xGPU(DP4A)-Correlator input:
+//    [Slowest ---> Fastest]
+//    Time        [0 ... PIPERBLK*PKTNTIME/4]
+//    FENG        [0 ... NANT]
+//    Channel     [0 ... NSTRM*PKTNCHAN]
+//    POL         [0 ... NPOL]
+//    complexity  [real, imag]
+//    time_minor  [0 ... 4]
+//
+// The transposition copies each byte, i.e. half of each sample (8re, 8im)
+// The nested forloops increment `payload_dest` to effect
+//  payload_dest[pkt_chan_idx*channel_stride + pkt_time_idx*time_stride + pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE]
+//
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP(\
+        /*uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*uint8_t**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
+      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
+        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
+          for(int time_minor = 0; time_minor < 4; time_minor++){ \
+            memcpy(payload_dest, pkt_payload, sizeof(PKT_DCP_TFP_DP4A_T));\
+            memcpy(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, pkt_payload+ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, sizeof(PKT_DCP_TFP_DP4A_T));\
+            payload_dest += ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor offset*/\
+            pkt_payload += ATASNAP_DEFAULT_SAMPLE_BYTESIZE;\
+          }\
+          payload_dest -= 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor reset*/\
+          payload_dest += 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol offset*/\
+        }\
+        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol reset*/\
+        payload_dest += 4*time_stride; /*time offset*/\
+      }\
+      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
+      payload_dest += channel_stride; /*chan offset*/\
+    }
+
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP(\
+        /*PKT_DCP_TFP_DP4A_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_DP4A_T**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
+      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
+        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
+          for(int time_minor = 0; time_minor < 4; time_minor++){ \
+            *payload_dest = *pkt_payload++;\
+            *(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2) = *pkt_payload++;\
+            payload_dest++; /*time minor offset*/\
+          }\
+          payload_dest -= 4; /*time minor reset*/\
+          payload_dest += 4*ATASNAP_DEFAULT_PKTNPOL; /*pol offset*/\
+        }\
+        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_PKTNPOL; /*pol reset*/\
+        payload_dest += 4*time_stride; /*time offset*/\
+      }\
+      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
+      payload_dest += channel_stride; /*chan offset*/\
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
