@@ -389,6 +389,9 @@ int debug_i=0, debug_j=0;
 
   const size_t slots_per_block = pktbuf_info->slots_per_block;
   const size_t slot_size = pktbuf_info->slot_size;
+  if(slots_per_block % ATA_IBV_THREAD_COUNT != 0 ){
+    hashpipe_warn(thread_name, "The slots per block (%lu) should be a multiple of the parallelism (%d) for optimal performance.", slots_per_block, ATA_IBV_THREAD_COUNT);
+  }
 
   if(hashpipe_ibv_get_interface_info(interface_name, interface_mac, NULL)) {
     hashpipe_error(interface_name, "error getting interace info");
