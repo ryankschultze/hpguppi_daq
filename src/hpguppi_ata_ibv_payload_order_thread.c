@@ -723,9 +723,9 @@ int debug_i=0, debug_j=0;
               #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
                 (PKT_DCP_T*)
               #endif
-                datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
+                (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
                 + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*time_byte_stride // offset for time
-                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride; // offset for frequency
+                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride); // offset for frequency
               
               #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
                 #pragma omp parallel for \
