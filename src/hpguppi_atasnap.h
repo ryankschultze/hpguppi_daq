@@ -971,9 +971,8 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
       )\
 		for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       for(int pkt_timeXnpol_idx = 0; pkt_timeXnpol_idx < ATASNAP_DEFAULT_PKTNTIME; pkt_timeXnpol_idx++){\
-        *(payload_dest + pkt_timeXnpol_idx*time_stride) = *pkt_payload++;\
+        *(payload_dest + pkt_chan_idx*channel_stride + pkt_timeXnpol_idx*time_stride) = *pkt_payload++;\
       }\
-      payload_dest += channel_stride;\
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
 
