@@ -517,36 +517,6 @@ int debug_i=0, debug_j=0;
           if(obs_stop_seq_num != prev_obs_stop_seq_num){
             hashpipe_info(thread_name, "obs_stop_seq_num changed %lu -> %lu", prev_obs_stop_seq_num, obs_stop_seq_num);
           }
-          
-          if (flag_reinit_blks
-            ||align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block)) { // Reinitialise working blocks
-            if(flag_reinit_blks) {
-              // Should only happen when seeing first packet when obs_info is valid
-              // warn in case it happens in other scenarios
-              hashpipe_warn(thread_name,
-                  "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
-                  pkt_info.pktidx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
-              flag_reinit_blks = 0;
-            }
-            
-            // Re-init working blocks for block number of current packet's block,
-            // and clear their data buffers
-            pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
-
-            for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-              wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
-              init_datablock_stats(wblk+wblk_idx, NULL, -1,
-                  pkt_blk_num+wblk_idx,
-                  obs_info.pkt_per_block);
-              wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
-
-              // also update the working blocks' headers
-              datablock_header = datablock_stats_header(&wblk[wblk_idx]);
-              hashpipe_status_lock_safe(st);
-                memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-              hashpipe_status_unlock_safe(st);
-            }
-          }
         }
 
         npacket_total += npacket;
@@ -600,10 +570,35 @@ int debug_i=0, debug_j=0;
       break;
     }
 
-    //hashpipe_info(thread_name, "Got packets!");
-    // hpguppi_input_databuf_set_free(dbin, block_idx_in);
-    // block_idx_in = (block_idx_in + 1) % dbin->header.n_block;
-    // continue;
+    if (flag_reinit_blks
+      ||align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block)) { // Reinitialise working blocks
+      if(flag_reinit_blks) {
+        // Should only happen when seeing first packet when obs_info is valid
+        // warn in case it happens in other scenarios
+        hashpipe_warn(thread_name,
+            "working blocks reinit due to packet index out of working range\n\t\t(PKTIDX %lu) [%ld, %ld  <> %lu]",
+            pkt_info.pktidx, wblk[0].block_num - 1, wblk[n_wblock-1].block_num + 1, pkt_blk_num);
+        flag_reinit_blks = 0;
+      }
+      
+      // Re-init working blocks for block number of current packet's block,
+      // and clear their data buffers
+      pkt_blk_num = blk0_relative_pkt_seq_num / obs_info.pktidx_per_block;
+
+      for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+        wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
+        init_datablock_stats(wblk+wblk_idx, NULL, -1,
+            pkt_blk_num+wblk_idx,
+            obs_info.pkt_per_block);
+        wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
+
+        // also update the working blocks' headers
+        datablock_header = datablock_stats_header(&wblk[wblk_idx]);
+        hashpipe_status_lock_safe(st);
+          memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+        hashpipe_status_unlock_safe(st);
+      }
+    }
 
     // Got packet(s)!  Update status if needed.
     if (waiting) {
