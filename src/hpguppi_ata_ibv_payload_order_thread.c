@@ -478,6 +478,9 @@ int debug_i=0, debug_j=0;
             #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
             channel_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride;
+            #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
+            channel_byte_stride = ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; // `*4` keeps databuf offset logic uniform
+            time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride/4; // `/4` keeps databuf offset logic uniform
             #endif
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
