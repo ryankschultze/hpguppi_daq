@@ -240,7 +240,7 @@ def run(
 	]
 	
 	for opt in options:
-		cmd.extend(['-o', '"{}"'.format(opt)])
+		cmd.extend(['-o', '{}'.format(opt)])
 	cmd.extend(additional_arguments)
 	cmd.extend(hpguppi_threads_cmd_segment)
 
