@@ -46,6 +46,10 @@
 
 // #define ATA_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
 
+#ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
+#define ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE
+#endif
+
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
 #define bzero_nt(d,l) memset(d,0,l)
@@ -731,8 +735,12 @@ int debug_i=0, debug_j=0;
                 + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride); // offset for frequency
               
               #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
-                #pragma omp parallel for \
+                #pragma omp parallel for\
                 num_threads (ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT)
+              #else 
+                #ifdef ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE
+                  #pragma omp parallel for collapse(ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE)
+                #endif
               #endif
               #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
                 COPY_PACKET_PAYLOAD_DIRECT_FORLOOP(
