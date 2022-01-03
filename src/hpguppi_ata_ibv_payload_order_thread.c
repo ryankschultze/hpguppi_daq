@@ -548,7 +548,7 @@ int debug_i=0, debug_j=0;
           hputr4(st->buf, "NETBLKMS",
               round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
 
-          buf_full = hpguppi_input_databuf_total_status(dbout);
+          buf_full = hpguppi_ata_ibv_output_databuf_total_status(dbout);
           sprintf(buf_status, "%d/%d", buf_full, dbout->header.n_block);
           hputs(st->buf, "NETBUFST", buf_status);
         }
