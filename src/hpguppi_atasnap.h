@@ -715,7 +715,7 @@ unsigned check_pkt_observability_silent(
     const uint16_t pkt_schan
   );
 
-void update_stt_status_keys( hashpipe_status_t *st,
+uint32_t update_stt_status_keys( hashpipe_status_t *st,
                                     enum run_states state,
                                     uint64_t pktidx,
                                     struct mjd_t *mjd);

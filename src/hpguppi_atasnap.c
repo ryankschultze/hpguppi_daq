@@ -189,7 +189,7 @@ unsigned check_pkt_observability(
 //  else if STTVALID != 0
 //    STTVALID=0
 //  endif
-void update_stt_status_keys( hashpipe_status_t *st,
+uint32_t update_stt_status_keys( hashpipe_status_t *st,
                                     enum run_states state,
                                     uint64_t pktidx,
                                     struct mjd_t *mjd){
@@ -205,7 +205,7 @@ void update_stt_status_keys( hashpipe_status_t *st,
   {
     hgetu4(st->buf, "STTVALID", &sttvalid);
     if((state == ARMED || state == RECORD) && sttvalid != 1) {
-      hputu4(st->buf, "STTVALID", 1);
+      sttvalid = 1;
 
       // hgetu4(st->buf, "PKTNTIME", &pktntime);
       hgetr8(st->buf, "CHAN_BW", &chan_bw);
@@ -230,10 +230,12 @@ void update_stt_status_keys( hashpipe_status_t *st,
       hputr8(st->buf, "STT_OFFS", mjd->stt_offs);
     }
     else if(state == IDLE && sttvalid != 0) {
-      hputu4(st->buf, "STTVALID", 0);
+      sttvalid = 0;
     }
+    hputu4(st->buf, "STTVALID", sttvalid);
   }
   hashpipe_status_unlock_safe(st);
+  return sttvalid;
 }
 
 // Check the given pktidx value against the status buffer's OBSSTART/OBSSTOP
