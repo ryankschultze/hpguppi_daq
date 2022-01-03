@@ -308,6 +308,7 @@ int debug_i=0, debug_j=0;
   
   char waiting=-1, observing=0;
   char flag_reinit_blks=0;
+  int32_t observation_complete=0;
 
   char flag_state_update = 0;
   char  LATE_PKTIDX_flagged = 0;
@@ -348,7 +349,6 @@ int debug_i=0, debug_j=0;
   // ts_start_recv(N) to ts_stop_recv(N) is the time spent in the "receive" call.
   // ts_stop_recv(N) to ts_start_recv(N+1) is the time spent processing received data.
   struct timespec ts_start_recv = {0}, ts_stop_recv = {0};
-  struct timespec ts_input_full0 = {0};
   struct timespec ts_free_input = {0};
 
   // Used to calculate moving average of fill-to-free times for input blocks
@@ -606,9 +606,8 @@ int debug_i=0, debug_j=0;
       waiting=0;
     }
 
-    if(ts_input_full0.tv_sec == 0) {
-      ts_input_full0 = ts_stop_recv;
-    }
+    // collect downstream controlled flag
+    hget_obsdone(st, &observation_complete);
 
     // Gather pkt_0 pointer
     p_u8pkt = (uint8_t *)hpguppi_databuf_data(dbin, block_idx_in);
@@ -617,8 +616,8 @@ int debug_i=0, debug_j=0;
     p_pkt = (struct ata_snap_ibv_pkt *)p_u8pkt;
     ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
 
-    // If the packet's timestamps is safely past the observation range, don't do the work!
-    if(pkt_info.pktidx <= obs_stop_seq_num + 2*N_INPUT_BLOCKS*obs_info.pktidx_per_block) {
+    // Only do the work if packets seem to be in range, or the downstream controlled `observation_complete` is low
+    if(pkt_info.pktidx <= obs_stop_seq_num || !observation_complete) {
       // Check the first packet's timestamp, to determine reinit_blocks
       //  This works because it is figured that a block filled with packets
       //  will contain packets with indices that place them in two adjacent downstream blocks.
@@ -864,7 +863,6 @@ int debug_i=0, debug_j=0;
 #if 0
     fprintf(stderr, "blkin %d fill at %ld free +%ld ns (%d packets)\n",
         block_idx_in,
-        ELAPSED_NS(ts_input_full0, ts_stop_recv),
         ELAPSED_NS(ts_stop_recv, ts_free_input), njobs);
 #endif
 

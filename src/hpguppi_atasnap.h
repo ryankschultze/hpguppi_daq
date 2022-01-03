@@ -641,6 +641,23 @@ pksuwl_pktidx_to_timespec(uint64_t pktidx, struct timespec *ts)
 }
 #endif
 
+static inline void hput_obsdone(hashpipe_status_t * st, const int flag)
+{
+  hashpipe_status_lock_safe(st);
+  {
+    hputi4(st->buf, "OBSDONE", flag);
+  }
+  hashpipe_status_unlock_safe(st);
+}
+
+static inline void hget_obsdone(hashpipe_status_t * st, int *flag)
+{
+  hashpipe_status_lock_safe(st);
+  {
+    hgeti4(st->buf, "OBSDONE", flag);
+  }
+  hashpipe_status_unlock_safe(st);
+}
 
 // Returns pointer to datablock_stats's output data block
 static inline char * datablock_stats_data(const struct datablock_stats *d)

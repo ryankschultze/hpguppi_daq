@@ -22,7 +22,6 @@ ata:
     - ethtool -C $BINDHOST adaptive-rx on rx-frames 8 rx-usecs 0
     - ethtool -G $BINDHOST rx 8192
     - cpupower frequency-set -g performance
-    - /opt/mnt/bin/kill_redis_gateway.sh $INSTANCE
   hashpipe_keyfile: /home/sonata
   environment:
     - ATASHAREDIR="/opt/mnt"
