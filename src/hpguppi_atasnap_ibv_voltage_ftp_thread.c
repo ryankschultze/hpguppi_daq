@@ -414,6 +414,9 @@ int debug_i=0, debug_j=0;
   #if VOLTAGE_TRANSPOSE_PACKET_THREAD_COUNT > 1 && VOLTAGE_FOR_PACKET_THREAD_COUNT > 1
     omp_set_nested(1);
   #endif
+
+  // set OBSDONE in case no downstream thread controlls it.
+  hput_obsdone(st, 1);
   
   // Main loop
   while (run_threads()) {
