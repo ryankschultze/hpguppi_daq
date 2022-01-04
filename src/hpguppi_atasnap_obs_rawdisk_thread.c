@@ -211,6 +211,9 @@ static void *run(hashpipe_thread_args_t * args)
     hgetu8(datablock_header, "PKTSTART", &obs_start_pktidx);
     hgetu8(datablock_header, "PKTSTOP", &obs_stop_pktidx);
     hgetu8(datablock_header, "BLKSTART", &block_start_pktidx);
+    if (block_start_pktidx != block_stop_pktidx){
+      hashpipe_warn(thread_name, "Current block seems out of order: starts at %lu, last ended at %lu.", block_start_pktidx, block_stop_pktidx);
+    }
     hgetu8(datablock_header, "BLKSTOP", &block_stop_pktidx);
 
     switch(state_from_block_start_stop(obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx)){

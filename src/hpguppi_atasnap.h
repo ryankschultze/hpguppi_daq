@@ -238,6 +238,15 @@ enum obs_info_validity {
                 OBS_VALID=1           //=1
               };
 
+struct __attribute__ ((__packed__)) ata_snap_payload_header {
+  uint8_t version;
+  uint8_t type;
+  uint16_t n_chans;
+  uint16_t chan;
+  uint16_t feng_id;
+  uint64_t timestamp;
+};
+
 /* Structs/functions to more easily deal with multiple
  * active blocks being filled
  */
@@ -261,12 +270,7 @@ struct __attribute__ ((__packed__)) ata_snap_ibv_pkt {
   struct iphdr iphdr;   //14
   struct udphdr udphdr; //34
   uint8_t pad0[22];     //42
-  uint8_t version;      //64
-  uint8_t type;         //65
-  uint16_t n_chans;     //66
-  uint16_t chan;        //68
-  uint16_t feng_id;     //70
-  uint64_t timestamp;   //72
+  struct ata_snap_payload_header snaphdr;      //64
   uint8_t pad1[48];     //80
 	uint8_t payload[];    //128
 };
@@ -276,19 +280,14 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
   struct iphdr iphdr; // headers aren't functional    // 20 bytes
   struct udphdr udphdr; // headers aren't functional  // 8 bytes
   uint8_t pad0[66]; // Dont know the reason, but actual network payload is offset
-  uint8_t version;
-  uint8_t type;
-  uint16_t n_chans;
-  uint16_t chan;
-  uint16_t feng_id;
-  uint64_t timestamp;
+  struct ata_snap_payload_header snaphdr;
   uint8_t payload[];//complex4 data[n_chans, 16, 2] // 4-bit real + 4-bit imaginary
 };
 
-#define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   (uint64_t)__bswap_64(ata_snap_pkt->timestamp)
-#define ATA_SNAP_PKT_SCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->chan)
-#define ATA_SNAP_PKT_NCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->n_chans)
-#define ATA_SNAP_PKT_FENG_ID(ata_snap_pkt)  __bswap_16(ata_snap_pkt->feng_id)
+#define ATA_SNAP_PKT_NUMBER(ata_snap_pkt)   (uint64_t)__bswap_64(ata_snap_pkt->snaphdr.timestamp)
+#define ATA_SNAP_PKT_SCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->snaphdr.chan)
+#define ATA_SNAP_PKT_NCHAN(ata_snap_pkt)    __bswap_16(ata_snap_pkt->snaphdr.n_chans)
+#define ATA_SNAP_PKT_FENG_ID(ata_snap_pkt)  __bswap_16(ata_snap_pkt->snaphdr.feng_id)
 
 // ATA SNAP header byte offset within (unpadded) packet
 #define ATA_SNAP_PKT_OFFSET_HEADER \
@@ -296,7 +295,7 @@ struct __attribute__ ((__packed__)) ata_snap_pkt {
    sizeof(struct iphdr ) + \
    sizeof(struct udphdr))
 
-#define ATA_SNAP_PKT_SIZE_HEADER (2*sizeof(uint64_t))
+#define ATA_SNAP_PKT_SIZE_HEADER (sizeof(struct ata_snap_payload_header))
 
 // ATA SNAP payload byte offset within (unpadded) packet
 #define ATA_SNAP_PKT_OFFSET_PAYLOAD \
