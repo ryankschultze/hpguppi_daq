@@ -260,7 +260,7 @@ static void *run(hashpipe_thread_args_t *args)
 
       // Update moving sum (for moving average)
       clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
-      fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd[dequeued_input_id], ts_free_input);
+      fill_to_free_elapsed_ns = ELAPSED_NS(ts_blocks_recvd[dequeued_input_id], ts_free_input)/batch_size;
       fill_to_free_moving_sum_ns +=
           fill_to_free_elapsed_ns - fill_to_free_block_ns[dequeued_input_id];
       // Store new value
