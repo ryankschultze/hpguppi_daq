@@ -509,7 +509,55 @@ create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
   return ibv_create_flow(hibv_ctx->qp[0], &sniffer_flow_attr);
 }
 
-// Destrory sniffer flow
+// Create MAC-sniffer flow
+// Use with caution!!!
+static
+struct ibv_flow *
+create_macsniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
+{
+  // hashpipe_ibv_flow(hibv_ctx,
+  //   hibv_ctx->max_flows-1, IBV_FLOW_SPEC_UDP,
+  //   hibv_ctx->mac,    NULL,
+  //   0, 0,
+  //   0, 0,
+  //   0, 0);
+  // return hibv_ctx->ibv_flows[hibv_ctx->max_flows-1];
+  struct hashpipe_ibv_flow flow = {
+    .attr = {
+      .comp_mask      = 0,
+      .type           = IBV_FLOW_ATTR_NORMAL,
+      .size           = sizeof(flow.attr)
+                        + sizeof(struct ibv_flow_spec_ipv4)
+                        + sizeof(struct ibv_flow_spec_eth)
+                        + sizeof(struct ibv_flow_spec_tcp_udp),
+      .priority       = 0,
+      .num_of_specs   = 3,
+      .port           = hibv_ctx->port_num,
+      .flags          = 0
+    },
+    .spec_eth = {
+      .type   = IBV_FLOW_SPEC_ETH,
+      .size   = sizeof(flow.spec_eth),
+    },
+    .spec_ipv4 = {
+      .type   = IBV_FLOW_SPEC_IPV4,
+      .size   = sizeof(flow.spec_ipv4),
+    },
+    .spec_tcp_udp = {
+      .type   = IBV_FLOW_SPEC_UDP,
+      .size   = sizeof(flow.spec_tcp_udp),
+      // .val.dst_port = htobe16(dst_port),
+      // .mask.dst_port = 0xffff,
+    }
+  };
+
+  memcpy(flow.spec_eth.val.dst_mac, hibv_ctx->mac, 6);
+  memset(flow.spec_eth.mask.dst_mac, 0xff, 6);
+
+  return ibv_create_flow(hibv_ctx->qp[0], (struct ibv_flow_attr *) &flow);
+}
+
+// Destroy sniffer flow
 // Use with caution!!!
 static
 int
@@ -718,7 +766,7 @@ int debug_i=0, debug_j=0;
   }
   hashpipe_status_unlock_safe(st);
 
-  if(sniffer_flag > 0) {
+  if(sniffer_flag == 1) {
     if(!(sniffer_flow = create_sniffer_flow(hibv_ctx))) {
       hashpipe_error(thread_name, "create_sniffer_flow failed");
       errno = 0;
@@ -726,8 +774,17 @@ int debug_i=0, debug_j=0;
     } else {
       hashpipe_info(thread_name, "create_sniffer_flow succeeded");
     }
+  }
+  else if(sniffer_flag == 2) {
+    if(!(sniffer_flow = create_macsniffer_flow(hibv_ctx))) {
+      hashpipe_error(thread_name, "create_macsniffer_flow failed");
+      errno = 0;
+      sniffer_flag = -1;
+    } else {
+      hashpipe_info(thread_name, "create_macsniffer_flow succeeded");
+    }
   } else {
-    hashpipe_info(thread_name, "sniffer_flow disabled");
+    hashpipe_info(thread_name, "macsniffer_flow disabled");
   }
 
   // Initialize ts_start with current time
@@ -762,7 +819,7 @@ int debug_i=0, debug_j=0;
       pkts_received = 0;
 
       // Manage sniffer_flow as needed
-      if(sniffer_flag > 0 && !sniffer_flow) {
+      if(sniffer_flag == 1 && !sniffer_flow) {
         if(!(sniffer_flow = create_sniffer_flow(hibv_ctx))) {
           hashpipe_error(thread_name, "create_sniffer_flow failed");
           errno = 0;
@@ -770,7 +827,15 @@ int debug_i=0, debug_j=0;
         } else {
           hashpipe_info(thread_name, "create_sniffer_flow succeeded");
         }
-      } else if (sniffer_flag < 1 && sniffer_flow) {
+      } else if (sniffer_flag == 2 && !sniffer_flow) {
+        if(!(sniffer_flow = create_macsniffer_flow(hibv_ctx))) {
+          hashpipe_error(thread_name, "create_macsniffer_flow failed");
+          errno = 0;
+          sniffer_flag = -1;
+        } else {
+          hashpipe_info(thread_name, "create_macsniffer_flow succeeded");
+        }
+      } else if (sniffer_flag < 1 && sniffer_flag > 2 && sniffer_flow) {
         if(destroy_sniffer_flow(sniffer_flow)) {
           hashpipe_error(thread_name, "destroy_sniffer_flow failed");
           errno = 0;
