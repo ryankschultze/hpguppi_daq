@@ -17,6 +17,7 @@
 #include "ioprio.h"
 
 #include "hashpipe.h"
+#include "hpguppi_atasnap.h"
 
 #include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_params.h"
@@ -27,10 +28,17 @@
 
 #include "cube/cube.h"
 #include "xgpu.h"
+#include <math.h>
 
 #ifndef DEBUG_RAWSPEC_CALLBACKS
 #define DEBUG_RAWSPEC_CALLBACKS (0)
 #endif
+
+#define ELAPSED_S(start,stop) \
+  ((int64_t)stop.tv_sec-start.tv_sec)
+
+#define ELAPSED_NS(start,stop) \
+  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
 static ssize_t write_all(int fd, const void *buf, size_t bytes_to_write)
 {
@@ -106,6 +114,14 @@ static void *run(hashpipe_thread_args_t *args)
   const char *thread_name = args->thread_desc->name;
   const char *status_key = args->thread_desc->skey;
 
+  // Used to calculate moving average of fill-to-free times for input blocks
+  uint64_t fill_to_free_elapsed_ns;
+  uint64_t fill_to_free_moving_sum_ns = 0;
+  uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
+  struct timespec ts_now = {0}, ts_stop_recv = {0}, ts_updated_status_info = {0};
+  const uint64_t status_info_refresh_period_ns = 200*1000*1000;
+  uint64_t status_info_refresh_elapsed_ns;
+
   //Some xGPU stuff
   XGPUInfo xgpu_info;
   int xgpu_error = 0;
@@ -154,7 +170,6 @@ static void *run(hashpipe_thread_args_t *args)
   /* Loop */
   uint64_t pktidx = 0, pktstart = 0, pktstop = 0;
   int len = 0;
-  int blocksize = 0;
   int curblock = 0;
   int block_count = 0, blocks_per_file = 128, filenum = 0;
   int got_packet_0 = 0, first = 1;
@@ -162,6 +177,7 @@ static void *run(hashpipe_thread_args_t *args)
   int open_flags = 0;
   int directio = 0;
   int rv = 0;
+  int status_index = -1;
   //char* tmp_data = malloc(xgpu_info.vecLength*sizeof(char)); //XXX
 
   int mjd_d, mjd_s;
@@ -173,14 +189,28 @@ static void *run(hashpipe_thread_args_t *args)
   {
 
     /* Note waiting status */
-    hashpipe_status_lock_safe(st);
-    hputs(st->buf, status_key, "waiting");
-    hashpipe_status_unlock_safe(st);
+    if(status_index !=  0)
+    {
+      status_index = 0;
+      hashpipe_status_lock_safe(st);
+      hputs(st->buf, status_key, "waiting");
+      hashpipe_status_unlock_safe(st);
+    }
 
     /* Wait for buf to have data */
     rv = hpguppi_input_xgpu_databuf_wait_filled(db, curblock);
-    if (rv != 0)
+    clock_gettime(CLOCK_MONOTONIC, &ts_now);
+    status_info_refresh_elapsed_ns = ELAPSED_NS(ts_updated_status_info, ts_now);
+    if(status_info_refresh_elapsed_ns > status_info_refresh_period_ns) {
+      memcpy(&ts_updated_status_info, &ts_now, sizeof(struct timespec));
+      hashpipe_status_lock_safe(st);
+        hputr4(st->buf, "XGPBLKMS",
+                round((double)fill_to_free_moving_sum_ns / db->header.n_block) / 1e6);
+      hashpipe_status_unlock_safe(st);
+    }
+    if (rv != HASHPIPE_OK)
       continue;
+    memcpy(&ts_stop_recv, &ts_now, sizeof(struct timespec));
 
     /* Read param struct for this block */
     ptr = hpguppi_xgpu_databuf_header(db, curblock);
@@ -236,6 +266,7 @@ static void *run(hashpipe_thread_args_t *args)
         got_packet_0 = 0;
         filenum = 0;
         block_count = 0;
+        hput_obsdone(st, 1);
 
         // Print end of recording conditions
         hashpipe_info(thread_name, "recording stopped: "
@@ -269,10 +300,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     /* Set up data ptr for quant routines */
-
     pf.sub.data = (unsigned char *)hpguppi_xgpu_databuf_data(db, curblock);
-
-    hgeti4(ptr, "BLOCSIZE", &blocksize);
 
     // Wait for packet 0 before starting write
     // "packet 0" is the first packet/block of the new recording,
@@ -280,6 +308,7 @@ static void *run(hashpipe_thread_args_t *args)
     if (got_packet_0 == 0)
     { // && gp.stt_valid==1) {
       got_packet_0 = 1;
+      hput_obsdone(st, 1);
 
       hpguppi_read_obs_params(ptr, &gp, &pf);
       hgetu4(ptr, "NANTS", &nstation);
@@ -362,9 +391,13 @@ static void *run(hashpipe_thread_args_t *args)
     if (got_packet_0)
     {
       /* Note writing status */
-      hashpipe_status_lock_safe(st);
-      hputs(st->buf, status_key, "processing");
-      hashpipe_status_unlock_safe(st);
+      if(status_index !=  1)
+      {
+        status_index = 1;
+        hashpipe_status_lock_safe(st);
+        hputs(st->buf, status_key, "processing");
+        hashpipe_status_unlock_safe(st);
+      }
 
       //memcpy(tmp_data, pf.sub.data, BLOCK_DATA_SIZE);
 
@@ -387,9 +420,13 @@ static void *run(hashpipe_thread_args_t *args)
       xgpuReorderMatrix(cuda_matrix_h);
 
       /* Note writing status */
-      hashpipe_status_lock_safe(st);
-      hputs(st->buf, status_key, "writing");
-      hashpipe_status_unlock_safe(st);
+      if(status_index !=  2)
+      {
+        status_index = 2;
+        hashpipe_status_lock_safe(st);
+        hputs(st->buf, status_key, "writing");
+        hashpipe_status_unlock_safe(st);
+      }
 
       //len = xgpu_context.matrix_len*sizeof(Complex); //
       len = xgpu_info.triLength * sizeof(Complex);
@@ -425,6 +462,15 @@ static void *run(hashpipe_thread_args_t *args)
 
     /* Mark as free */
     hpguppi_input_xgpu_databuf_set_free(db, curblock);
+
+    // Update moving sum (for moving average)
+    clock_gettime(CLOCK_MONOTONIC, &ts_now);
+    fill_to_free_elapsed_ns = ELAPSED_NS(ts_stop_recv, ts_now);
+    // Add new value, subtract old value
+    fill_to_free_moving_sum_ns +=
+        fill_to_free_elapsed_ns - fill_to_free_block_ns[curblock];
+    // Store new value
+    fill_to_free_block_ns[curblock] = fill_to_free_elapsed_ns;
 
     /* Go to next block */
     curblock = (curblock + 1) % db->header.n_block;
