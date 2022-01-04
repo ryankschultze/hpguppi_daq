@@ -523,7 +523,7 @@ static
 void
 update_status_buffer(hashpipe_status_t *st, int nfull, int nblocks,
     uint64_t nbytes, uint64_t npkts, uint64_t ns_elapsed,
-    int32_t * sniffer_flag)
+    int32_t * sniffer_flag, float ibvblkms)
 {
   char ibvbufst[80];
   double gbps;
@@ -542,6 +542,7 @@ update_status_buffer(hashpipe_status_t *st, int nfull, int nblocks,
     hputs(st->buf, "IBVBUFST", ibvbufst);
     hputnr8(st->buf, "IBVGBPS", 6, gbps);
     hputnr8(st->buf, "IBVPPS", 3, pps);
+    hputr4(st->buf, "IBVBLKMS", ibvblkms);
     if(*sniffer_flag > -1) {
       hgeti4(st->buf, "IBVSNIFF", sniffer_flag);
     }
@@ -649,6 +650,11 @@ int debug_i=0, debug_j=0;
   int i;
   uint64_t base_addr;
   int got_wc_error = 0;
+  // Used to calculate moving average of filling output blocks
+  uint64_t fill_elapsed_ns;
+  uint64_t fill_moving_sum_ns = 0;
+  uint64_t *fill_block_ns = malloc(db->header.n_block * sizeof(uint64_t));
+  struct timespec ts_block_filled = {0};
 
   // We maintain two active blocks at all times.  curblk is the number of the
   // older of the two blocks with block number curblk+1 being the other of the
@@ -749,7 +755,7 @@ int debug_i=0, debug_j=0;
       // Timeout, update status buffer
       update_status_buffer(st, hpguppi_input_databuf_total_status(db),
           db->header.n_block, bytes_received, pkts_received, ns_elapsed,
-          &sniffer_flag);
+          &sniffer_flag, round((double)fill_moving_sum_ns / db->header.n_block) / 1e6);
 
       // Reset counters
       bytes_received = 0;
@@ -803,6 +809,12 @@ int debug_i=0, debug_j=0;
       if(next_block > curblk+1) {
         // Mark curblk as filled
         hpguppi_input_databuf_set_filled(db, curblk % N_INPUT_BLOCKS);
+        clock_gettime(CLOCK_MONOTONIC, &ts_now);
+        fill_elapsed_ns = ELAPSED_NS(ts_block_filled, ts_now);
+        fill_moving_sum_ns +=
+            fill_elapsed_ns - fill_block_ns[curblk % N_INPUT_BLOCKS];
+        fill_block_ns[curblk % N_INPUT_BLOCKS] = fill_elapsed_ns;
+        memcpy(&ts_block_filled, &ts_now, sizeof(struct timespec));
 
         // Increment curblk
         curblk++;
@@ -852,6 +864,7 @@ int debug_i=0, debug_j=0;
     hputs(st->buf, status_key, "exiting");
   }
   hashpipe_status_unlock_safe(st);
+  free(fill_block_ns);
 
   hashpipe_info(thread_name, "exiting!");
   pthread_exit(NULL);
