@@ -125,6 +125,13 @@ static void *run(hashpipe_thread_args_t *args)
   //Some xGPU stuff
   XGPUInfo xgpu_info;
   int xgpu_error = 0;
+  int cudaDeviceId = args->instance_id;
+  hashpipe_status_lock_safe(st);
+  {
+    hgeti4(st->buf, "CUDADEV", &cudaDeviceId);
+    hputi4(st->buf, "CUDADEV", cudaDeviceId);
+  }
+  hashpipe_status_unlock_safe(st);
 
   unsigned int nstation;
   // Get sizing info from library
@@ -139,7 +146,7 @@ static void *run(hashpipe_thread_args_t *args)
   xgpu_context.array_h = array_h_inp_tmp; //input; this will stop xGPU from allocating input buffer
   xgpu_context.matrix_h = NULL;           //output; xGPU will allocate memory and take care of this internally
 
-  xgpu_error = xgpuInit(&xgpu_context, 0); //XXX determine which GPU to use
+  xgpu_error = xgpuInit(&xgpu_context, cudaDeviceId);
   if (xgpu_error)
   {
     fprintf(stderr, "xgpuInit returned error code %d\n", xgpu_error); //XXX do something
