@@ -358,7 +358,7 @@ static void *run(hashpipe_thread_args_t *args)
         }
       }
       // TODO: check for file exist.
-      open_flags = O_CREAT | O_RDWR | O_SYNC;
+      open_flags = O_CREAT | O_RDWR;
       if (directio)
       {
         open_flags |= O_DIRECT;
@@ -379,7 +379,7 @@ static void *run(hashpipe_thread_args_t *args)
       char fname[256];
       sprintf(fname, "%s.%4.4d.xgpu", pf.basefilename, filenum);
       directio = hpguppi_read_directio_mode(ptr);
-      open_flags = O_CREAT | O_RDWR | O_SYNC;
+      open_flags = O_CREAT | O_RDWR;
       if (directio)
       {
         open_flags |= O_DIRECT;
