@@ -134,6 +134,8 @@ static void *run(hashpipe_thread_args_t *args)
   hashpipe_status_unlock_safe(st);
 
   unsigned int nstation;
+  uint64_t corr_time_integrations;
+  unsigned int integration_clear_counter = 0;
   // Get sizing info from library
   xgpuInfo(&xgpu_info);
 
@@ -189,8 +191,6 @@ static void *run(hashpipe_thread_args_t *args)
 
   int mjd_d, mjd_s;
   double mjd_fs;
-
-  char hdr_buffer[BLOCK_HDR_SIZE];
 
   while (run_threads())
   {
@@ -255,10 +255,9 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     /* Read pktidx, pktstart, pktstop from header */
-    memcpy(hdr_buffer, ptr, BLOCK_HDR_SIZE);
-    hgetu8(hdr_buffer, "PKTIDX", &pktidx);
-    hgetu8(hdr_buffer, "PKTSTART", &pktstart);
-    hgetu8(hdr_buffer, "PKTSTOP", &pktstop);
+    hgetu8(ptr, "PKTIDX", &pktidx);
+    hgetu8(ptr, "PKTSTART", &pktstart);
+    hgetu8(ptr, "PKTSTOP", &pktstop);
 
     // If packet idx is NOT within start/stop range
     if (pktidx < pktstart || pktstop <= pktidx)
@@ -281,9 +280,9 @@ static void *run(hashpipe_thread_args_t *args)
                       pktstart, pktstop, pktidx);
         fprintf(stderr, "xgpu thread: status buffer follows\n");
 
-        hgetu8(hdr_buffer, "PKTIDX", &pktidx);
+        hgetu8(ptr, "PKTIDX", &pktidx);
         fprintf(stderr, "hgetu8(PKTIDX) buffered: %lu\n", pktidx);
-        fprintf(stderr, "buffered:\n%s", hdr_buffer);
+        fprintf(stderr, "buffered:\n%s", ptr);
 
         fprintf(stderr, "\nlive ptr below:\n");
 
@@ -318,7 +317,13 @@ static void *run(hashpipe_thread_args_t *args)
       hput_obsdone(st, 1);
 
       hpguppi_read_obs_params(ptr, &gp, &pf);
+      corr_time_integrations = gp.packets_per_block;
       hgetu4(ptr, "NANTS", &nstation);
+      hgetu8(ptr, "XTIMEINT", &corr_time_integrations);
+      hputu8(ptr, "XTIMEINT", corr_time_integrations);
+      integration_clear_counter = corr_time_integrations/gp.packets_per_block; // trigger a clearing of the integration
+      hashpipe_info(thread_name, "Clearing integration every %u block(s).", integration_clear_counter);
+
       if (xgpu_info.npol != pf.hdr.npol ||
           //xgpu_info.nstation != nstation ||
           xgpu_info.nfrequency != pf.hdr.nchan / nstation ||
@@ -416,7 +421,11 @@ static void *run(hashpipe_thread_args_t *args)
       //xgpu_context.array_h = (ComplexInput*) tmp_data; //XXX
 
       // Clear the previous integration
-      xgpuClearDeviceIntegrationBuffer(&xgpu_context);
+      if(integration_clear_counter == corr_time_integrations/gp.packets_per_block)
+      {
+        xgpuClearDeviceIntegrationBuffer(&xgpu_context);
+        integration_clear_counter = 0;
+      }
 
       // Correlate
       xgpu_error = xgpuCudaXengine(&xgpu_context, SYNCOP_DUMP); //XXX figure out flags (85 Gbps with SYNCOP_DUMP)
@@ -425,6 +434,7 @@ static void *run(hashpipe_thread_args_t *args)
 
       // Correlation done. Reorder the matrix and dump to disk
       xgpuReorderMatrix(cuda_matrix_h);
+      integration_clear_counter++;
 
       /* Note writing status */
       if(status_index !=  2)
