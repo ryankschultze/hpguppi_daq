@@ -24,9 +24,6 @@
 //#include "hpguppi_pksuwl.h"
 #include "hpguppi_util.h"
 
-#include "xgpu_info.h"
-
-#include "cube/cube.h"
 #include "xgpu.h"
 #include <math.h>
 
