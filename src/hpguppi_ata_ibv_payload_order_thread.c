@@ -66,11 +66,6 @@
 #define ELAPSED_NS(start,stop) \
   (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
-#define HPUT_DAQ_STATE(st, state)\
-  hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
-                             state == ARMED ? "armed"  :\
-                             "recording")
-
 // This thread's init() function, if provided, is called by the Hashpipe
 // framework at startup to allow the thread to perform initialization tasks
 // such as setting up network connections or GPU devices.
