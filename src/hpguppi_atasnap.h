@@ -162,15 +162,141 @@
 #ifndef _HPGUPPI_ATASNAP_H_
 #define _HPGUPPI_ATASNAP_H_
 
+#define XGPU_BLOCK_NANTS 32 // TFP transposition related definition
+
+#define ATA_PAYLOAD_TRANSPOSE_FTP 0
+#define ATA_PAYLOAD_TRANSPOSE_TFP 1
+#define ATA_PAYLOAD_TRANSPOSE_TFP_DP4A 2
+
+#define ATA_PAYLOAD_TRANSPOSE ATA_PAYLOAD_TRANSPOSE_FTP
+
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
+#define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
+#define PKT_DCP_T PKT_DCP_FTP_T
+#elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
+#define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
+#define PKT_DCP_T PKT_DCP_TFP_T
+#elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
+#define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP
+#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
+#define PKT_DCP_T PKT_DCP_TFP_DP4A_T
+#endif
+
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 #include <pthread.h>
 #include "hashpipe.h"
-#include "hpguppi_databuf.h"
+#include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_time.h"
 #include "hpguppi_util.h"
 #include "hashpipe_packet.h"
+
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
+#define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_databuf_create
+#define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_databuf
+#else
+#define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_xgpu_databuf_create
+#define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_xgpu_databuf
+#endif
+
+hashpipe_databuf_t *hpguppi_ata_ibv_output_databuf_create(int instance_id, int databuf_id);
+
+static inline ATA_IBV_OUT_DATABUF_T *hpguppi_ata_ibv_output_databuf_attach(int instance_id, int databuf_id)
+{
+    return (ATA_IBV_OUT_DATABUF_T *)hashpipe_databuf_attach(instance_id, databuf_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_detach(ATA_IBV_OUT_DATABUF_T *d)
+{
+    return hashpipe_databuf_detach((hashpipe_databuf_t *)d);
+}
+
+static inline void hpguppi_ata_ibv_output_databuf_clear(ATA_IBV_OUT_DATABUF_T *d)
+{
+    hashpipe_databuf_clear((hashpipe_databuf_t *)d);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_block_status(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_block_status((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_total_status(ATA_IBV_OUT_DATABUF_T *d)
+{
+    return hashpipe_databuf_total_status((hashpipe_databuf_t *)d);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_free_timeout(
+    ATA_IBV_OUT_DATABUF_T *d, int block_id, struct timespec *timeout)
+{
+    return hashpipe_databuf_wait_free_timeout((hashpipe_databuf_t *)d,
+        block_id, timeout);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_wait_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_busywait_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_busywait_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_filled_timeout(
+    ATA_IBV_OUT_DATABUF_T *d, int block_id, struct timespec *timeout)
+{
+    return hashpipe_databuf_wait_filled_timeout((hashpipe_databuf_t *)d,
+        block_id, timeout);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_wait_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_wait_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_busywait_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_busywait_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_set_free(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_set_free((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline int hpguppi_ata_ibv_output_databuf_set_filled(ATA_IBV_OUT_DATABUF_T *d, int block_id)
+{
+    return hashpipe_databuf_set_filled((hashpipe_databuf_t *)d, block_id);
+}
+
+static inline char *hpguppi_ata_ibv_output_databuf_header(ATA_IBV_OUT_DATABUF_T *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[block_id].hdr;
+    }
+}
+
+static inline char *hpguppi_ata_ibv_output_databuf_data(ATA_IBV_OUT_DATABUF_T *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[block_id].data;
+    }
+}
 
 // Define run states.  Currently three run states are defined: IDLE, LISTEN,
 // and RECORD.
@@ -251,7 +377,7 @@ struct __attribute__ ((__packed__)) ata_snap_payload_header {
  * active blocks being filled
  */
 struct datablock_stats {
-    struct hpguppi_input_databuf *dbout; // Pointer to overall shared mem databuf
+    ATA_IBV_OUT_DATABUF_T *dbout; // Pointer to overall shared mem databuf
     int block_idx;                    // Block index number in databuf
     int64_t block_num;                // Absolute block number
     uint64_t packet_idx;              // Index of first packet number in block
@@ -661,18 +787,26 @@ static inline void hget_obsdone(hashpipe_status_t * st, int *flag)
 // Returns pointer to datablock_stats's output data block
 static inline char * datablock_stats_data(const struct datablock_stats *d)
 {
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_data(d->dbout, d->block_idx);
+#else
+  return hpguppi_xgpu_databuf_data(d->dbout, d->block_idx);
+#endif
 }
 
 // Returns pointer to datablock_stats's header
 static inline char * datablock_stats_header(const struct datablock_stats *d)
 {
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_header(d->dbout, d->block_idx);
+#else
+  return hpguppi_xgpu_databuf_header(d->dbout, d->block_idx);
+#endif
 }
 
 void reset_datablock_stats(struct datablock_stats *d);
 void init_datablock_stats(struct datablock_stats *d,
-    struct hpguppi_input_databuf *dbout, int block_idx, int64_t block_num,
+    ATA_IBV_OUT_DATABUF_T *dbout, int block_idx, int64_t block_num,
     uint64_t pkts_per_block);
 void block_stack_push(struct datablock_stats *d, int nblock);
 void finalize_block(struct datablock_stats *d);
@@ -766,31 +900,146 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
 
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(\
-        /*const uint8_t**/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
+        /*const uint8_t**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*const uint8_t**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE */\
+        /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  time_stride /* Unused as copy strides TIME*POLE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       memcpy(\
-        dest_feng_pktidx_offset + channel_stride*pkt_chan_idx,\
+        payload_dest + channel_stride*pkt_chan_idx,\
         pkt_payload + pkt_chan_idx*ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE,\
         ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE\
       );\
     }
 // define COPY_PACKET_DATA_TO_FTP_DATABUF
 
-typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_FTP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
 
-#define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY(\
-        /*PKT_DCP_T*/  dest_feng_pktidx_offset,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
-        /*PKT_DCP_T*/  pkt_payload,\
+#define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 1
+#define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP(\
+        /*PKT_DCP_T**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
+        /*PKT_DCP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
-        /*const uint32_t*/  channel_stride /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  channel_stride, /*= PIPERBLK*ATASNAP_DEFAULT_PKTIDX_STRIDE/ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE */\
+        /*const uint32_t*/  time_stride /* Unused as copy strides TIME*POLE */\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
-      *(dest_feng_pktidx_offset) = *pkt_payload++; \
-      dest_feng_pktidx_offset += channel_stride;\
+      *(payload_dest) = *pkt_payload++; \
+      payload_dest += channel_stride;\
     }
-// define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP_DIRECT_COPY
+// define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
 #endif // _HPGUPPI_ATASNAP_H_
+
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL];} PKT_DCP_TFP_T;
+
+// 
+// to xGPU-Correlator input:
+//    [Slowest ---> Fastest]
+//    Time        [0 ... PIPERBLK*PKTNTIME]
+//    FENG        [0 ... NANT]
+//    Channel     [0 ... NSTRM*PKTNCHAN]
+//    POL         [0 ... NPOL]
+//
+// The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
+//
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP(\
+        /*const uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*const uint8_t**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+    for(int pkt_npol_sample_idx = 0; pkt_npol_sample_idx < pkt_nchan*ATASNAP_DEFAULT_PKTNTIME; pkt_npol_sample_idx++){ \
+      memcpy(\
+        payload_dest + \
+            (pkt_npol_sample_idx/ATASNAP_DEFAULT_PKTNTIME)*channel_stride + (pkt_npol_sample_idx%ATASNAP_DEFAULT_PKTNTIME)*time_stride,\
+        pkt_payload + pkt_npol_sample_idx*ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE, \
+        ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE \
+      );\
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
+
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 2
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP(\
+        /*PKT_DCP_TFP_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_T**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+		for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+      for(int pkt_timeXnpol_idx = 0; pkt_timeXnpol_idx < ATASNAP_DEFAULT_PKTNTIME; pkt_timeXnpol_idx++){\
+        *(payload_dest + pkt_chan_idx*channel_stride + pkt_timeXnpol_idx*time_stride) = *pkt_payload++;\
+      }\
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
+
+typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of the complex sample (8+8i = 16bit)/2 = 8bit
+
+// to xGPU(DP4A)-Correlator input:
+//    [Slowest ---> Fastest]
+//    Time        [0 ... PIPERBLK*PKTNTIME/4]
+//    FENG        [0 ... NANT]
+//    Channel     [0 ... NSTRM*PKTNCHAN]
+//    POL         [0 ... NPOL]
+//    complexity  [real, imag]
+//    time_minor  [0 ... 4]
+//
+// The transposition copies each byte, i.e. half of each sample (8re, 8im)
+// The nested forloops increment `payload_dest` to effect
+//  payload_dest[pkt_chan_idx*channel_stride + pkt_time_idx*time_stride + pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE]
+//
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP(\
+        /*uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*uint8_t**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
+      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
+        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
+          for(int time_minor = 0; time_minor < 4; time_minor++){ \
+            memcpy(payload_dest, pkt_payload, sizeof(PKT_DCP_TFP_DP4A_T));\
+            memcpy(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, pkt_payload+ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, sizeof(PKT_DCP_TFP_DP4A_T));\
+            payload_dest += ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor offset*/\
+            pkt_payload += ATASNAP_DEFAULT_SAMPLE_BYTESIZE;\
+          }\
+          payload_dest -= 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor reset*/\
+          payload_dest += 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol offset*/\
+        }\
+        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol reset*/\
+        payload_dest += 4*time_stride; /*time offset*/\
+      }\
+      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
+      payload_dest += channel_stride; /*chan offset*/\
+    }
+
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 4
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP(\
+        /*PKT_DCP_TFP_DP4A_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_DP4A_T**/  pkt_payload,\
+        /*const uint16_t*/  pkt_nchan,\
+        /*const uint32_t*/  channel_stride,\
+        /*const uint32_t*/  time_stride\
+      )\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
+      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
+        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
+          for(int time_minor = 0; time_minor < 4; time_minor++){ \
+            *payload_dest = *pkt_payload++;\
+            *(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2) = *pkt_payload++;\
+            payload_dest++; /*time minor offset*/\
+          }\
+          payload_dest -= 4; /*time minor reset*/\
+          payload_dest += 4*ATASNAP_DEFAULT_PKTNPOL; /*pol offset*/\
+        }\
+        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_PKTNPOL; /*pol reset*/\
+        payload_dest += 4*time_stride; /*time offset*/\
+      }\
+      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
+      payload_dest += channel_stride; /*chan offset*/\
+    }
+// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP

@@ -82,6 +82,24 @@ AC_ARG_WITH([cuda-include],
               has_cuda_include=0
             ])
 
+AC_ARG_WITH([libxgpu],
+            AC_HELP_STRING([--with-libxgpu=DIR],
+                           [Location of xGPU library]),
+            [
+              LIBXGPUDIR="$withval"
+              has_libxgpu=1
+            ],
+            [
+              LIBXGPUDIR=""
+              has_libxgpu=0
+            ])
+
+AC_ARG_WITH([xgpu-include],
+            AC_HELP_STRING([--with-xgpu-include=DIR],
+                           [Location of xGPU include directory]),
+            [XGPUINCDIR="$withval"],
+            [XGPUINCDIR="${LIBXGPUDIR}/../include"])
+
 #AC_MSG_CHECKING([for libblade])
 #AC_LANG_PUSH(C++)
 #orig_LDFLAGS="$LDFLAGS"
@@ -116,6 +134,20 @@ if test $has_cuda_include = 1; then
   cuda_enabled=1;
 fi
 
+if test $has_libxgpu = 0; then
+  #AC_MSG_RESULT([no])
+  AC_MSG_NOTICE([Library xGPU not provided. xGPU will not be enabled.])
+  xgpu_enabled=0;
+else
+  #AC_MSG_RESULT([yes])
+  AC_MSG_NOTICE([xGPU will be enabled.])
+  AC_SUBST(LIBXGPUDIR,${LIBXGPUDIR})
+  
+  AC_SUBST(XGPUINCDIR,${XGPUINCDIR})
+  AC_MSG_NOTICE([xGPU include directory set to ${XGPUINCDIR}])
+  xgpu_enabled=1;
+fi
+
 AS_IF([test $blade_enabled = 1],
   [
     AM_CONDITIONAL(BLADE_ENABLED, true)
@@ -132,6 +164,15 @@ AS_IF([test $cuda_enabled = 1],
   ],
   [
     AM_CONDITIONAL(CUDA_ENABLED, false)
+  ])
+
+AS_IF([test $xgpu_enabled = 1],
+  [
+    AM_CONDITIONAL(XGPU_ENABLED, true)
+    AC_DEFINE(XGPU_ENABLED,[],[Use xGPU])
+  ],
+  [
+    AM_CONDITIONAL(XGPU_ENABLED, false)
   ])
 
 ## Checks for header files.

@@ -48,7 +48,7 @@ def run(
 		print('Error trying to get the cpu core count.')
 		exit(0)
 
-	# Gather system configuration for the cpu_core_count
+	# Gather system configuration for the cores_per_cpu
 	assert 'cpu_core_count_config' in system, '{} not defined for system {} in {}'.format('cpu_core_count_config', system_name, config_filename)
 	if cores_per_cpu not in system['cpu_core_count_config']:
 		print('{}[{}] not defined for system {} in {}'.format('cpu_core_count_config', cores_per_cpu, system_name, config_filename))

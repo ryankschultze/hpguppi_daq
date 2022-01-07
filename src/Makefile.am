@@ -11,7 +11,7 @@ AM_CFLAGS += -Wno-stringop-truncation
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
-		  hpguppi_databuf.c 
+		  hpguppi_databuf.c
 if BLADE_ENABLED
 hpguppi_databuf += \
 		hpguppi_blade_databuf.c \
@@ -41,7 +41,7 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
-		  hpguppi_atasnap_ibv_voltage_ftp_thread.c \
+		  hpguppi_ata_ibv_payload_order_thread.c \
 		  hpguppi_atasnap_obs_rawdisk_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
@@ -68,6 +68,18 @@ endif
 
 if CUDA_ENABLED
 hpguppi_daq_la_CFLAGS  += -I "@CUDAINCDIR@"
+endif
+
+if XGPU_ENABLED
+hpguppi_databuf += \
+		hpguppi_xgpu_databuf.c \
+		hpguppi_xgpu_databuf.h
+
+hpguppi_threads += \
+		hpguppi_atasnap_xgpu_thread.c
+
+hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
+hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
 endif
 
 # Installed scripts
