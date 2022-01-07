@@ -185,12 +185,19 @@ static void *run(hashpipe_thread_args_t *args)
   char *ptr; //, *hend;
   int open_flags = 0;
   int directio = 0;
+  char fname[256];
+  unsigned char base_filename_stem_start;
   int rv = 0;
   int status_index = -1;
   //char* tmp_data = malloc(xgpu_info.vecLength*sizeof(char)); //XXX
 
   int mjd_d, mjd_s;
   double mjd_fs;
+
+  /* Heartbeat variables */
+  time_t curtime = 0;
+  char timestr[32] = {0};
+  enum run_states state = IDLE;
 
   while (run_threads())
   {
@@ -210,9 +217,18 @@ static void *run(hashpipe_thread_args_t *args)
     status_info_refresh_elapsed_ns = ELAPSED_NS(ts_updated_status_info, ts_now);
     if(status_info_refresh_elapsed_ns > status_info_refresh_period_ns) {
       memcpy(&ts_updated_status_info, &ts_now, sizeof(struct timespec));
+
+      time(&curtime);//time stores seconds since epoch
+      ctime_r(&curtime, timestr);
+      timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
+
       hashpipe_status_lock_safe(st);
         hputr4(st->buf, "XGPBLKMS",
                 round((double)fill_to_free_moving_sum_ns / db->header.n_block) / 1e6);
+        hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
+                             state == ARMED ? "armed"  :\
+                             "recording");
+        hputs(st->buf, "DAQPULSE", timestr);
       hashpipe_status_unlock_safe(st);
     }
     if (rv != HASHPIPE_OK)
@@ -262,6 +278,7 @@ static void *run(hashpipe_thread_args_t *args)
     // If packet idx is NOT within start/stop range
     if (pktidx < pktstart || pktstop <= pktidx)
     {
+      state = pktidx < pktstart ? ARMED : IDLE;
       // If file open, close it
       if (fdraw != -1)
       {
@@ -304,9 +321,7 @@ static void *run(hashpipe_thread_args_t *args)
 
       continue;
     }
-
-    /* Set up data ptr for quant routines */
-    pf.sub.data = (unsigned char *)hpguppi_xgpu_databuf_data(db, curblock);
+    state = RECORD;
 
     // Wait for packet 0 before starting write
     // "packet 0" is the first packet/block of the new recording,
@@ -344,9 +359,18 @@ static void *run(hashpipe_thread_args_t *args)
       }
 
       directio = hpguppi_read_directio_mode(ptr);
-      char fname[256];
       sprintf(fname, "%s.%04d.xgpu", pf.basefilename, filenum);
       fprintf(stderr, "Opening first file '%s' (directio=%d)\n", fname, directio);
+
+      // finds last '/'
+      base_filename_stem_start = strlen(pf.basefilename);
+      while(base_filename_stem_start > 0 && pf.basefilename[base_filename_stem_start-1] != '/'){
+        base_filename_stem_start--;
+      }
+
+      hashpipe_status_lock_safe(st);
+        hputs(st->buf, "OBSSTEM", pf.basefilename+base_filename_stem_start);
+      hashpipe_status_unlock_safe(st);
 
       // Create the output directory if needed
       char datadir[1024];
