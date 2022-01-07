@@ -143,9 +143,9 @@ static void *run(hashpipe_thread_args_t *args)
          xgpu_info.nstation, xgpu_info.nfrequency, xgpu_info.ntime);
 
   XGPUContext xgpu_context;
-  ComplexInput *array_h_inp_tmp; //This is a BIG hack. Data are not ComplexInput, but with "USE4BIT", expansion happens on the GPU
-  array_h_inp_tmp = malloc(1);
-  xgpu_context.array_h = array_h_inp_tmp; //input; this will stop xGPU from allocating input buffer
+  // register all blocks as one region, and use input_offset
+  xgpu_context.array_h = (ComplexInput *)(db->block[0].hdr); //input; this will stop xGPU from allocating input buffer
+  xgpu_context.array_len = db->header.n_block*sizeof(hpguppi_input_xgpu_block_t)/sizeof(ComplexInput);//xgpu_info.vecLength;
   xgpu_context.matrix_h = NULL;           //output; xGPU will allocate memory and take care of this internally
 
   xgpu_error = xgpuInit(&xgpu_context, cudaDeviceId);
@@ -417,7 +417,7 @@ static void *run(hashpipe_thread_args_t *args)
       // 	  pf.sub.data[100], pf.sub.data[200], pf.sub.data[300],
       // 	  pf.sub.data[400]);
 
-      xgpu_context.array_h = (ComplexInput *)pf.sub.data;
+      xgpu_context.input_offset = (db->block[curblock].data - db->block[0].hdr)/sizeof(ComplexInput);
       //xgpu_context.array_h = (ComplexInput*) tmp_data; //XXX
 
       // Clear the previous integration
