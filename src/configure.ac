@@ -19,6 +19,7 @@ AS_VAR_SET_IF(CFLAGS,[],[CFLAGS=])
 
 # Checks for programs.
 AC_PROG_CC
+AC_PROG_CXX
 
 # Check processor flags
 AX_CHECK_X86_FEATURES

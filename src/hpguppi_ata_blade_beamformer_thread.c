@@ -5,8 +5,9 @@
 #include <math.h>
 
 #include "hashpipe.h"
+#include "hpguppi_databuf.h"
 #include "hpguppi_blade_databuf.h"
-#include "blade/pipelines/ata/mode_b.h"
+#include "hpguppi_blade_capi_ata_mode_b.h"
 
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
@@ -46,8 +47,8 @@ static void *run(hashpipe_thread_args_t *args)
 
   /* BLADE variables */
   const size_t batch_size = 2;
-  int dequeued_input_id = 0;
-  int dequeued_output_id = 0;
+  int input_output_blockid_pairs[N_INPUT_BLOCKS] = {0}; // input_id indexed associated output_id
+  size_t dequeued_input_id = 0;
   
   int cudaDeviceId = args->instance_id;
   
@@ -72,10 +73,10 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
-  blade_module_t mod = blade_ata_b_initialize(batch_size);
+  blade_ata_b_initialize(batch_size);
 
-  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size(mod)*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
-    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size(mod)*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
+  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
+    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
     pthread_exit(NULL);
   }
 
@@ -85,13 +86,9 @@ static void *run(hashpipe_thread_args_t *args)
     blade_pin_memory(hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
   }
 
-  const size_t beamformer_input_dim_NANTS = blade_ata_b_get_input_dim_NANTS(mod);
   int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
-  const size_t beamformer_input_dim_NCHANS = blade_ata_b_get_input_dim_NCHANS(mod);
   int32_t input_buffer_dim_NCHAN, prev_flagged_NCHAN;
-  const size_t beamformer_input_dim_NTIME = blade_ata_b_get_input_dim_NTIME(mod);
   int32_t input_buffer_dim_NTIME, prev_flagged_NTIME;
-  const size_t beamformer_input_dim_NPOLS = blade_ata_b_get_input_dim_NPOLS(mod);
   int32_t input_buffer_dim_NPOLS, prev_flagged_NPOLS;
 
   while (run_threads())
@@ -148,24 +145,24 @@ static void *run(hashpipe_thread_args_t *args)
     hgeti4(databuf_header, "PIPERBLK", &input_buffer_dim_NTIME);
     hgeti4(databuf_header, "NPOL", &input_buffer_dim_NPOLS);
 
-    if(input_buffer_dim_NANTS != beamformer_input_dim_NANTS && prev_flagged_NANTS != input_buffer_dim_NANTS){
+    if(input_buffer_dim_NANTS != BLADE_ATA_MODE_B_INPUT_NANT && prev_flagged_NANTS != input_buffer_dim_NANTS){
       prev_flagged_NANTS = input_buffer_dim_NANTS;
-      hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, beamformer_input_dim_NANTS);
+      hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, BLADE_ATA_MODE_B_INPUT_NANT);
       indb_data_dims_good_flag = 0;
     }
-    else if(input_buffer_dim_NCHAN != beamformer_input_dim_NCHANS && prev_flagged_NCHAN != input_buffer_dim_NCHAN){
+    else if(input_buffer_dim_NCHAN != BLADE_ATA_MODE_B_ANT_NCHAN && prev_flagged_NCHAN != input_buffer_dim_NCHAN){
       prev_flagged_NCHAN = input_buffer_dim_NCHAN;
-      hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, beamformer_input_dim_NCHANS);
+      hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, BLADE_ATA_MODE_B_ANT_NCHAN);
       indb_data_dims_good_flag = 0;
     }
-    else if(input_buffer_dim_NTIME != beamformer_input_dim_NTIME && prev_flagged_NTIME != input_buffer_dim_NTIME){
+    else if(input_buffer_dim_NTIME != BLADE_ATA_MODE_B_NTIME && prev_flagged_NTIME != input_buffer_dim_NTIME){
       prev_flagged_NTIME = input_buffer_dim_NTIME;
-      hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, beamformer_input_dim_NTIME);
+      hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, BLADE_ATA_MODE_B_NTIME);
       indb_data_dims_good_flag = 0;
     }
-    else if(input_buffer_dim_NPOLS != beamformer_input_dim_NPOLS && prev_flagged_NPOLS != input_buffer_dim_NPOLS){
+    else if(input_buffer_dim_NPOLS != BLADE_ATA_MODE_B_NPOL && prev_flagged_NPOLS != input_buffer_dim_NPOLS){
       prev_flagged_NPOLS = input_buffer_dim_NPOLS;
-      hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, beamformer_input_dim_NPOLS);
+      hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, BLADE_ATA_MODE_B_NPOL);
       indb_data_dims_good_flag = 0;
     }
 
@@ -214,13 +211,12 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     // Asynchronously queue
+    input_output_blockid_pairs[curblock_in] = curblock_out;
     while(!
-      blade_ata_b_enqueue_with_id(
-        mod,
+      blade_ata_b_enqueue(
         (void*) hpguppi_databuf_data(indb, curblock_in),
         (void*) hpguppi_blade_databuf_data(outdb, curblock_out),
-        curblock_in,
-        curblock_out
+        curblock_in
       )
     ){
       if(status_state != 4){
@@ -253,10 +249,11 @@ static void *run(hashpipe_thread_args_t *args)
     curblock_out = (curblock_out + 1) % outdb->header.n_block;
 
     // Dequeue all completed buffers
-    while (blade_ata_b_dequeue_with_id(mod, NULL, NULL, &dequeued_input_id, &dequeued_output_id))
+    while (blade_ata_b_dequeue(&dequeued_input_id))
     {
       hpguppi_input_databuf_set_free(indb, dequeued_input_id);
-      hpguppi_blade_output_databuf_set_filled(outdb, dequeued_output_id);
+      hpguppi_blade_output_databuf_set_filled(outdb, input_output_blockid_pairs[dequeued_input_id]);
+      input_output_blockid_pairs[dequeued_input_id] = -1;
 
       // Update moving sum (for moving average)
       clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
@@ -269,7 +266,7 @@ static void *run(hashpipe_thread_args_t *args)
   }
 
   hashpipe_info(thread_name, "returning");
-  blade_ata_b_terminate(mod);
+  blade_ata_b_terminate();
   return NULL;
 }
 

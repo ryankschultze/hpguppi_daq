@@ -12,14 +12,11 @@ AM_CFLAGS += -Wno-stringop-truncation
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
 		  hpguppi_databuf.c
-if BLADE_ENABLED
-hpguppi_databuf += \
-		hpguppi_blade_databuf.c \
-		hpguppi_blade_databuf.h
-endif
 
 hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_atasnap.c \
+		  hpguppi_ibverbse_egress_conf.h \
+		  hpguppi_ibverbs_egress_thread.h \
 		  hpguppi_params.c \
 		  hpguppi_mkfeng.h \
 		  hpguppi_pksuwl.h \
@@ -38,6 +35,8 @@ hpguppi_support = hpguppi_atasnap.h \
 libsla_support = slalib.h sla.c f77.h
 
 hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
+		  hpguppi_ibverbs_pkt_synth_thread.c \
+		  hpguppi_ibverbs_egress_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
@@ -57,13 +56,32 @@ hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
 
 if BLADE_ENABLED
+# bladeapi library
+AM_CPPFLAGS += -I"@BLADEINCDIR@"
+
+hpguppi_blade_c_api_files = hpguppi_blade_capi_ata_mode_b.cpp hpguppi_blade_capi_ata_mode_b.h
+noinst_LTLIBRARIES = libbladeapi.la
+libbladeapi_la_SOURCES = $(hpguppi_blade_c_api_files)
+libbladeapi_la_CXXFLAGS = -std=c++20 -I "@BLADEINCDIR@"
+libbladeapi_la_LDFLAGS = -L"@LIBBLADEDIR@"
+libbladeapi_la_LIBADD = -lblade
+if CUDA_ENABLED
+libbladeapi_la_CXXFLAGS  += -I "@CUDAINCDIR@"
+endif
+
+# hpguppi extension
+hpguppi_support += hpguppi_blade_capi_ata_mode_b.h
+hpguppi_databuf += \
+		hpguppi_blade_databuf.c \
+		hpguppi_blade_databuf.h
+
 hpguppi_threads += \
 		hpguppi_ata_blade_beamformer_thread.c \
 		hpguppi_ata_blade_obs_rawdisk_thread.c
 
-hpguppi_daq_la_LIBADD  += -lblade
+hpguppi_daq_la_LIBADD  += -lblade libbladeapi.la
 hpguppi_daq_la_LDFLAGS += -L"@LIBBLADEDIR@" -Wl,-rpath,"@LIBBLADEDIR@"
-hpguppi_daq_la_CFLAGS  += -I "@BLADEINCDIR@" # -I "@CUDAINCDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@BLADEINCDIR@"
 endif
 
 if CUDA_ENABLED
