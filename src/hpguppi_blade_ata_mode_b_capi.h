@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#include "blade/pipelines/ata/mode_b_config.h"
+#include "hpguppi_blade_ata_mode_b_config.h"
 
 bool blade_use_device(int device_id);
 bool blade_ata_b_initialize(size_t numberOfWorkers);

@@ -7,7 +7,7 @@
 #include "hashpipe.h"
 #include "hpguppi_databuf.h"
 #include "hpguppi_blade_databuf.h"
-#include "hpguppi_blade_capi_ata_mode_b.h"
+#include "hpguppi_blade_ata_mode_b_capi.h"
 
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)

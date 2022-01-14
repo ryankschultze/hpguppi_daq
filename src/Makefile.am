@@ -59,7 +59,11 @@ if BLADE_ENABLED
 # bladeapi library
 AM_CPPFLAGS += -I"@BLADEINCDIR@"
 
-hpguppi_blade_c_api_files = hpguppi_blade_capi_ata_mode_b.cpp hpguppi_blade_capi_ata_mode_b.h
+hpguppi_blade_c_api_files = \
+		hpguppi_blade_ata_mode_b_capi.cpp \
+		hpguppi_blade_ata_mode_b_capi.h \
+		hpguppi_blade_ata_mode_b_config.h
+
 noinst_LTLIBRARIES = libbladeapi.la
 libbladeapi_la_SOURCES = $(hpguppi_blade_c_api_files)
 libbladeapi_la_CXXFLAGS = -std=c++20 -I "@BLADEINCDIR@"
@@ -70,7 +74,9 @@ libbladeapi_la_CXXFLAGS  += -I "@CUDAINCDIR@"
 endif
 
 # hpguppi extension
-hpguppi_support += hpguppi_blade_capi_ata_mode_b.h
+hpguppi_support += \
+		hpguppi_blade_ata_mode_b_capi.h \
+		hpguppi_blade_ata_mode_b_config.h
 hpguppi_databuf += \
 		hpguppi_blade_databuf.c \
 		hpguppi_blade_databuf.h

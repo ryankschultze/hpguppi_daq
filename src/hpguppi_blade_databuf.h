@@ -18,7 +18,7 @@
 
 #include "hpguppi_databuf.h"
 
-#include "blade/pipelines/ata/mode_b_config.h"
+#include "hpguppi_blade_ata_mode_b_config.h"
 
 #define BLADE_BLOCK_OUTPUT_DATA_SIZE (BLADE_ATA_MODE_B_OUTPUT_NBEAM *\
                                BLADE_ATA_MODE_B_ANT_NCHAN *\
