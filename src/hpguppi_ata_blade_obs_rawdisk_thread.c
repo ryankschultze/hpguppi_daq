@@ -149,6 +149,7 @@ static void *run(hashpipe_thread_args_t * args)
   hashpipe_status_lock_safe(st);
     hputu4(st->buf, "STTVALID", 0);
   hashpipe_status_unlock_safe(st);
+  hput_obsdone(st, 1);
 
   /* Main loop */
   while (run_threads()) {
@@ -236,6 +237,7 @@ static void *run(hashpipe_thread_args_t * args)
                 "obs_start %lu obs_stop %lu blk_start_pktidx %lu blk_stop_pktidx %lu",
                 obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx);
             }
+            hput_obsdone(st, 1);
           }
           flag_state_update = 1;
           state = IDLE;
@@ -256,6 +258,7 @@ static void *run(hashpipe_thread_args_t * args)
           }
           flag_state_update = 1;
           state = RECORD;
+          hput_obsdone(st, 0);
           directio = hpguppi_read_directio_mode(datablock_header);
           hgeti4(datablock_header, "STTVALID", &gp.stt_valid);
           /* Get full data block size */
