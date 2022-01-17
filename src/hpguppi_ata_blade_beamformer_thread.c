@@ -86,6 +86,13 @@ static void *run(hashpipe_thread_args_t *args)
     blade_pin_memory(hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
   }
 
+  float* phasor_buffer = malloc(blade_ata_b_get_phasor_size() * sizeof(float) * 2);
+  for(int i = 0; i < blade_ata_b_get_phasor_size(); i+=2) { // set only real components
+      phasor_buffer[i] = 1.0;
+  }
+  blade_ata_b_set_phasors(phasor_buffer, true);
+  free(phasor_buffer);
+
   int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
   int32_t input_buffer_dim_NCHAN, prev_flagged_NCHAN;
   int32_t input_buffer_dim_NTIME, prev_flagged_NTIME;
