@@ -60,10 +60,67 @@ ata:
       - hpguppi_ata_ibv_payload_order_thread
       - hpguppi_ata_blade_beamformer_thread
       - hpguppi_ata_blade_obs_rawdisk_thread
+  cpu_core_count_config:
+    16:
+      instance_cpu_core_0: [1, 17]
+      # instance_subsystem_thread_masks:
+      #   ibv: 
+      #     hpguppi_atasnap_obs_rawdisk_thread: false
+
+    24:
+      instance_cpu_core_0: [1, 25]
+      # instance_subsystem_thread_masks:
+      #   ibv: 
+      #     hpguppi_atasnap_obs_rawdisk_thread: false
+dev:
+  prefix_exec: /home/sonata/dev/hashpipe/src/
+  prefix_lib: /home/sonata/dev/hpguppi_daq/src/.libs/
+  # hpguppi_plugin:
+  logdir: /home/sonata/logs
+  # command_prefix:
+  setup_commands:
+    - 16: 
+        - ethtool -L $BINDHOST combined 32
+        - [
+          "set_irq_affinity_cpulist.sh 14,15 $BINDHOST",
+          "set_irq_affinity_cpulist.sh 30,31 $BINDHOST",
+        ]
+        - cpupower -c 0-31 idle-set -d 2
+      24:
+        - ethtool -L $BINDHOST combined 48
+        - [
+          "set_irq_affinity_cpulist.sh 22,23 $BINDHOST",
+          "set_irq_affinity_cpulist.sh 46,47 $BINDHOST",
+        ]
+        - cpupower -c 0-47 idle-set -d 2
+    - ethtool -C $BINDHOST adaptive-rx on rx-frames 8 rx-usecs 0
+    - ethtool -G $BINDHOST rx 8192
+    - cpupower frequency-set -g performance
+  hashpipe_keyfile: /home/sonata
+  environment:
+    - ATASHAREDIR="/opt/mnt"
+    - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/home/sonata/dev/hdf5_tests/build:/lib/x86_64-linux-gnu/:/opt/mnt/lib
+  options:
+      xgpu:
+        - HPCONFIG=DEV_IBV->TFPDP4A->XGPU->UVH5
+    - DIRECTIO=1
+    - IBVPKTSZ=42,16,8208
+    # - IBVPKTSZ=42,16,4112
+    - CUDADEV=$INSTANCE
+    - BINDPORT=10000
+    - PROJID=dmpauto
+  instance_numanode_bind: [0, 1]
+  instance_datadir: [/mnt/buf0, /mnt/buf1]
+  instance_bindhost: [enp97s0f1, enp225s0f1]
+  thread_mask_lengths:
+    hpguppi_ata_ibv_payload_order_thread:
+      12
+  subsystem_threads:
     xgpu:
       - hpguppi_ibvpkt_thread
       - hpguppi_ata_ibv_payload_order_thread
-      - hpguppi_atasnap_xgpu_thread
+      - hpguppi_ata_xgpu_thread
+      - hpguppi_ata_obs_uvh5disk_thread
   cpu_core_count_config:
     16:
       instance_cpu_core_0: [1, 17]
