@@ -938,8 +938,8 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
 // to xGPU-Correlator input:
 //    [Slowest ---> Fastest]
 //    Time        [0 ... PIPERBLK*PKTNTIME]
+//    Channel     [0 ... NCHAN]
 //    FENG        [0 ... NANT]
-//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    POL         [0 ... NPOL]
 //
 // The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
@@ -981,8 +981,8 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
 // to xGPU(DP4A)-Correlator input:
 //    [Slowest ---> Fastest]
 //    Time        [0 ... PIPERBLK*PKTNTIME/4]
+//    Channel     [0 ... NCHAN]
 //    FENG        [0 ... NANT]
-//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    POL         [0 ... NPOL]
 //    complexity  [real, imag]
 //    time_minor  [0 ... 4]
