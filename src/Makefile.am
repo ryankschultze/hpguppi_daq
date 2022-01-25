@@ -106,7 +106,7 @@ hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
 hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
 
 if UVH5_ENABLED
-hpguppi_threads +=
+hpguppi_threads += \
 		hpguppi_ata_obs_uvh5disk_thread.c
 hpguppi_daq_la_LDFLAGS += -L"@LIBUVH5DIR@"
 hpguppi_daq_la_LIBADD += -luvh5
