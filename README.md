@@ -6,7 +6,9 @@ The `$ ./configure` step determines which threads are compiled and indeed availa
 
 - [`--with-libsla`](https://github.com/scottransom/pyslalib) is required for MJD time calculations.
 
-- [`--with-libblade`](https://github.com/luigifcruz/blade) will enable Blade related threads. For this `CXX=g++-10` should be set.
+- [`--with-libblade`](https://github.com/luigifcruz/blade) will enable BLADE related threads. For this `CXX=g++-10` should be set.
+
+- `--with-cuda-include` required to compile BLADE related C-API.
 
 - [`--with-libxgpu`](https://github.com/GPU-correlators/xGPU) will enable xGPU related threads.
 
