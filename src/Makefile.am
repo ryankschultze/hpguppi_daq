@@ -100,14 +100,19 @@ hpguppi_databuf += \
 		hpguppi_xgpu_databuf.h
 
 hpguppi_threads += \
-		hpguppi_ata_xgpu_thread.c \
-		hpguppi_ata_obs_uvh5disk_thread.c
+		hpguppi_ata_xgpu_thread.c
 
 hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
 hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
-hpguppi_daq_la_LDFLAGS += -L"/home/sonata/dev/hdf5_tests/build"
+
+if UVH5_ENABLED
+hpguppi_threads +=
+		hpguppi_ata_obs_uvh5disk_thread.c
+hpguppi_daq_la_LDFLAGS += -L"@LIBUVH5DIR@"
 hpguppi_daq_la_LIBADD += -luvh5
-hpguppi_daq_la_CFLAGS  += -I "/home/sonata/dev/hdf5_tests/include"
+hpguppi_daq_la_CFLAGS  += -I "@UVH5INCDIR@"
+endif # UVH5_ENABLED 
+
 endif
 
 # Installed scripts
