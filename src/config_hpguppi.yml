@@ -29,14 +29,15 @@ ata:
   options:
     - ibv:
         - HPCONFIG=IBV->FTP->DISK
+        - PROJID=dmpauto
       ibv_blade:
         - HPCONFIG=IBV->FTP->BLADE->DISK
+        - PROJID=blade
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
     - BINDPORT=10000
-    - PROJID=dmpauto
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
@@ -101,14 +102,14 @@ dev:
     - ATASHAREDIR="/opt/mnt"
     - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/home/sonata/dev/hdf5_tests/build:/lib/x86_64-linux-gnu/:/opt/mnt/lib
   options:
-      xgpu:
+    - xgpu:
         - HPCONFIG=DEV_IBV->TFPDP4A->XGPU->UVH5
+        - PROJID=dmpauto
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
     - BINDPORT=10000
-    - PROJID=dmpauto
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
