@@ -267,6 +267,7 @@ static void *run(hashpipe_thread_args_t * args)
           UVH5toml_parse_observation_info("/home/sonata/dev/hdf5_tests/tests/obsinfo.toml", uvh5_header);
           UVH5Hadmin(uvh5_header);
 
+          uvh5_header->spw_array[0] = 1;
           obs_freq -= uvh5_header->Nfreqs*chan_bw/2;
           uvh5_header->channel_width[0] = chan_bw * 1e6;
           for(i = 0; i < uvh5_header->Nfreqs; i++) {
@@ -281,8 +282,8 @@ static void *run(hashpipe_thread_args_t * args)
 
           uvh5_header->history = history;
           uvh5_header->phase_type = "phased";
-          hgetr4(datablock_header, "RA_STR", &uvh5_header->phase_center_ra);
-          hgetr4(datablock_header, "DEC_STR", &uvh5_header->phase_center_dec);
+          hgetr8(datablock_header, "RA_STR", &uvh5_header->phase_center_ra);
+          hgetr8(datablock_header, "DEC_STR", &uvh5_header->phase_center_dec);
           uvh5_header->phase_center_epoch = 2000.0;
           uvh5_header->phase_center_frame = "icrs";
 
