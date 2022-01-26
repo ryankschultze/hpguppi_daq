@@ -999,22 +999,25 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
         /*const uint32_t*/  time_stride\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
-      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
+      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME; pkt_time_idx++){ \
         for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
-          for(int time_minor = 0; time_minor < 4; time_minor++){ \
-            memcpy(payload_dest, pkt_payload, sizeof(PKT_DCP_TFP_DP4A_T));\
-            memcpy(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, pkt_payload+ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, sizeof(PKT_DCP_TFP_DP4A_T));\
-            payload_dest += ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor offset*/\
-            pkt_payload += ATASNAP_DEFAULT_SAMPLE_BYTESIZE;\
+          for(int c = 0; c < 2; c++){ \
+            memcpy(payload_dest +\
+              (pkt_time_idx/4 * time_stride*4) +\
+              pkt_chan_idx * channel_stride +\
+              pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
+              c*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2 +\
+              (pkt_time_idx%4)*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2,\
+\
+              pkt_payload + \
+              pkt_chan_idx*ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
+              pkt_time_idx*ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE+\
+              pkt_pol_idx*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
+              c*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2,\
+              sizeof(PKT_DCP_TFP_DP4A_T));\
           }\
-          payload_dest -= 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor reset*/\
-          payload_dest += 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol offset*/\
         }\
-        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol reset*/\
-        payload_dest += 4*time_stride; /*time offset*/\
       }\
-      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
-      payload_dest += channel_stride; /*chan offset*/\
     }
 
 #define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 4
