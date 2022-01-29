@@ -101,6 +101,24 @@ AC_ARG_WITH([xgpu-include],
             [XGPUINCDIR="$withval"],
             [XGPUINCDIR="${LIBXGPUDIR}/../include"])
 
+AC_ARG_WITH([libuvh5],
+            AC_HELP_STRING([--with-libuvh5=DIR],
+                           [Location of UVH5C99 library]),
+            [
+              LIBUVH5DIR="$withval"
+              has_libuvh5=1
+            ],
+            [
+              LIBUVH5DIR=""
+              has_libuvh5=0
+            ])
+
+AC_ARG_WITH([uvh5-include],
+            AC_HELP_STRING([--with-uvh5-include=DIR],
+                           [Location of UVH5C99 include directory]),
+            [UVH5INCDIR="$withval"],
+            [UVH5INCDIR="${LIBUVH5DIR}/../include"])
+
 #AC_MSG_CHECKING([for libblade])
 #AC_LANG_PUSH(C++)
 #orig_LDFLAGS="$LDFLAGS"
@@ -149,6 +167,20 @@ else
   xgpu_enabled=1;
 fi
 
+if test $has_libuvh5 = 0; then
+  #AC_MSG_RESULT([no])
+  AC_MSG_NOTICE([Library UVH5C99 not provided. UVH5 will not be linked.])
+  uvh5_enabled=0;
+else
+  #AC_MSG_RESULT([yes])
+  AC_MSG_NOTICE([UVH5 will be linked.])
+  AC_SUBST(LIBUVH5DIR,${LIBUVH5DIR})
+  
+  AC_SUBST(UVH5INCDIR,${UVH5INCDIR})
+  AC_MSG_NOTICE([UVH5C99 include directory set to ${UVH5INCDIR}])
+  uvh5_enabled=1;
+fi
+
 AS_IF([test $blade_enabled = 1],
   [
     AM_CONDITIONAL(BLADE_ENABLED, true)
@@ -174,6 +206,15 @@ AS_IF([test $xgpu_enabled = 1],
   ],
   [
     AM_CONDITIONAL(XGPU_ENABLED, false)
+  ])
+
+AS_IF([test $uvh5_enabled = 1],
+  [
+    AM_CONDITIONAL(UVH5_ENABLED, true)
+    AC_DEFINE(UVH5_ENABLED,[],[Use UVH5C99])
+  ],
+  [
+    AM_CONDITIONAL(UVH5_ENABLED, false)
   ])
 
 ## Checks for header files.

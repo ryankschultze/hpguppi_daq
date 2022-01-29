@@ -938,8 +938,8 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
 // to xGPU-Correlator input:
 //    [Slowest ---> Fastest]
 //    Time        [0 ... PIPERBLK*PKTNTIME]
+//    Channel     [0 ... NCHAN]
 //    FENG        [0 ... NANT]
-//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    POL         [0 ... NPOL]
 //
 // The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
@@ -980,16 +980,14 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
 
 // to xGPU(DP4A)-Correlator input:
 //    [Slowest ---> Fastest]
-//    Time        [0 ... PIPERBLK*PKTNTIME/4]
+//    Time        [0 ... PIPERBLK/4]
+//    Channel     [0 ... NCHAN]
 //    FENG        [0 ... NANT]
-//    Channel     [0 ... NSTRM*PKTNCHAN]
 //    POL         [0 ... NPOL]
 //    complexity  [real, imag]
 //    time_minor  [0 ... 4]
 //
 // The transposition copies each byte, i.e. half of each sample (8re, 8im)
-// The nested forloops increment `payload_dest` to effect
-//  payload_dest[pkt_chan_idx*channel_stride + pkt_time_idx*time_stride + pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE]
 //
 #define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP(\
         /*uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
@@ -998,26 +996,27 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
         /*const uint32_t*/  channel_stride,\
         /*const uint32_t*/  time_stride\
       )\
-    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
-      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
-        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
-          for(int time_minor = 0; time_minor < 4; time_minor++){ \
-            memcpy(payload_dest, pkt_payload, sizeof(PKT_DCP_TFP_DP4A_T));\
-            memcpy(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, pkt_payload+ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2, sizeof(PKT_DCP_TFP_DP4A_T));\
-            payload_dest += ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor offset*/\
-            pkt_payload += ATASNAP_DEFAULT_SAMPLE_BYTESIZE;\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+      for(int pkt_time_major_idx = 0; pkt_time_major_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_major_idx++){\
+        for(int pkt_time_minor_idx = 0; pkt_time_minor_idx < 4; pkt_time_minor_idx++){\
+          for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){\
+            for(int c = 0; c < 2; c++){\
+              memcpy(payload_dest +\
+                (pkt_time_major_idx * time_stride*4) +\
+                pkt_chan_idx * channel_stride +\
+                pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
+                c*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2 +\
+                pkt_time_minor_idx*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2,\
+                \
+                pkt_payload++,\
+                sizeof(PKT_DCP_TFP_DP4A_T));\
+            }\
           }\
-          payload_dest -= 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2; /*time minor reset*/\
-          payload_dest += 4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol offset*/\
         }\
-        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; /*pol reset*/\
-        payload_dest += 4*time_stride; /*time offset*/\
       }\
-      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
-      payload_dest += channel_stride; /*chan offset*/\
     }
 
-#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 4
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 5
 #define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP(\
         /*PKT_DCP_TFP_DP4A_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*PKT_DCP_TFP_DP4A_T**/  pkt_payload,\
@@ -1025,21 +1024,21 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
         /*const uint32_t*/  channel_stride,\
         /*const uint32_t*/  time_stride\
       )\
-    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){ \
-      for(int pkt_time_idx = 0; pkt_time_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_idx++){ \
-        for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){ \
-          for(int time_minor = 0; time_minor < 4; time_minor++){ \
-            *payload_dest = *pkt_payload++;\
-            *(payload_dest+4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2) = *pkt_payload++;\
-            payload_dest++; /*time minor offset*/\
+    for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
+      for(int pkt_time_major_idx = 0; pkt_time_major_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_major_idx++){\
+        for(int pkt_time_minor_idx = 0; pkt_time_minor_idx < 4; pkt_time_minor_idx++){\
+          for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){\
+            for(int c = 0; c < 2; c++){\
+              payload_dest[\
+                (pkt_time_major_idx * time_stride*4) +\
+                pkt_chan_idx * channel_stride +\
+                pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
+                c*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2 +\
+                pkt_time_minor_idx*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2\
+              ] = *pkt_payload++;\
+            }\
           }\
-          payload_dest -= 4; /*time minor reset*/\
-          payload_dest += 4*ATASNAP_DEFAULT_PKTNPOL; /*pol offset*/\
         }\
-        payload_dest -= ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_PKTNPOL; /*pol reset*/\
-        payload_dest += 4*time_stride; /*time offset*/\
       }\
-      payload_dest -= ATASNAP_DEFAULT_PKTNTIME*time_stride; /*time reset*/\
-      payload_dest += channel_stride; /*chan offset*/\
     }
 // define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP

@@ -525,7 +525,7 @@ static void *run(hashpipe_thread_args_t *args)
 }
 
 static hashpipe_thread_desc_t xgpu_thread = {
-  name : "hpguppi_atasnap_xgpu_thread",
+  name : "hpguppi_atasnap_xgpu_disk_thread",
   skey : "XGPUSTAT",
   init : NULL,
   run : run,

@@ -40,7 +40,7 @@
 #include "hpguppi_ibverbs_pkt_thread.h"
 
 #include <omp.h>
-#define ATA_IBV_FOR_PACKET_THREAD_COUNT 8
+#define ATA_IBV_FOR_PACKET_THREAD_COUNT 12
 #define ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT 1
 #define ATA_IBV_THREAD_COUNT ATA_IBV_FOR_PACKET_THREAD_COUNT*ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT
 
@@ -474,8 +474,8 @@ int debug_i=0, debug_j=0;
             channel_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride;
             #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
-            channel_byte_stride = ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; // `*4` keeps databuf offset logic uniform
-            time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride/4; // `/4` keeps databuf offset logic uniform
+            channel_byte_stride = XGPU_BLOCK_NANTS*ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; // `*4` keeps databuf offset logic uniform
+            time_byte_stride = obs_info.nchan*channel_byte_stride/4; // `/4` keeps databuf offset logic uniform
             #endif
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
@@ -730,7 +730,12 @@ int debug_i=0, debug_j=0;
               #endif
                 (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
                 + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*time_byte_stride // offset for time
-                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride); // offset for frequency
+              #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP // 'Chans' is faster than 'Nants'
+                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride
+              #else // for TFP/_DP4A: 'Nants' is faster than 'Chans'
+                + (pkt_info.pkt_schan-obs_info.schan)*channel_byte_stride + (pkt_info.feng_id*channel_byte_stride/XGPU_BLOCK_NANTS)
+              #endif
+              ); // offset for frequency
               
               #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
                 #pragma omp parallel for\
