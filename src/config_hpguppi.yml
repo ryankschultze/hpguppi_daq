@@ -104,7 +104,8 @@ dev:
   options:
     - xgpu:
         - HPCONFIG=DEV_IBV->TFPDP4A->XGPU->UVH5
-        - PROJID=dmpauto
+        - BACKEND=UVH5
+        - PROJID=xGPU
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
