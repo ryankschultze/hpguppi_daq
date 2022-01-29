@@ -29,6 +29,7 @@
 
 #include "uvh5.h"
 #include "uvh5/uvh5_toml.h"
+#include "uvh5/uvh5_bool_t.h"
 
 #define MJD0 2400000.5
 
@@ -79,7 +80,7 @@ static void *run(hashpipe_thread_args_t * args)
 
   char history[] =
     "hpguppi_daq: plug_here\n"
-    "uvh5c99: https://github.com/MydonSolutions/uvh5c99\n\0\0\0\0";
+    "uvh5c99: https://github.com/MydonSolutions/uvh5c99\n";
 
   int rv = 0;
   int curblock_in=0;
@@ -95,14 +96,13 @@ static void *run(hashpipe_thread_args_t * args)
 
   double dut1 = 0.0;
   double tau;
-  // double tbin;
-  // int32_t piperblk, synctime;
   double chan_bw, obs_freq;
   size_t xgpu_output_elements;
 
   /* Misc counters, etc */
-  int i;
+  int i, j;
   uint64_t obs_npacket_total=0, obs_ndrop_total=0;
+  uint64_t ndrop_obs_start=0, ndrop_obs_current=0;
   uint32_t block_npacket=0, block_ndrop=0;
 
   uint64_t obs_start_pktidx = 0, obs_stop_pktidx = 0;
@@ -147,8 +147,9 @@ static void *run(hashpipe_thread_args_t * args)
           timestr[strlen(timestr)-1] = '\0'; // Chop off trailing newline
           hashpipe_status_lock_safe(st);
           {
+              hgetu8(st->buf, "NDROP", &ndrop_obs_current);
               hputu8(st->buf, "OBSNPKTS", obs_npacket_total);
-              hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
+              hputu8(st->buf, "OBSNDROP", ndrop_obs_current - ndrop_obs_start);
               hputu4(st->buf, "OBSBLKPS", blocks_per_second);
               hputr4(st->buf, "OBSBLKMS",
                 round((double)fill_to_free_moving_sum_ns / N_XGPU_OUTPUT_BLOCKS) / 1e6);
@@ -231,6 +232,7 @@ static void *run(hashpipe_thread_args_t * args)
           obs_npacket_total = 0;
           obs_ndrop_total = 0;
           if(state != ARMED){// didn't arm correctly
+            state = ARMED;
             update_stt_status_keys(st, state, obs_start_pktidx, mjd);
             hputu4(datablock_header, "STTVALID", 1);
             hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
@@ -241,6 +243,12 @@ static void *run(hashpipe_thread_args_t * args)
           state = RECORD;
           hput_obsdone(st, 0);
           hgeti4(datablock_header, "STTVALID", &stt_valid);
+          
+          hashpipe_status_lock_safe(st);
+          {
+            hgetu8(st->buf, "NDROP", &ndrop_obs_start);
+          }
+          hashpipe_status_unlock_safe(st);
         }
 
         hgetu4(datablock_header, "NPKT", &block_npacket);
@@ -253,7 +261,20 @@ static void *run(hashpipe_thread_args_t * args)
           flag_state_update = 1;
           state = ARMED;
           update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+        }
+      default:
+        break;
+    }
 
+    if(state == RECORD){
+      /***  Disk write out BEGIN */
+
+      // Wait for block 0 before starting write
+      // "block 0" is the first block of the new recording
+      if (got_block_0==0 && stt_valid == 1) {
+        got_block_0 = 1;
+
+        { // Setup UVH5 File object
           // assume everything is closed, start up for new
           // set header scalar data
           hgeti4(datablock_header, "NCHAN", &uvh5_header->Nfreqs);
@@ -284,31 +305,33 @@ static void *run(hashpipe_thread_args_t * args)
           uvh5_header->phase_type = "phased";
           hgetr8(datablock_header, "RA_STR", &uvh5_header->phase_center_ra);
           hgetr8(datablock_header, "DEC_STR", &uvh5_header->phase_center_dec);
+          uvh5_header->phase_center_ra = UVH5calc_deg2rad(uvh5_header->phase_center_ra);
+          uvh5_header->phase_center_dec = UVH5calc_deg2rad(uvh5_header->phase_center_dec);
           uvh5_header->phase_center_epoch = 2000.0;
           uvh5_header->phase_center_frame = "icrs";
 
           longitude_rad = UVH5calc_deg2rad(uvh5_header->longitude);
           latitude_rad = UVH5calc_deg2rad(uvh5_header->latitude);
 
-          hgetr8(datablock_header, "XTIMEINT", &tau); // calculated in xgpu_thread from tbin*nsamperblk*blks_per_integration
+          dut1 = 0.0;
           hgetr8(datablock_header, "DUT1", &dut1); // single DUT1 value for all observation time
-          #if 0
-          hgetr8(datablock_header, "TBIN", &tbin);
-          hgeti4(datablock_header, "SYNCTIME", &synctime);
-          hgeti4(datablock_header, "PIPERBLK", &piperblk);
-          uvh5_header->time_array[0] = (UVH5calc_julian_date_from_guppi_param(
-            tbin, piperblk, piperblk, synctime, obs_start_pktidx)- tau/2) / DAYSEC;
-          #else
+          hgetr8(datablock_header, "XTIMEINT", &tau); // calculated in xgpu_thread from tbin*nsamperblk*blks_per_integration
+          hashpipe_info(thread_name, "DUT1: %f", dut1);
+
+          // uvh5_header->lst_array = malloc(sizeof(double) * uvh5_header->Nbls);
+
           uvh5_header->time_array[0] = MJD0;
           uvh5_header->time_array[0] += (double)mjd->stt_imjd;
           uvh5_header->time_array[0] += ((double)mjd->stt_smjd)/86400.0;
           uvh5_header->time_array[0] += (tau/2) / DAYSEC;
-          #endif
           hashpipe_info(thread_name, "UVH5 time starts at %f (tau/DAYSEC %f)", uvh5_header->time_array[0], tau/DAYSEC);
           uvh5_header->integration_time[0] = tau;
+          // uvh5_header->lst_array[0] = UVH5calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
+          uvh5_header->dut1 = dut1;
           for (i = 1; i < uvh5_header->Nbls; i++)
           {
             uvh5_header->time_array[i] = uvh5_header->time_array[0];
+            // uvh5_header->lst_array[i] = uvh5_header->lst_array[0];
             uvh5_header->integration_time[i] = uvh5_header->integration_time[0];
           }
 
@@ -317,19 +340,10 @@ static void *run(hashpipe_thread_args_t * args)
             "Picked up xgpu output element count of %llu (%llu products per %d frequencies)", 
             xgpu_output_elements, xgpu_output_elements/uvh5_header->Nfreqs, uvh5_header->Nfreqs
           );
-        }
-      default:
-        break;
-    }
-
-    if(state == RECORD){
-      /***  Disk write out BEGIN */
-
-      // Wait for block 0 before starting write
-      // "block 0" is the first block of the new recording
-      if (got_block_0==0 && stt_valid == 1) {
-        got_block_0 = 1;
+        }// Setup UVH5 File object
+        
         hpguppi_read_obs_params(datablock_header, &gp, &pf);
+        hpguppi_read_subint_params(datablock_header, &gp, &pf);
         char fname[256];
         sprintf(fname, "%s.uvh5", pf.basefilename);
         fprintf(stderr, "Opening uvh5 file '%s'\n", fname);
@@ -382,16 +396,22 @@ static void *run(hashpipe_thread_args_t * args)
         );
 
         uvh5_header->time_array[0] += + tau/DAYSEC;
-        // hashpipe_info(thread_name, "UVH5 time #%d at %f", uvh5_header->Ntimes, uvh5_header->time_array[0]);
-        hgetr4(datablock_header, "NSAMPLES", uvh5_file.nsamples);
-        for (i = 1; i < uvh5_header->Nbls; i++) {
+        // uvh5_header->lst_array[0] = UVH5calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
+        hgetr8(datablock_header, "NSAMPLES", uvh5_file.nsamples);
+        for (i = 0; i < uvh5_header->Nbls; i++) {
           uvh5_header->time_array[i] = uvh5_header->time_array[0];
-          uvh5_file.nsamples[i] = uvh5_file.nsamples[0];
+          // uvh5_header->lst_array[i] = uvh5_header->lst_array[0];
+          for (j = 0; j < uvh5_header->Nfreqs*uvh5_header->Npols; j++) {
+            uvh5_file.nsamples[i*uvh5_header->Nfreqs*uvh5_header->Npols + j] = uvh5_file.nsamples[0];
+            uvh5_file.flags[i*uvh5_header->Nfreqs*uvh5_header->Npols + j] = UVH5_FALSE;
+          }
         }
 
         if (1) { // Phased
           hgetr8(datablock_header, "RA_STR", &ra_rad);
           hgetr8(datablock_header, "DEC_STR", &dec_rad);
+          ra_rad = UVH5calc_deg2rad(ra_rad);
+          dec_rad = UVH5calc_deg2rad(dec_rad);
 
           UVH5calc_ha_dec_rad(
             ra_rad,
@@ -405,9 +425,10 @@ static void *run(hashpipe_thread_args_t * args)
             &declination_rad
           );
 
+          memcpy(uvh5_header->_antenna_uvw_positions, uvh5_header->_antenna_enu_positions, sizeof(double)*uvh5_header->Nants_telescope*3);
           UVH5calc_position_to_uvw_frame_from_enu(
             uvh5_header->_antenna_uvw_positions,
-            uvh5_header->Nants_data,
+            uvh5_header->Nants_telescope,
             hour_angle_rad,
             declination_rad,
             latitude_rad
@@ -446,7 +467,7 @@ static void *run(hashpipe_thread_args_t * args)
   pthread_cleanup_pop(0); /* Closes hpguppi_free_psrfits */
 }
 
-static hashpipe_thread_desc_t obs_rawdisk_thread = {
+static hashpipe_thread_desc_t obs_uvh5disk_thread = {
     name: "hpguppi_ata_obs_uvh5disk_thread",
     skey: "OBSSTAT",
     init: NULL,
@@ -457,7 +478,7 @@ static hashpipe_thread_desc_t obs_rawdisk_thread = {
 
 static __attribute__((constructor)) void ctor()
 {
-  register_hashpipe_thread(&obs_rawdisk_thread);
+  register_hashpipe_thread(&obs_uvh5disk_thread);
 }
 
 // vi: set ts=8 sw=4 et :
