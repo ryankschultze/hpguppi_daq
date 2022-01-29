@@ -79,10 +79,10 @@ static void *run(hashpipe_thread_args_t *args)
 
   XGPUContext xgpu_context;
   // register all blocks as one region, and use input_offset
-  xgpu_context.array_h = (ComplexInput *)(dbin->block[0].hdr); //input; this will stop xGPU from allocating input buffer
-  xgpu_context.array_len = dbin->header.n_block*sizeof(hpguppi_input_xgpu_block_t)/sizeof(ComplexInput);//xgpu_info.vecLength;
+  xgpu_context.array_h = (ComplexInput *)(dbin->block[0].data); //input; this will stop xGPU from allocating input buffer
+  xgpu_context.array_len = (dbin->header.n_block*sizeof(hpguppi_input_xgpu_block_t) - BLOCK_HDR_SIZE)/sizeof(ComplexInput);//xgpu_info.vecLength;
   xgpu_context.matrix_h = (Complex *)(dbout->block[0].data); //output; direct xGPU to use ouptut databufs
-  xgpu_context.matrix_len = dbout->header.n_block*sizeof_hpguppi_output_xgpu_block_t()/sizeof(Complex);//xgpu_info.triLength;
+  xgpu_context.matrix_len = (dbout->header.n_block*sizeof_hpguppi_output_xgpu_block_t() - BLOCK_HDR_SIZE)/sizeof(Complex);//xgpu_info.triLength;
 
   xgpu_error = xgpuInit(&xgpu_context, cudaDeviceId);
   if (xgpu_error)
@@ -106,6 +106,7 @@ static void *run(hashpipe_thread_args_t *args)
   // uint64_t blk_start_pktidx, obs_stop_pktidx;
   int first_block = 1, obsdone = 1, obsdone_prev = 1;
   float uvh5_nsamples; // calculated for uvh5 benefit
+  uint64_t blk_start_pktidx = 0, obs_start_pktidx = 0;
 
   while (run_threads())
   {
@@ -158,11 +159,52 @@ static void *run(hashpipe_thread_args_t *args)
       continue;
     }
 
-    // hgetu8(databuf_ptr, "BLKSTART", &blk_start_pktidx);
-    // hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
+    hgetu8(databuf_ptr, "BLKSTART", &blk_start_pktidx);
+    hgetu8(databuf_ptr, "PKTSTART", &obs_start_pktidx);
+    if(blk_start_pktidx < obs_start_pktidx) {
+      do {
+        rv = hpguppi_output_xgpu_databuf_wait_free(dbout, curblock_out);
+        if (rv == HASHPIPE_TIMEOUT) {
+          if(status_index !=  1)
+          {
+            status_index = 1;
+            hashpipe_status_lock_safe(st);
+            hputs(st->buf, status_key, "blocked");
+            hashpipe_status_unlock_safe(st);
+          }
+        }
+      } while (rv != HASHPIPE_OK);
+
+      /* Mark useless block as filled */
+      memcpy(hpguppi_xgpu_output_databuf_header(dbout, curblock_out),
+        databuf_ptr,
+        HASHPIPE_STATUS_TOTAL_SIZE
+      );
+      hpguppi_output_xgpu_databuf_set_filled(dbout, curblock_out);
+      curblock_out = (curblock_out + 1) % dbout->header.n_block;
+
+      /* Mark as free */
+      hpguppi_input_xgpu_databuf_set_free(dbin, curblock_in);
+
+      // Update moving sum (for moving average)
+      clock_gettime(CLOCK_MONOTONIC, &ts_now);
+      fill_to_free_elapsed_ns = ELAPSED_NS(ts_stop_recv, ts_now);
+      // Add new value, subtract old value
+      fill_to_free_moving_sum_ns +=
+          fill_to_free_elapsed_ns - fill_to_free_block_ns[curblock_in];
+      // Store new value
+      fill_to_free_block_ns[curblock_in] = fill_to_free_elapsed_ns;
+
+      /* Go to next block */
+      curblock_in = (curblock_in + 1) % dbin->header.n_block;
+      continue;
+    }
+
     if (first_block) {
       // TODO if start obs clear the integration buffer
       first_block = 0;
+
+      hashpipe_info(thread_name, "Observation start idx: %lu, first block start idx: %lu", obs_start_pktidx, blk_start_pktidx);
 
       hgetr8(databuf_ptr, "XTIMEINT", &corr_integration_time);
       hgetr8(databuf_ptr, "TBIN", &tbin);
@@ -173,8 +215,9 @@ static void *run(hashpipe_thread_args_t *args)
         blocks_in_integration = 1;
       }
 
-      xgpuClearDeviceIntegrationBuffer(&xgpu_context);
-      hgetu8(databuf_ptr, "NDROP", &ndrop_integration_start);
+      hashpipe_status_lock_safe(st);
+        hgetu8(st->buf, "NDROP", &ndrop_integration_start);
+      hashpipe_status_unlock_safe(st);
 
       hashpipe_status_lock_safe(st);
       hputr8(st->buf, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
@@ -209,12 +252,11 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     // Correlate
-    xgpu_context.input_offset = (dbin->block[curblock_in].data - (char*)xgpu_context.array_h)/sizeof(ComplexInput);
+    xgpu_context.input_offset = (curblock_in*sizeof(hpguppi_input_xgpu_block_t))/sizeof(ComplexInput);
     if(integration_block_count == 0) {
       // Clear the previous integration
       xgpuClearDeviceIntegrationBuffer(&xgpu_context);
-      xgpu_context.output_offset = (hpguppi_xgpu_output_databuf_data(dbout, curblock_out) - (char*)xgpu_context.matrix_h)/sizeof(Complex);
-      // hashpipe_warn(thread_name, "output_offset for %d is %llu", curblock_out, xgpu_context.output_offset*sizeof(Complex));
+      xgpu_context.output_offset = (curblock_out*sizeof_hpguppi_output_xgpu_block_t())/sizeof(Complex);
     }
 
     xgpu_error = xgpuCudaXengine(&xgpu_context, ++integration_block_count == blocks_in_integration ? SYNCOP_DUMP : SYNCOP_SYNC_TRANSFER); //XXX figure out flags (85 Gbps with SYNCOP_DUMP)
@@ -226,7 +268,10 @@ static void *run(hashpipe_thread_args_t *args)
       // Correlation done. Reorder the matrix and dump to disk
       xgpuReorderMatrix(xgpu_context.matrix_h + xgpu_context.output_offset);
 
-      hgetu8(databuf_ptr, "NDROP", &ndrop_integration_end);
+      hashpipe_status_lock_safe(st);
+        hgetu8(st->buf, "NDROP", &ndrop_integration_end);
+      hashpipe_status_unlock_safe(st);
+      hputu8(databuf_ptr, "NDROP", ndrop_integration_end - ndrop_integration_start);
 
       uvh5_nsamples = 1.0 - ((float)(ndrop_integration_end - ndrop_integration_start))/(blocks_in_integration*timesample_perblock);
       hputr4(databuf_ptr, "NSAMPLES", uvh5_nsamples);
@@ -243,25 +288,8 @@ static void *run(hashpipe_thread_args_t *args)
       ndrop_integration_start = ndrop_integration_end;
     }
 
-    // // DEBUG dump out block
-    // int fdraw = open("/mnt/buf0/dump_xgpu_in.bin", O_CREAT|O_WRONLY, 0644);
-    // char* buf = hpguppi_xgpu_databuf_data(dbin, 0);
-    // size_t bytes_remaining = dbin->header.block_size;
-    // ssize_t bytes_written = 0;
-    // while(bytes_remaining != 0) {
-    //   bytes_written = write(fdraw, buf, bytes_remaining);
-    //   if(bytes_written == -1) {
-    //     break;
-    //   }
-    //   bytes_remaining -= bytes_written;
-    //   buf += bytes_written;
-    // }
-    // close(fdraw);
-    // break;
-
     /* Mark as free */
     hpguppi_input_xgpu_databuf_set_free(dbin, curblock_in);
-
 
     // Update moving sum (for moving average)
     clock_gettime(CLOCK_MONOTONIC, &ts_now);

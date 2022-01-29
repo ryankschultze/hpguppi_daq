@@ -47,7 +47,7 @@ hashpipe_databuf_t *hpguppi_output_xgpu_databuf_create(int instance_id, int data
     /* Calc databuf sizes */
     size_t header_size = sizeof(hashpipe_databuf_t)
                        + sizeof(hashpipe_databuf_alignment);
-    size_t block_size  = BLOCK_HDR_SIZE + hpguppi_output_xgpu_block_data_byte_size();
+    size_t block_size  = sizeof_hpguppi_output_xgpu_block_t();
     int    n_block = N_XGPU_OUTPUT_BLOCKS;
 
     hpguppi_output_xgpu_databuf_t * d = (hpguppi_output_xgpu_databuf_t *)

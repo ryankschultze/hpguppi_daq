@@ -231,7 +231,7 @@ static inline char *hpguppi_xgpu_output_databuf_header(struct hpguppi_output_xgp
             block_id, d->header.n_block);
         return NULL;
     } else {
-        return d->block[0].hdr + block_id*(d->header.header_size + d->header.block_size);
+        return d->block[0].hdr + block_id*d->header.block_size;
     }
 }
 
@@ -242,7 +242,7 @@ static inline char *hpguppi_xgpu_output_databuf_data(struct hpguppi_output_xgpu_
             block_id, d->header.n_block);
         return NULL;
     } else {
-        return d->block[0].data + block_id*(d->header.header_size + d->header.block_size);
+        return d->block[0].data + block_id*d->header.block_size;
     }
 }
 
