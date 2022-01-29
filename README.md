@@ -1,5 +1,6 @@
 # SETI ATA Hashpipe Data Acquisition
 
+This uses this version of [hashpipe](https://github.com/MydonSolutions/hashpipe/tree/ae6c1541a1000f921ba1e0d5aafee6be6f8a8740).
 ## Compilation
 
 The `$ ./configure` step determines which threads are compiled and indeed available for deployment.
