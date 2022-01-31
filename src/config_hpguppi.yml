@@ -47,7 +47,7 @@ ata:
   instance_bindhost: [enp97s0f1, enp225s0f1]
   thread_mask_lengths:
     hpguppi_ata_ibv_payload_order_thread:
-      8
+      12
   subsystem_threads:
     _:
       - hpguppi_ibvpkt_thread
