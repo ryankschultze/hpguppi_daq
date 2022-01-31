@@ -15,8 +15,6 @@ hpguppi_databuf = hpguppi_databuf.h \
 
 hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_atasnap.c \
-		  hpguppi_ibverbse_egress_conf.h \
-		  hpguppi_ibverbs_egress_thread.h \
 		  hpguppi_params.c \
 		  hpguppi_mkfeng.h \
 		  hpguppi_pksuwl.h \
@@ -35,8 +33,6 @@ hpguppi_support = hpguppi_atasnap.h \
 libsla_support = slalib.h sla.c f77.h
 
 hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
-		  hpguppi_ibverbs_pkt_synth_thread.c \
-		  hpguppi_ibverbs_egress_thread.c \
 		  hpguppi_net_thread.c \
 		  hpguppi_mb1_net_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
