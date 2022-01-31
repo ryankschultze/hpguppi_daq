@@ -25,7 +25,7 @@ ata:
   hashpipe_keyfile: /home/sonata
   environment:
     - ATASHAREDIR="/opt/mnt"
-    - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/opt/mnt/lib
+    - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/home/sonata/dev/hdf5_tests/build:/lib/x86_64-linux-gnu/:/opt/mnt/lib
   options:
     - ibv:
         - HPCONFIG=IBV->FTP->DISK
@@ -33,6 +33,10 @@ ata:
       ibv_blade:
         - HPCONFIG=IBV->FTP->BLADE->DISK
         - PROJID=blade
+      ibv_xgpu:
+        - HPCONFIG=IBV->TFP_DP4A->xGPU->UVH5
+        - BACKEND=UVH5
+        - PROJID=xGPU
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
@@ -44,8 +48,6 @@ ata:
   thread_mask_lengths:
     hpguppi_ata_ibv_payload_order_thread:
       8
-    hpguppi_atasnap_pkt_to_xgpu_transpose:
-      10
   subsystem_threads:
     _:
       - hpguppi_ibvpkt_thread
@@ -61,6 +63,11 @@ ata:
       - hpguppi_ata_ibv_payload_order_thread
       - hpguppi_ata_blade_beamformer_thread
       - hpguppi_ata_blade_obs_rawdisk_thread
+    ibv_xgpu:
+      - hpguppi_ibvpkt_thread
+      - hpguppi_ata_ibv_payload_order_thread
+      - hpguppi_ata_xgpu_thread
+      - hpguppi_ata_obs_uvh5disk_thread
   cpu_core_count_config:
     16:
       instance_cpu_core_0: [1, 17]
