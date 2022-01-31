@@ -61,8 +61,6 @@ static ssize_t write_all(int fd, const void *buf, size_t bytes_to_write)
   return bytes_to_write;
 }
 
- 
-
 #define HPUT_DAQ_STATE(st, state)\
   hputs(st->buf, "DAQSTATE", state == IDLE  ? "idling" :\
                              state == ARMED ? "armed"  :\
@@ -109,7 +107,7 @@ static void *run(hashpipe_thread_args_t * args)
 
   char *datablock_header;
   int beam_blocksize=0, len=0;
-  int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/BLOCK_DATA_SIZE) , filenum=0;
+  int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/BLADE_BLOCK_DATA_SIZE) , filenum=0;
   int got_packet_0=0;
   char *hend;
   int open_flags = 0;
@@ -250,7 +248,7 @@ static void *run(hashpipe_thread_args_t * args)
           obs_npacket_total = 0;
           obs_ndrop_total = 0;
           if(state != ARMED){// didn't arm correctly
-            update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+            update_stt_status_keys(st, ARMED, obs_start_pktidx, mjd);
             hputu4(datablock_header, "STTVALID", 1);
             hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
             hputu4(datablock_header, "STT_SMJD", mjd->stt_smjd);
@@ -360,12 +358,7 @@ static void *run(hashpipe_thread_args_t * args)
           open_flags |= O_DIRECT;
         }
         for(i = 0; i < nbeams; i++){
-          if(nbeams > 1){
-            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
-          }
-          else{
-            sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
-          }
+          sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
 
           fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
           fdraws[i] = open(fname, open_flags, 0644);
@@ -382,12 +375,7 @@ static void *run(hashpipe_thread_args_t * args)
         filenum++;
         for(i = 0; i < nbeams; i++){
           close(fdraws[i]);
-          if(nbeams > 1){
-            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
-          }
-          else{
-            sprintf(fname, "%s.%04d.raw", pf.basefilename, filenum);
-          }
+          sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
 
           open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
           if(directio) {

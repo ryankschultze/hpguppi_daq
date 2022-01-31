@@ -243,8 +243,9 @@ static void *run(hashpipe_thread_args_t *args)
             BLOCK_HDR_SIZE);
       
       //TODO upate output_buffer headers to reflect that they contain beams
-      hputi4(databuf_header, "NBEAMS", 16);
-      hputi4(databuf_header, "NBITS", 16);
+      hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_MODE_B_OUTPUT_NBEAM * BLADE_ATA_MODE_B_ANT_NCHAN);
+      hputi4(databuf_header, "NBEAMS", BLADE_ATA_MODE_B_OUTPUT_NBEAM);
+      hputi4(databuf_header, "NBITS", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES*8/2);
       hputs(databuf_header, "DATATYPE", "FLOAT");
       hputs(databuf_header, "SMPLTYPE", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES == 8 ? "CF32" : "CF16");
       hputi4(databuf_header, "BLOCSIZE", BLADE_BLOCK_DATA_SIZE);
