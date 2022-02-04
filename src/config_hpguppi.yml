@@ -37,6 +37,8 @@ ata:
         - HPCONFIG=IBV->TFP_DP4A->xGPU->UVH5
         - BACKEND=UVH5
         - PROJID=xGPU
+        - UVH5TELP=/opt/mnt/share/telinfo_ata.toml
+        - UVH5OBSP=/opt/mnt/share/obsinfo.toml
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
@@ -113,6 +115,8 @@ dev:
         - HPCONFIG=DEV_IBV->TFPDP4A->XGPU->UVH5
         - BACKEND=UVH5
         - PROJID=xGPU
+        - UVH5TELP=/opt/mnt/share/telinfo_ata.toml
+        - UVH5OBSP=/opt/mnt/share/obsinfo.toml
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112

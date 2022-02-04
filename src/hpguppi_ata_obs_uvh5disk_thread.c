@@ -124,6 +124,9 @@ static void *run(hashpipe_thread_args_t * args)
   time_t curtime = 0;
   char timestr[32] = {0};
 
+  char tel_info_toml_filepath[70] = {'\0'};
+  char obs_info_toml_filepath[70] = {'\0'};
+
   uint32_t blocks_per_second = 0;
 
   // Reset STTVALID so that update_stt_status_keys works
@@ -280,12 +283,16 @@ static void *run(hashpipe_thread_args_t * args)
           hgeti4(datablock_header, "NCHAN", &uvh5_header->Nfreqs);
           hgetr8(datablock_header, "CHAN_BW", &chan_bw);
           hgetr8(datablock_header, "OBSFREQ", &obs_freq);
+          hgets(datablock_header, "UVH5TELP", 70, tel_info_toml_filepath);
+          hgets(datablock_header, "UVH5OBSP", 70, obs_info_toml_filepath);
           uvh5_header->Nspws = 1;
           uvh5_header->Ntimes = 0; // initially
           uvh5_header->Nblts = 0; // uvh5_header->Nbls * uvh5_header->Ntimes;
 
-          UVH5toml_parse_telescope_info("/home/sonata/dev/hdf5_tests/tests/telinfo_ata.toml", uvh5_header);
-          UVH5toml_parse_observation_info("/home/sonata/dev/hdf5_tests/tests/obsinfo.toml", uvh5_header);
+          hashpipe_info(thread_name, "Parsing '%s' as Telescope information.", tel_info_toml_filepath);
+          UVH5toml_parse_telescope_info(tel_info_toml_filepath, uvh5_header);
+          hashpipe_info(thread_name, "Parsing '%s' as Observation information.", obs_info_toml_filepath);
+          UVH5toml_parse_observation_info(obs_info_toml_filepath, uvh5_header);
           UVH5Hadmin(uvh5_header);
 
           uvh5_header->spw_array[0] = 1;
