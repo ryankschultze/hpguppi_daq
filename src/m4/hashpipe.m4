@@ -30,6 +30,11 @@ AC_CHECK_FILE([${HASHPIPEDIR}/include/hashpipe.h],
                             # Found
                             AC_SUBST(HASHPIPE_INCDIR,${HASHPIPEDIR}),
                             # Not found there, error
-                            AC_MSG_ERROR([hashpipe.h header file not found])))
+                            AC_CHECK_FILE([${HASHPIPEDIR}/../hashpipe.h],
+                                      # Found
+                                      AC_SUBST(HASHPIPE_INCDIR,${HASHPIPEDIR}/..),
+                                      # Not found there, error
+                                      AC_MSG_ERROR([hashpipe.h header file not found]))
+                            ))
 
 ])
