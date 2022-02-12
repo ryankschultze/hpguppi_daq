@@ -104,9 +104,10 @@ static void *run(hashpipe_thread_args_t *args)
   int status_index = -1;
   uint64_t ndrop_integration_start, ndrop_integration_end;
   // uint64_t blk_start_pktidx, obs_stop_pktidx;
-  int first_block = 1, obsdone = 1, obsdone_prev = 1;
+  int first_block = 1;
   float uvh5_nsamples; // calculated for uvh5 benefit
   uint64_t blk_start_pktidx = 0, obs_start_pktidx = 0, obs_stop_pktidx = 0;
+  uint64_t integrated_blk_start_pktidx = 0;
 
   while (run_threads())
   {
@@ -161,7 +162,11 @@ static void *run(hashpipe_thread_args_t *args)
 
     hgetu8(databuf_ptr, "BLKSTART", &blk_start_pktidx);
     hgetu8(databuf_ptr, "PKTSTART", &obs_start_pktidx);
-    if(blk_start_pktidx < obs_start_pktidx) {
+    hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
+    if(blk_start_pktidx < obs_start_pktidx
+      || blk_start_pktidx > obs_stop_pktidx
+    ) {
+      first_block = 1;
       do {
         rv = hpguppi_output_xgpu_databuf_wait_free(dbout, curblock_out);
         if (rv == HASHPIPE_TIMEOUT) {
@@ -208,7 +213,6 @@ static void *run(hashpipe_thread_args_t *args)
 
       hgetr8(databuf_ptr, "XTIMEINT", &corr_integration_time);
       hgetr8(databuf_ptr, "TBIN", &tbin);
-      hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
 
       integration_block_count = 0;
       blocks_in_integration = (unsigned int) (corr_integration_time / (tbin * timesample_perblock) + 0.5);
@@ -234,11 +238,8 @@ static void *run(hashpipe_thread_args_t *args)
       hputr8(databuf_ptr, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
       hputr4(databuf_ptr, "XTIME", (obs_stop_pktidx - obs_start_pktidx) * tbin);
       hputu4(databuf_ptr, "XINTEGS", observation_integrations_rounded);
-      hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
+      hputu8(databuf_ptr, "PKTSTOP", obs_stop_pktidx);
     }
-    hget_obsdone(st, &obsdone);
-    first_block = !obsdone_prev && obsdone; // tag end of observation
-    obsdone_prev = obsdone;
 
     do {
       rv = hpguppi_output_xgpu_databuf_wait_free(dbout, curblock_out);
@@ -267,6 +268,7 @@ static void *run(hashpipe_thread_args_t *args)
       // Clear the previous integration
       xgpuClearDeviceIntegrationBuffer(&xgpu_context);
       xgpu_context.output_offset = (curblock_out*sizeof_hpguppi_output_xgpu_block_t())/sizeof(Complex);
+      integrated_blk_start_pktidx = blk_start_pktidx;
     }
 
     xgpu_error = xgpuCudaXengine(&xgpu_context, ++integration_block_count == blocks_in_integration ? SYNCOP_DUMP : SYNCOP_SYNC_TRANSFER); //XXX figure out flags (85 Gbps with SYNCOP_DUMP)
@@ -292,6 +294,7 @@ static void *run(hashpipe_thread_args_t *args)
         databuf_ptr,
         HASHPIPE_STATUS_TOTAL_SIZE
       );
+      hputu8(hpguppi_xgpu_output_databuf_header(dbout, curblock_out), "BLKSTART", integrated_blk_start_pktidx);
       hpguppi_output_xgpu_databuf_set_filled(dbout, curblock_out);
       curblock_out = (curblock_out + 1) % dbout->header.n_block;
 
