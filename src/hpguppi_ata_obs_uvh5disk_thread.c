@@ -216,14 +216,14 @@ static void *run(hashpipe_thread_args_t * args)
               memset(&uvh5_file, 0, sizeof(UVH5_file_t));
               uvh5_header = &uvh5_file.header;
               got_block_0 = 0;
-
-              // Print end of recording conditions
-              hashpipe_info(thread_name, "recording stopped: "
-                "obs_start %lu obs_stop %lu blk_start_pktidx %lu blk_stop_pktidx %lu",
-                obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx);
             }
-            hput_obsdone(st, 1);
           }
+          // Print end of recording conditions
+          hashpipe_info(thread_name, "%s ended: "
+            "obs_start %lu obs_stop %lu blk_start_pktidx %lu blk_stop_pktidx %lu",
+            state == RECORD ? "recording" : "arming",
+            obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx);
+          hput_obsdone(st, 1);
           flag_state_update = 1;
           state = IDLE;
           // Update STT with state = IDLE, setting STTVALID = 0
@@ -241,10 +241,10 @@ static void *run(hashpipe_thread_args_t * args)
             hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
             hputu4(datablock_header, "STT_SMJD", mjd->stt_smjd);
             hputr8(datablock_header, "STT_OFFS", mjd->stt_offs);
+            hput_obsdone(st, 0);
           }
           flag_state_update = 1;
           state = RECORD;
-          hput_obsdone(st, 0);
           hgeti4(datablock_header, "STTVALID", &stt_valid);
           
           hashpipe_status_lock_safe(st);
@@ -264,6 +264,7 @@ static void *run(hashpipe_thread_args_t * args)
           flag_state_update = 1;
           state = ARMED;
           update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+          hput_obsdone(st, 0);
         }
       default:
         break;
@@ -445,6 +446,29 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         UVH5write_dynamic(&uvh5_file);
+      }
+
+      // If obviously last block, close up and transition to IDLE
+      if(block_stop_pktidx >= obs_stop_pktidx){
+        // If file open, close it
+        if(uvh5_file.file_id) {
+          // Close file
+          free(uvh5_header->object_name);
+          UVH5close(&uvh5_file);
+          memset(&uvh5_file, 0, sizeof(UVH5_file_t));
+          uvh5_header = &uvh5_file.header;
+          got_block_0 = 0;
+
+          // Print end of recording conditions
+          hashpipe_info(thread_name, "recorded last block: "
+            "obs_start %lu obs_stop %lu blk_start_pktidx %lu blk_stop_pktidx %lu",
+            obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx);
+        }
+        hput_obsdone(st, 1);
+        flag_state_update = 1;
+        state = IDLE;
+        // Update STT with state = IDLE, setting STTVALID = 0
+        update_stt_status_keys(st, state, obs_start_pktidx, mjd);
       }
       /*** UVH5 Disk write out END*/
     }
