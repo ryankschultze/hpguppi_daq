@@ -456,7 +456,6 @@ int debug_i=0, debug_j=0;
         memcpy(&ts_checked_obs_info, &ts_now, sizeof(struct timespec));
 
         // write obs_info to overwrite any changes
-        observing = pkt_info.pktidx >= obs_start_seq_num && pkt_info.pktidx < obs_stop_seq_num;
         if (obs_info_validity == OBS_VALID && // if obs_info is valid
             observing ){ //and observing
             ata_snap_obs_info_write_with_validity(st, &obs_info, obs_info_validity);
@@ -520,9 +519,6 @@ int debug_i=0, debug_j=0;
               hashpipe_info(thread_name, "obs_start_seq_num change ignored while in observation.");
               obs_start_seq_num = prev_obs_start_seq_num;
             }
-            else{
-              flag_reinit_blks |= align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
-            }
           }
           if(obs_stop_seq_num != prev_obs_stop_seq_num){
             hashpipe_info(thread_name, "obs_stop_seq_num changed %lu -> %lu", prev_obs_stop_seq_num, obs_stop_seq_num);
@@ -578,26 +574,6 @@ int debug_i=0, debug_j=0;
         fprintf(stderr, "final fill-to-free %ld ns\n", ELAPSED_NS(ts_stop_recv, ts_free_input));
       }
       break;
-    }
-
-    if (flag_reinit_blks) { // Reinitialise working blocks
-      flag_reinit_blks = 0;
-      // Re-init working blocks for block number of current packet's block,
-      // and clear their data buffers
-      for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
-        wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
-        init_datablock_stats(wblk+wblk_idx, NULL, -1,
-            wblk_idx,
-            obs_info.pkt_per_block);
-        wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
-
-        // also update the working blocks' headers
-        datablock_header = datablock_stats_header(&wblk[wblk_idx]);
-        hashpipe_status_lock_safe(st);
-          memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
-        hashpipe_status_unlock_safe(st);
-      }
-      hashpipe_info(thread_name, "Working block range now has PKTIDX range [%ld, %ld)", wblk[0].packet_idx, wblk[n_wblock-1].packet_idx + obs_info.pktidx_per_block);
     }
 
     // Got packet(s)!  Update status if needed.
@@ -664,6 +640,27 @@ int debug_i=0, debug_j=0;
               wait_for_block_free(&wblk[n_wblock-1], st, status_key);
             }
           }
+      }
+      observing = pkt_info.pktidx >= obs_start_seq_num && pkt_info.pktidx < obs_stop_seq_num;
+
+      if (flag_reinit_blks) { // Reinitialise working blocks
+        flag_reinit_blks = 0;
+        // Re-init working blocks for block number of current packet's block,
+        // and clear their data buffers
+        for(wblk_idx=0; wblk_idx<n_wblock; wblk_idx++) {
+          wblk[wblk_idx].pktidx_per_block = obs_info.pktidx_per_block;
+          init_datablock_stats(wblk+wblk_idx, NULL, -1,
+              wblk_idx,
+              obs_info.pkt_per_block);
+          wblk[wblk_idx].packet_idx = blk0_start_seq_num + wblk[wblk_idx].block_num * obs_info.pktidx_per_block;
+
+          // also update the working blocks' headers
+          datablock_header = datablock_stats_header(&wblk[wblk_idx]);
+          hashpipe_status_lock_safe(st);
+            memcpy(datablock_header, st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+          hashpipe_status_unlock_safe(st);
+        }
+        hashpipe_info(thread_name, "Working block range now has PKTIDX range [%ld, %ld)", wblk[0].packet_idx, wblk[n_wblock-1].packet_idx + obs_info.pktidx_per_block);
       }
 
       // For each packet: process all packets
@@ -811,6 +808,9 @@ int debug_i=0, debug_j=0;
       }
       memset(thread_wblk_pkt_count, 0, ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
     } // end if not idle
+    else if (observing) {
+      observing = 0;
+    }
 
     // Mark input block free
     hpguppi_input_databuf_set_free(dbin, block_idx_in);
