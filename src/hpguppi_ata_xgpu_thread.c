@@ -106,7 +106,7 @@ static void *run(hashpipe_thread_args_t *args)
   // uint64_t blk_start_pktidx, obs_stop_pktidx;
   int first_block = 1, obsdone = 1, obsdone_prev = 1;
   float uvh5_nsamples; // calculated for uvh5 benefit
-  uint64_t blk_start_pktidx = 0, obs_start_pktidx = 0;
+  uint64_t blk_start_pktidx = 0, obs_start_pktidx = 0, obs_stop_pktidx = 0;
 
   while (run_threads())
   {
@@ -208,23 +208,33 @@ static void *run(hashpipe_thread_args_t *args)
 
       hgetr8(databuf_ptr, "XTIMEINT", &corr_integration_time);
       hgetr8(databuf_ptr, "TBIN", &tbin);
+      hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
 
       integration_block_count = 0;
       blocks_in_integration = (unsigned int) (corr_integration_time / (tbin * timesample_perblock) + 0.5);
       if(blocks_in_integration == 0) {
         blocks_in_integration = 1;
       }
+      hashpipe_info(thread_name, "Clearing integration every %u block(s).", blocks_in_integration);
+      
+      // Round up the number of integration blocks in the observation
+      double observation_integrations = ((double)(obs_stop_pktidx - obs_start_pktidx))/(blocks_in_integration*timesample_perblock);
+      uint64_t observation_integrations_rounded = observation_integrations + ((double)(blocks_in_integration*timesample_perblock)-1)/(blocks_in_integration*timesample_perblock);
+      hashpipe_info(thread_name, "Rounded the observation's integrations from %f up to %d", observation_integrations, observation_integrations_rounded);
+      obs_stop_pktidx = observation_integrations_rounded*blocks_in_integration*timesample_perblock + obs_start_pktidx;
+      hashpipe_info(thread_name, "\tIncreasing PKTSTOP to %lu", obs_stop_pktidx);
 
       hashpipe_status_lock_safe(st);
         hgetu8(st->buf, "NDROP", &ndrop_integration_start);
-      hashpipe_status_unlock_safe(st);
-
-      hashpipe_status_lock_safe(st);
-      hputr8(st->buf, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
+        hputr8(st->buf, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
+        hputr4(st->buf, "XTIME", (obs_stop_pktidx - obs_start_pktidx) * tbin);
+        hputu4(st->buf, "XINTEGS", observation_integrations_rounded);
+        hputu8(st->buf, "PKTSTOP", obs_stop_pktidx);
       hashpipe_status_unlock_safe(st);
       hputr8(databuf_ptr, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
-
-      hashpipe_info(thread_name, "Clearing integration every %u block(s).", blocks_in_integration);
+      hputr4(databuf_ptr, "XTIME", (obs_stop_pktidx - obs_start_pktidx) * tbin);
+      hputu4(databuf_ptr, "XINTEGS", observation_integrations_rounded);
+      hgetu8(databuf_ptr, "PKTSTOP", &obs_stop_pktidx);
     }
     hget_obsdone(st, &obsdone);
     first_block = !obsdone_prev && obsdone; // tag end of observation
