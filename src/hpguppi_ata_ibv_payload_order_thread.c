@@ -610,7 +610,7 @@ int debug_i=0, debug_j=0;
       //TODO dont use pkt_blk_num due to underflow
       if(pkt_blk_num + 1 < wblk[0].block_num 
         || pkt_blk_num > wblk[n_wblock-1].block_num + 1) {
-          if(!observing) {
+          if(!observing && observation_complete) {
             flag_reinit_blks = 1;
             blk0_start_seq_num = pkt_info.pktidx;
             align_blk0_with_obsstart(&blk0_start_seq_num, obs_start_seq_num, obs_info.pktidx_per_block);
