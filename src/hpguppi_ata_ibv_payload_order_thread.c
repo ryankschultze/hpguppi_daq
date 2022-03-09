@@ -462,7 +462,7 @@ int debug_i=0, debug_j=0;
             #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
             time_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             channel_byte_stride = obs_info.pktidx_per_block*time_byte_stride;
-            antenna_byte_stride = obs_info.nchan*channel_byte_stride
+            antenna_byte_stride = obs_info.nchan*channel_byte_stride;
             #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
             antenna_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             channel_byte_stride = XGPU_BLOCK_NANTS*antenna_byte_stride;
