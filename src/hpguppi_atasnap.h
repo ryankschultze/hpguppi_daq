@@ -169,22 +169,23 @@
 #define ATA_PAYLOAD_TRANSPOSE_TFP_DP4A 2
 
 #define ATA_PAYLOAD_TRANSPOSE ATA_PAYLOAD_TRANSPOSE_FTP
+// #define ATA_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
 
 #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
 #define PKT_DCP_T PKT_DCP_FTP_T
 #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
 #define PKT_DCP_T PKT_DCP_TFP_T
 #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
 #define COPY_PACKET_PAYLOAD_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP
-#define COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE
 #define PKT_DCP_T PKT_DCP_TFP_DP4A_T
+#endif
+
+#ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
+#define PKT_PAYLOAD_CP_T PKT_DCP_T
+#else
+#define PKT_PAYLOAD_CP_T uint8_t
 #endif
 
 #include <stdlib.h>
@@ -898,7 +899,9 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
 #define ATASNAP_DEFAULT_SAMPLE_BYTESIZE sizeof(ATASNAP_DEFAULT_SAMPLE_WIDTH_T)
 #define ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE // this assumes that a packet's PKTIDX (ie timestamp) field increments in steps of NTIME
 #define ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE ATASNAP_DEFAULT_PKTNTIME*ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE
+typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_FTP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
 
+#ifndef ATA_PACKET_PAYLOAD_DIRECT_COPY
 #define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(\
         /*const uint8_t**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*const uint8_t**/  pkt_payload,\
@@ -913,12 +916,8 @@ char align_blk0_with_obsstart(uint64_t * blk0_start_pktidx, uint32_t obsstart, u
         ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE\
       );\
     }
-// define COPY_PACKET_DATA_TO_FTP_DATABUF
-
-typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_PKTNTIME];} PKT_DCP_FTP_T; // sizeof(PKT_DCP_T) == ATASNAP_DEFAULT_PKT_CHAN_BYTE_STRIDE
-
-#define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 1
-#define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP(\
+#else
+#define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP(\
         /*PKT_DCP_T**/  payload_dest,/*Indexed into [FENG, PKT_SCHAN, PKTIDX, 0, 0]*/\
         /*PKT_DCP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
@@ -929,8 +928,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
       *(payload_dest) = *pkt_payload++; \
       payload_dest += channel_stride;\
     }
-// define COPY_PACKET_DATA_TO_FTP_DATABUF_DIRECT_FORLOOP
-#endif // _HPGUPPI_ATASNAP_H_
+#endif // define COPY_PACKET_DATA_TO_FTP_DATABUF_FORLOOP
 
 typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[ATASNAP_DEFAULT_PKTNPOL];} PKT_DCP_TFP_T;
 
@@ -944,6 +942,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
 //
 // The transposition takes each NPOL pols together, i.e. 2x (8re+8im)
 //
+#ifndef ATA_PACKET_PAYLOAD_DIRECT_COPY
 #define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP(\
         /*const uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*const uint8_t**/  pkt_payload,\
@@ -959,10 +958,8 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
         ATASNAP_DEFAULT_PKTNPOL*ATASNAP_DEFAULT_SAMPLE_BYTESIZE \
       );\
     }
-// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
-
-#define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 2
-#define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP(\
+#else
+#define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP(\
         /*PKT_DCP_TFP_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*PKT_DCP_TFP_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
@@ -974,9 +971,7 @@ typedef struct __attribute__ ((__packed__)) {ATASNAP_DEFAULT_SAMPLE_WIDTH_T num[
         *(payload_dest + pkt_chan_idx*channel_stride + pkt_timeXnpol_idx*time_stride) = *pkt_payload++;\
       }\
     }
-// define COPY_PACKET_DATA_TO_TFP_DATABUF_DIRECT_FORLOOP
-
-typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of the complex sample (8+8i = 16bit)/2 = 8bit
+#endif // define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
 
 // to xGPU(DP4A)-Correlator input:
 //    [Slowest ---> Fastest]
@@ -988,36 +983,77 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
 //    time_minor  [0 ... 4]
 //
 // The transposition copies each byte, i.e. half of each sample (8re, 8im)
+
+#ifdef __SSSE3__
+#include <tmmintrin.h>
+// https://stackoverflow.com/a/35268748
+#define CHAR_AS_LONGLONG(a) (((long long)a) & 0xFF)
+#define LL_SETR_EPI8(a, b, c, d, e, f, g, h) \
+    CHAR_AS_LONGLONG(a) | (CHAR_AS_LONGLONG(b) << 8) | \
+    (CHAR_AS_LONGLONG(c) << 16) | (CHAR_AS_LONGLONG(d) << 24) | \
+    (CHAR_AS_LONGLONG(e) << 32) | (CHAR_AS_LONGLONG(f) << 40) | \
+    (CHAR_AS_LONGLONG(g) << 48) | (CHAR_AS_LONGLONG(h) << 56)
+#define _MM_SETR_EPI8(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, aa, ab, ac, ad, ae, af) \
+    {LL_SETR_EPI8(a0, a1, a2, a3, a4, a5, a6, a7), LL_SETR_EPI8(a8, a9, aa, ab, ac, ad, ae, af)}
+// from
+//    TIME        [0 ... 4]
+//    POL         [0 ... NPOL]
+//    complexity  [real, imag]
+// C0T0P0R C0T0P0I C0T0P1R C0T0P1I			000:031
+// C0T1P0R C0T1P0I C0T1P1R C0T1P1I			032:063
+// C0T2P0R C0T2P0I C0T2P1R C0T2P1I			064:095
+// C0T3P0R C0T3P0I C0T3P1R C0T3P1I			096:127
+// 	00 01 02 03
+// 	04 05 06 07
+// 	08 09 10 11
+// 	12 13 14 15
 //
+// to DP4A
+//    POL         [0 ... NPOL]
+//    complexity  [real, imag]
+//    time_minor  [0 ... 4]
+// C0T0P0R C0T1P0R C0T2P0R C0T3P0R			000:031
+// C0T0P0I C0T1P0I C0T2P0I C0T3P0I			032:063
+// C0T0P1R C0T1P1R C0T2P1R C0T3P1R			064:095
+// C0T0P1I C0T1P1I C0T2P1I C0T3P1I			096:127
+// 	00 04 08 12
+// 	01 05 09 13
+// 	02 06 10 14
+// 	03 07 11 15
+static const __m128i CORNER_TURN_SHUFFLE_MASK = _MM_SETR_EPI8(
+	0, 4,  8, 12,
+	1, 5,  9, 13,
+	2, 6, 10, 14,
+	3, 7, 11, 15
+);
+typedef __m128i PKT_DCP_TFP_DP4A_T;
+#undef PKT_PAYLOAD_CP_T
+#define PKT_PAYLOAD_CP_T __m128i
+
 #define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP(\
-        /*uint8_t**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
-        /*uint8_t**/  pkt_payload,\
+        /*PKT_DCP_TFP_DP4A_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
+        /*PKT_DCP_TFP_DP4A_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
         /*const uint32_t*/  channel_stride,\
         /*const uint32_t*/  time_stride\
       )\
     for(int pkt_chan_idx = 0; pkt_chan_idx < pkt_nchan; pkt_chan_idx++){\
       for(int pkt_time_major_idx = 0; pkt_time_major_idx < ATASNAP_DEFAULT_PKTNTIME/4; pkt_time_major_idx++){\
-        for(int pkt_time_minor_idx = 0; pkt_time_minor_idx < 4; pkt_time_minor_idx++){\
-          for(int pkt_pol_idx = 0; pkt_pol_idx < ATASNAP_DEFAULT_PKTNPOL; pkt_pol_idx++){\
-            for(int c = 0; c < 2; c++){\
-              memcpy(payload_dest +\
-                (pkt_time_major_idx * time_stride*4) +\
-                pkt_chan_idx * channel_stride +\
-                pkt_pol_idx*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE +\
-                c*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2 +\
-                pkt_time_minor_idx*ATASNAP_DEFAULT_SAMPLE_BYTESIZE/2,\
-                \
-                pkt_payload++,\
-                sizeof(PKT_DCP_TFP_DP4A_T));\
-            }\
-          }\
-        }\
+        payload_dest[\
+          (pkt_time_major_idx * time_stride*4) +\
+          pkt_chan_idx * channel_stride\
+        ] = _mm_shuffle_epi8(*pkt_payload++, CORNER_TURN_SHUFFLE_MASK);\
       }\
     }
+#else
 
-#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP_OMP_COLLAPSE 5
-#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_DIRECT_FORLOOP(\
+#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
+#pragma message("Enable SSSE3 for far better performance of TFP_DP4A unpack!") 
+#endif
+
+typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of the complex sample (8+8i = 16bit)/2 = 8bit
+
+#define COPY_PACKET_DATA_TO_TFP_DP4A_DATABUF_FORLOOP(\
         /*PKT_DCP_TFP_DP4A_T**/  payload_dest,/*Indexed into [PKTIDX, PKT_SCHAN, FENG, 0]*/\
         /*PKT_DCP_TFP_DP4A_T**/  pkt_payload,\
         /*const uint16_t*/  pkt_nchan,\
@@ -1041,4 +1077,6 @@ typedef uint8_t PKT_DCP_TFP_DP4A_T; // this is the width of the one component of
         }\
       }\
     }
-// define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
+#endif // define COPY_PACKET_DATA_TO_TFP_DATABUF_FORLOOP
+
+#endif // _HPGUPPI_ATASNAP_H_

@@ -44,12 +44,6 @@
 #define ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT 1
 #define ATA_IBV_THREAD_COUNT ATA_IBV_FOR_PACKET_THREAD_COUNT*ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT
 
-// #define ATA_PACKET_PAYLOAD_DIRECT_COPY // define to use assignment copy in place of memcpy
-
-#ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-#define ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE COPY_PACKET_PAYLOAD_DIRECT_FORLOOP_OMP_COLLAPSE
-#endif
-
 // Change to 1 to use temporal memset() rather than non-temporal bzero_nt()
 #if 0
 #define bzero_nt(d,l) memset(d,0,l)
@@ -63,6 +57,9 @@
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
 
+#ifdef ELAPSED_NS
+#undef ELAPSED_NS
+#endif
 #define ELAPSED_NS(start,stop) \
   (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
@@ -292,7 +289,7 @@ int debug_i=0, debug_j=0;
   unsigned long pkt_blk_num, last_pkt_blk_num = ~0;
   uint64_t obs_start_seq_num = 0, obs_stop_seq_num = 0, blk0_start_seq_num = 0;
   uint64_t prev_obs_start_seq_num, prev_obs_stop_seq_num;
-  uint32_t channel_byte_stride, time_byte_stride;
+  uint32_t antenna_byte_stride, channel_byte_stride, time_byte_stride;
 
   // Heartbeat variables
   struct timespec ts_start_block = {0}, ts_stop_block = {0};
@@ -330,13 +327,8 @@ int debug_i=0, debug_j=0;
   // Variables for handing received packets
   uint8_t * p_u8pkt;
   struct ata_snap_ibv_pkt * p_pkt = NULL;
-#ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-  PKT_DCP_T* p_payload = NULL;
-  PKT_DCP_T* dest_feng_pktidx_offset = NULL;
-#else
-  const uint8_t * p_payload = NULL;
-  char* dest_feng_pktidx_offset = NULL;
-#endif
+  PKT_PAYLOAD_CP_T* p_payload = NULL;
+  PKT_PAYLOAD_CP_T* dest_feng_pktidx_offset = NULL;
 
   // Structure to hold observation info, init all fields to invalid values
   struct ata_snap_obs_info obs_info;
@@ -421,7 +413,8 @@ int debug_i=0, debug_j=0;
 
   // set OBSDONE in case no downstream thread controlls it.
   hput_obsdone(st, 1);
-  
+  hashpipe_info(thread_name, "PKT_PAYLOAD_CP_T size: %d", sizeof(PKT_PAYLOAD_CP_T));
+
   // Main loop
   while (run_threads()) {
 
@@ -469,13 +462,19 @@ int debug_i=0, debug_j=0;
             #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
             time_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
             channel_byte_stride = obs_info.pktidx_per_block*time_byte_stride;
+            antenna_byte_stride = obs_info.nchan*channel_byte_stride
             #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP
-            channel_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
-            time_byte_stride = XGPU_BLOCK_NANTS*obs_info.nchan*channel_byte_stride;
+            antenna_byte_stride = ATASNAP_DEFAULT_PKT_SAMPLE_BYTE_STRIDE;
+            channel_byte_stride = XGPU_BLOCK_NANTS*antenna_byte_stride;
+            time_byte_stride = obs_info.nchan*channel_byte_stride;
             #elif ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_TFP_DP4A
-            channel_byte_stride = XGPU_BLOCK_NANTS*ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; // `*4` keeps databuf offset logic uniform
+            antenna_byte_stride = ATASNAP_DEFAULT_PKTNPOL*4*ATASNAP_DEFAULT_SAMPLE_BYTESIZE; // `*4` keeps databuf offset logic uniform
+            channel_byte_stride = XGPU_BLOCK_NANTS*antenna_byte_stride;
             time_byte_stride = obs_info.nchan*channel_byte_stride/4; // `/4` keeps databuf offset logic uniform
             #endif
+            antenna_byte_stride /= sizeof(PKT_PAYLOAD_CP_T);
+            channel_byte_stride /= sizeof(PKT_PAYLOAD_CP_T);
+            time_byte_stride /= sizeof(PKT_PAYLOAD_CP_T);
             memcpy(&ts_tried_obs_info, &ts_now, sizeof(struct timespec));
           }
           else if (ELAPSED_S(ts_tried_obs_info, ts_now) > obs_info_retry_period_s){
@@ -690,10 +689,7 @@ int debug_i=0, debug_j=0;
         p_pkt = (struct ata_snap_ibv_pkt *)(p_u8pkt+i*slot_size);
 
         // Parse packet
-        p_payload = 
-        #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-          (PKT_DCP_T*)
-        #endif
+        p_payload = (PKT_PAYLOAD_CP_T*)
           ata_snap_parse_ibv_packet(p_pkt, &pkt_info);
 
         // Get packet index and absolute block number for packet
@@ -719,42 +715,22 @@ int debug_i=0, debug_j=0;
 
             if(0 <= wblk_idx && wblk_idx < n_wblock) {
               // Copy packet data to data buffer of working block
-              dest_feng_pktidx_offset = 
-              #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-                (PKT_DCP_T*)
-              #endif
-                (datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx))
-                + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*time_byte_stride // offset for time
-              #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP // 'Chans' is faster than 'Nants'
-                + (pkt_info.feng_id*obs_info.nchan + (pkt_info.pkt_schan-obs_info.schan))*channel_byte_stride
-              #else // for TFP/_DP4A: 'Nants' is faster than 'Chans'
-                + (pkt_info.pkt_schan-obs_info.schan)*channel_byte_stride + (pkt_info.feng_id*channel_byte_stride/XGPU_BLOCK_NANTS)
-              #endif
-              ); // offset for frequency
+              dest_feng_pktidx_offset = ((PKT_PAYLOAD_CP_T*)
+                datablock_stats_data(((struct datablock_stats*) wblk+wblk_idx)))
+                + (blk0_relative_pkt_seq_num%obs_info.pktidx_per_block)*time_byte_stride // offset for time// for TFP/_DP4A: 'Nants' is faster than 'Chans'
+                + (pkt_info.pkt_schan-obs_info.schan)*channel_byte_stride
+                + (pkt_info.feng_id*antenna_byte_stride); // offset for frequency
               
               #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1
                 #pragma omp parallel for\
                 num_threads (ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT)
-              #else 
-                #ifdef ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE
-                  #pragma omp parallel for collapse(ATA_PACKET_PAYLOAD_COPY_FORLOOP_COLLAPSE)
-                #endif
               #endif
-              #ifdef ATA_PACKET_PAYLOAD_DIRECT_COPY
-                COPY_PACKET_PAYLOAD_DIRECT_FORLOOP(
-                    dest_feng_pktidx_offset,
-                    p_payload,
-                    obs_info.pkt_nchan,
-                    channel_byte_stride/sizeof(PKT_DCP_T),
-                    time_byte_stride/sizeof(PKT_DCP_T));
-              #else
-                COPY_PACKET_PAYLOAD_FORLOOP(
-                    dest_feng_pktidx_offset,
-                    p_payload,
-                    obs_info.pkt_nchan,
-                    channel_byte_stride,
-                    time_byte_stride);
-              #endif
+              COPY_PACKET_PAYLOAD_FORLOOP(
+                  dest_feng_pktidx_offset,
+                  p_payload,
+                  obs_info.pkt_nchan,
+                  channel_byte_stride,
+                  time_byte_stride);
               // Count packet for block and for processing stats
               thread_wblk_pkt_count[(omp_get_thread_num()*n_wblock) + wblk_idx] += 1;
             }
