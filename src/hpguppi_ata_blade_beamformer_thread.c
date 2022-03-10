@@ -73,7 +73,7 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
-  blade_ata_b_initialize(batch_size);
+  blade_ata_b_initialize(BLADE_ATA_MODE_B_CONFIG, batch_size);
 
   if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
     hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
@@ -94,10 +94,10 @@ static void *run(hashpipe_thread_args_t *args)
   blade_ata_b_set_phasors(phasor_buffer, true);
   free(phasor_buffer);
 
-  int32_t input_buffer_dim_NANTS, prev_flagged_NANTS;
-  int32_t input_buffer_dim_NCHAN, prev_flagged_NCHAN;
-  int32_t input_buffer_dim_NTIME, prev_flagged_NTIME;
-  int32_t input_buffer_dim_NPOLS, prev_flagged_NPOLS;
+  int32_t input_buffer_dim_NANTS = 0, prev_flagged_NANTS = 0;
+  int32_t input_buffer_dim_NCHAN = 0, prev_flagged_NCHAN = 0;
+  int32_t input_buffer_dim_NTIME = 0, prev_flagged_NTIME = 0;
+  int32_t input_buffer_dim_NPOLS = 0, prev_flagged_NPOLS = 0;
 
   while (run_threads())
   {
@@ -153,25 +153,33 @@ static void *run(hashpipe_thread_args_t *args)
     hgeti4(databuf_header, "PIPERBLK", &input_buffer_dim_NTIME);
     hgeti4(databuf_header, "NPOL", &input_buffer_dim_NPOLS);
 
-    if(input_buffer_dim_NANTS != BLADE_ATA_MODE_B_INPUT_NANT && prev_flagged_NANTS != input_buffer_dim_NANTS){
-      prev_flagged_NANTS = input_buffer_dim_NANTS;
-      hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, BLADE_ATA_MODE_B_INPUT_NANT);
+    if(input_buffer_dim_NANTS != BLADE_ATA_MODE_B_INPUT_NANT){
       indb_data_dims_good_flag = 0;
+      if(prev_flagged_NANTS != input_buffer_dim_NANTS){
+        prev_flagged_NANTS = input_buffer_dim_NANTS;
+        hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, BLADE_ATA_MODE_B_INPUT_NANT);
+      }
     }
-    else if(input_buffer_dim_NCHAN != BLADE_ATA_MODE_B_ANT_NCHAN && prev_flagged_NCHAN != input_buffer_dim_NCHAN){
-      prev_flagged_NCHAN = input_buffer_dim_NCHAN;
-      hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, BLADE_ATA_MODE_B_ANT_NCHAN);
+    else if(input_buffer_dim_NCHAN != BLADE_ATA_MODE_B_ANT_NCHAN){
       indb_data_dims_good_flag = 0;
+      if(prev_flagged_NCHAN != input_buffer_dim_NCHAN){
+        prev_flagged_NCHAN = input_buffer_dim_NCHAN;
+        hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, BLADE_ATA_MODE_B_ANT_NCHAN);
+      }
     }
-    else if(input_buffer_dim_NTIME != BLADE_ATA_MODE_B_NTIME && prev_flagged_NTIME != input_buffer_dim_NTIME){
-      prev_flagged_NTIME = input_buffer_dim_NTIME;
-      hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, BLADE_ATA_MODE_B_NTIME);
+    else if(input_buffer_dim_NTIME != BLADE_ATA_MODE_B_NTIME){
       indb_data_dims_good_flag = 0;
+      if(prev_flagged_NTIME != input_buffer_dim_NTIME){
+        prev_flagged_NTIME = input_buffer_dim_NTIME;
+        hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, BLADE_ATA_MODE_B_NTIME);
+      }
     }
-    else if(input_buffer_dim_NPOLS != BLADE_ATA_MODE_B_NPOL && prev_flagged_NPOLS != input_buffer_dim_NPOLS){
-      prev_flagged_NPOLS = input_buffer_dim_NPOLS;
-      hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, BLADE_ATA_MODE_B_NPOL);
+    else if(input_buffer_dim_NPOLS != BLADE_ATA_MODE_B_NPOL){
       indb_data_dims_good_flag = 0;
+      if(prev_flagged_NPOLS != input_buffer_dim_NPOLS){
+        prev_flagged_NPOLS = input_buffer_dim_NPOLS;
+        hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, BLADE_ATA_MODE_B_NPOL);
+      }
     }
 
     if (!indb_data_dims_good_flag) {

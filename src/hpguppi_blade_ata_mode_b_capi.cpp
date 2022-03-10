@@ -22,24 +22,24 @@ bool blade_use_device(int device_id) {
     return SetCudaDevice(device_id) == Result::SUCCESS;
 }
 
-bool blade_ata_b_initialize(size_t numberOfWorkers) {
+bool blade_ata_b_initialize(struct blade_ata_mode_b_config ata_b_config, size_t numberOfWorkers) {
     BladePipeline::Config config = {
         .inputDims = {
-            .NBEAMS = 1,
-            .NANTS  = BLADE_ATA_MODE_B_INPUT_NANT,
-            .NCHANS = BLADE_ATA_MODE_B_ANT_NCHAN,
-            .NTIME  = BLADE_ATA_MODE_B_NTIME,
-            .NPOLS  = BLADE_ATA_MODE_B_NPOL,
+            .NBEAMS = ata_b_config.inputDims.NBEAMS,
+            .NANTS  = ata_b_config.inputDims.NANTS,
+            .NCHANS = ata_b_config.inputDims.NCHANS,
+            .NTIME  = ata_b_config.inputDims.NTIME,
+            .NPOLS  = ata_b_config.inputDims.NPOLS,
         },
-        .channelizerRate = BLADE_ATA_MODE_B_CHANNELIZER_RATE,
-        .beamformerBeams = BLADE_ATA_MODE_B_OUTPUT_NBEAM,
+        .channelizerRate = ata_b_config.channelizerRate,
+        .beamformerBeams = ata_b_config.beamformerBeams,
 
-        .outputMemWidth = BLADE_ATA_MODE_B_OUTPUT_MEMCPY2D_WIDTH,
-        .outputMemPad = BLADE_ATA_MODE_B_OUTPUT_MEMCPY2D_PAD,
+        .outputMemWidth = ata_b_config.outputMemWidth,
+        .outputMemPad = ata_b_config.outputMemPad,
 
-        .castBlockSize = 512,
-        .channelizerBlockSize = 512,
-        .beamformerBlockSize = 512,
+        .castBlockSize = ata_b_config.castBlockSize,
+        .channelizerBlockSize = ata_b_config.channelizerBlockSize,
+        .beamformerBlockSize = ata_b_config.beamformerBlockSize,
     };
 
     instance.guard = std::make_unique<Logger>();
