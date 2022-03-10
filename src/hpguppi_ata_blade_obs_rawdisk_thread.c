@@ -253,10 +253,10 @@ static void *run(hashpipe_thread_args_t * args)
             hputu4(datablock_header, "STT_IMJD", mjd->stt_imjd);
             hputu4(datablock_header, "STT_SMJD", mjd->stt_smjd);
             hputr8(datablock_header, "STT_OFFS", mjd->stt_offs);
+            hput_obsdone(st, 0);
           }
           flag_state_update = 1;
           state = RECORD;
-          hput_obsdone(st, 0);
           directio = hpguppi_read_directio_mode(datablock_header);
           hgeti4(datablock_header, "STTVALID", &gp.stt_valid);
           /* Get full data block size */
@@ -292,6 +292,7 @@ static void *run(hashpipe_thread_args_t * args)
           flag_state_update = 1;
           state = ARMED;
           update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+          hput_obsdone(st, 0);
         }
       default:
         break;
@@ -464,6 +465,34 @@ static void *run(hashpipe_thread_args_t * args)
         /* Increment counter */
         block_count++;
       }
+
+      // If obviously last block, close up and transition to IDLE
+      if(block_stop_pktidx == obs_stop_pktidx) {
+        // If file open, close it
+        if(fdraws[0] != -1) {
+          for(i = 0; i < nbeams; i++){
+            // Close file
+            close(fdraws[i]);
+            // Reset fdraw, got_packet_0, filenum, block_count
+            fdraws[i] = -1;
+          }
+          got_packet_0 = 0;
+          filenum = 0;
+          block_count=0;
+
+          // Print end of recording conditions
+          hashpipe_info(thread_name, "recording stopped: "
+            "obs_start %lu obs_stop %lu blk_start_pktidx %lu blk_stop_pktidx %lu",
+            obs_start_pktidx, obs_stop_pktidx, block_start_pktidx, block_stop_pktidx);
+        }
+        hput_obsdone(st, 1);
+
+        flag_state_update = 1;
+        state = IDLE;
+        // Update STT with state = IDLE, setting STTVALID = 0
+        update_stt_status_keys(st, state, obs_start_pktidx, mjd);
+      }
+
       /*** RAW Disk write out END*/
     }
 
