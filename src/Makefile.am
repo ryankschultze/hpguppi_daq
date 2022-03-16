@@ -100,6 +100,7 @@ hpguppi_threads += \
 
 hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
 hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
+endif
 
 if UVH5_ENABLED
 hpguppi_threads += \
@@ -107,9 +108,14 @@ hpguppi_threads += \
 hpguppi_daq_la_LDFLAGS += -L"@LIBUVH5DIR@"
 hpguppi_daq_la_LIBADD += -luvh5
 hpguppi_daq_la_CFLAGS  += -I "@UVH5INCDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@UVH5INCDIR@/../external_src/tomlc99"
 endif # UVH5_ENABLED 
 
-endif
+if RADIOINTERFEROMETRY_ENABLED
+hpguppi_daq_la_LDFLAGS += -L"@LIBRADIOINTERFEROMETRYDIR@"
+hpguppi_daq_la_LIBADD += -lradiointerferometryc99
+hpguppi_daq_la_CFLAGS  += -I "@RADIOINTERFEROMETRYINCDIR@"
+endif # RADIOINTERFEROMETRY_ENABLED 
 
 # Installed scripts
 dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \

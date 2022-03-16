@@ -19,7 +19,7 @@
 
 #include "hashpipe.h"
 
-#include "hpguppi_databuf.h"
+#include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_params.h"
 #include "hpguppi_udp.h"
 #include "hpguppi_time.h"
@@ -30,6 +30,7 @@
 #include "uvh5.h"
 #include "uvh5/uvh5_toml.h"
 #include "uvh5/uvh5_bool_t.h"
+#include "radiointerferometryc99.h"
 
 #define MJD0 2400000.5
 
@@ -313,13 +314,13 @@ static void *run(hashpipe_thread_args_t * args)
           uvh5_header->phase_type = "phased";
           hgetr8(datablock_header, "RA_STR", &uvh5_header->phase_center_ra);
           hgetr8(datablock_header, "DEC_STR", &uvh5_header->phase_center_dec);
-          uvh5_header->phase_center_ra = UVH5calc_deg2rad(uvh5_header->phase_center_ra);
-          uvh5_header->phase_center_dec = UVH5calc_deg2rad(uvh5_header->phase_center_dec);
+          uvh5_header->phase_center_ra = calc_deg2rad(uvh5_header->phase_center_ra);
+          uvh5_header->phase_center_dec = calc_deg2rad(uvh5_header->phase_center_dec);
           uvh5_header->phase_center_epoch = 2000.0;
           uvh5_header->phase_center_frame = "icrs";
 
-          longitude_rad = UVH5calc_deg2rad(uvh5_header->longitude);
-          latitude_rad = UVH5calc_deg2rad(uvh5_header->latitude);
+          longitude_rad = calc_deg2rad(uvh5_header->longitude);
+          latitude_rad = calc_deg2rad(uvh5_header->latitude);
 
           dut1 = 0.0;
           hgetr8(datablock_header, "DUT1", &dut1); // single DUT1 value for all observation time
@@ -334,7 +335,7 @@ static void *run(hashpipe_thread_args_t * args)
           uvh5_header->time_array[0] += (tau/2) / DAYSEC;
           hashpipe_info(thread_name, "UVH5 time starts at %f (tau/DAYSEC %f)", uvh5_header->time_array[0], tau/DAYSEC);
           uvh5_header->integration_time[0] = tau;
-          // uvh5_header->lst_array[0] = UVH5calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
+          // uvh5_header->lst_array[0] = calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
           uvh5_header->dut1 = dut1;
           for (i = 1; i < uvh5_header->Nbls; i++)
           {
@@ -404,7 +405,7 @@ static void *run(hashpipe_thread_args_t * args)
         );
 
         uvh5_header->time_array[0] += + tau/DAYSEC;
-        // uvh5_header->lst_array[0] = UVH5calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
+        // uvh5_header->lst_array[0] = calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
         hgetr8(datablock_header, "NSAMPLES", uvh5_file.nsamples);
         for (i = 0; i < uvh5_header->Nbls; i++) {
           uvh5_header->time_array[i] = uvh5_header->time_array[0];
@@ -418,10 +419,10 @@ static void *run(hashpipe_thread_args_t * args)
         if (1) { // Phased
           hgetr8(datablock_header, "RA_STR", &ra_rad);
           hgetr8(datablock_header, "DEC_STR", &dec_rad);
-          ra_rad = UVH5calc_deg2rad(ra_rad);
-          dec_rad = UVH5calc_deg2rad(dec_rad);
+          ra_rad = calc_deg2rad(ra_rad);
+          dec_rad = calc_deg2rad(dec_rad);
 
-          UVH5calc_ha_dec_rad(
+          calc_ha_dec_rad(
             ra_rad,
             dec_rad,
             longitude_rad,
@@ -434,7 +435,7 @@ static void *run(hashpipe_thread_args_t * args)
           );
 
           memcpy(uvh5_header->_antenna_uvw_positions, uvh5_header->_antenna_enu_positions, sizeof(double)*uvh5_header->Nants_telescope*3);
-          UVH5calc_position_to_uvw_frame_from_enu(
+          calc_position_to_uvw_frame_from_enu(
             uvh5_header->_antenna_uvw_positions,
             uvh5_header->Nants_telescope,
             hour_angle_rad,

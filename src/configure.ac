@@ -119,6 +119,24 @@ AC_ARG_WITH([uvh5-include],
             [UVH5INCDIR="$withval"],
             [UVH5INCDIR="${LIBUVH5DIR}/../include"])
 
+AC_ARG_WITH([libradiointerferometry],
+            AC_HELP_STRING([--with-libradiointerferometry=DIR],
+                           [Location of RadioInterferometryC99 library]),
+            [
+              LIBRADIOINTERFEROMETRYDIR="$withval"
+              has_libradiointerferometry=1
+            ],
+            [
+              LIBRADIOINTERFEROMETRYDIR=""
+              has_libradiointerferometry=0
+            ])
+
+AC_ARG_WITH([radiointerferometry-include],
+            AC_HELP_STRING([--with-radiointerferometry-include=DIR],
+                           [Location of radiointerferometry include directory]),
+            [RADIOINTERFEROMETRYINCDIR="$withval"],
+            [RADIOINTERFEROMETRYINCDIR="${LIBRADIOINTERFEROMETRYDIR}/../include"])
+
 #AC_MSG_CHECKING([for libblade])
 #AC_LANG_PUSH(C++)
 #orig_LDFLAGS="$LDFLAGS"
@@ -181,6 +199,28 @@ else
   uvh5_enabled=1;
 fi
 
+if test $has_libradiointerferometry = 0; then
+  if test $uvh5_enabled = 1; then
+    LIBRADIOINTERFEROMETRYDIR="${LIBUVH5DIR}/../external_src/radiointerferometryc99/builddir"
+    RADIOINTERFEROMETRYINCDIR="${LIBUVH5DIR}/../external_src/radiointerferometryc99/include"
+    has_libradiointerferometry=1;
+  fi
+fi
+
+if test $has_libradiointerferometry = 0; then
+  #AC_MSG_RESULT([no])
+  AC_MSG_NOTICE([Library RadioInterferometryC99 not provided. RadioInterferometryC99 will not be linked.])
+  radiointerferometry_enabled=0;
+else
+  #AC_MSG_RESULT([yes])
+  AC_MSG_NOTICE([RadioInterferometryC99 will be linked.])
+  AC_SUBST(LIBRADIOINTERFEROMETRYDIR,${LIBRADIOINTERFEROMETRYDIR})
+  
+  AC_SUBST(RADIOINTERFEROMETRYINCDIR,${RADIOINTERFEROMETRYINCDIR})
+  AC_MSG_NOTICE([RadioInterferometryC99 include directory set to ${RADIOINTERFEROMETRYINCDIR}])
+  radiointerferometry_enabled=1;
+fi
+
 AS_IF([test $blade_enabled = 1],
   [
     AM_CONDITIONAL(BLADE_ENABLED, true)
@@ -215,6 +255,15 @@ AS_IF([test $uvh5_enabled = 1],
   ],
   [
     AM_CONDITIONAL(UVH5_ENABLED, false)
+  ])
+
+AS_IF([test $radiointerferometry_enabled = 1],
+  [
+    AM_CONDITIONAL(RADIOINTERFEROMETRY_ENABLED, true)
+    AC_DEFINE(RADIOINTERFEROMETRY_ENABLED,[],[Use RadioInterferometryC99])
+  ],
+  [
+    AM_CONDITIONAL(RADIOINTERFEROMETRY_ENABLED, false)
   ])
 
 ## Checks for header files.
