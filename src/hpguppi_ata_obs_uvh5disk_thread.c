@@ -165,7 +165,7 @@ static void *run(hashpipe_thread_args_t * args)
       }
 
       // Waiting for input
-      rv=hpguppi_output_xgpu_databuf_wait_filled(indb, curblock_in);
+      rv=hpguppi_databuf_wait_filled(indb, curblock_in);
       clock_gettime(CLOCK_MONOTONIC, &ts_block_recvd);
       if (rv == HASHPIPE_TIMEOUT)
       {
@@ -196,7 +196,7 @@ static void *run(hashpipe_thread_args_t * args)
         waiting=0;
     }
 
-    datablock_header = hpguppi_xgpu_output_databuf_header(indb, curblock_in);
+    datablock_header = hpguppi_databuf_header(indb, curblock_in);
     hgetu8(datablock_header, "PKTSTART", &obs_start_pktidx);
     hgetu8(datablock_header, "PKTSTOP", &obs_stop_pktidx);
     hgetu8(datablock_header, "BLKSTART", &block_start_pktidx);
@@ -398,7 +398,7 @@ static void *run(hashpipe_thread_args_t * args)
 
         // memset(uvh5_file.visdata, 1, uvh5_header->Nbls*uvh5_header->Npols*uvh5_header->Nfreqs);
         UVH5visdata_from_xgpu_int_output(
-          (UVH5_CI32_t*) hpguppi_xgpu_output_databuf_data(indb, curblock_in),
+          (UVH5_CI32_t*) hpguppi_databuf_data(indb, curblock_in),
           (UVH5_CI32_t*) uvh5_file.visdata,
           xgpu_output_elements,
           &uvh5_file.header
@@ -474,7 +474,7 @@ static void *run(hashpipe_thread_args_t * args)
       /*** UVH5 Disk write out END*/
     }
 
-    hpguppi_output_xgpu_databuf_set_free(indb, curblock_in);
+    hpguppi_databuf_set_free(indb, curblock_in);
     blocks_per_second ++;
 
     // Update moving sum (for moving average)

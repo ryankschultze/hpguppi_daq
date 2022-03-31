@@ -429,7 +429,7 @@ int debug_i=0, debug_j=0;
       //   // Accumulate processing time
       //   ns_processed_net += ELAPSED_NS(ts_stop_recv, ts_start_recv);
       // }
-      rv = hpguppi_input_databuf_wait_filled_timeout(
+      rv = hpguppi_databuf_wait_filled_timeout(
           dbin, block_idx_in, &timeout_in);
       clock_gettime(CLOCK_MONOTONIC, &ts_stop_recv);
       memcpy(&ts_now, &ts_stop_recv, sizeof(struct timespec));
@@ -568,7 +568,7 @@ int debug_i=0, debug_j=0;
       // We're outta here!
       // But first mark the block free if we got one.
       if(!rv) {
-        hpguppi_input_databuf_set_free(dbin, block_idx_in);
+        hpguppi_databuf_set_free(dbin, block_idx_in);
         clock_gettime(CLOCK_MONOTONIC, &ts_free_input);
         fprintf(stderr, "final fill-to-free %ld ns\n", ELAPSED_NS(ts_stop_recv, ts_free_input));
       }
@@ -789,7 +789,7 @@ int debug_i=0, debug_j=0;
     }
 
     // Mark input block free
-    hpguppi_input_databuf_set_free(dbin, block_idx_in);
+    hpguppi_databuf_set_free(dbin, block_idx_in);
 
     // Handle 'min' reduced OBS_flags
     if(obs_info_validity == OBS_INVALID_FENG){

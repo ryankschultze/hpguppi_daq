@@ -793,21 +793,13 @@ static inline void hget_obsdone(hashpipe_status_t * st, int *flag)
 // Returns pointer to datablock_stats's output data block
 static inline char * datablock_stats_data(const struct datablock_stats *d)
 {
-#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_data(d->dbout, d->block_idx);
-#else
-  return hpguppi_xgpu_databuf_data(d->dbout, d->block_idx);
-#endif
 }
 
 // Returns pointer to datablock_stats's header
 static inline char * datablock_stats_header(const struct datablock_stats *d)
 {
-#if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
   return hpguppi_databuf_header(d->dbout, d->block_idx);
-#else
-  return hpguppi_xgpu_databuf_header(d->dbout, d->block_idx);
-#endif
 }
 
 void reset_datablock_stats(struct datablock_stats *d);

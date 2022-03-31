@@ -83,7 +83,7 @@ static void *run(hashpipe_thread_args_t *args)
   for(i = 0; i < N_INPUT_BLOCKS; i++)
   {
     blade_pin_memory(hpguppi_databuf_data(indb, i), BLOCK_DATA_SIZE);
-    blade_pin_memory(hpguppi_blade_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
+    blade_pin_memory(hpguppi_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
   }
 
   float* phasor_buffer = malloc(blade_ata_b_get_phasor_size() * sizeof(float) * 2);
@@ -102,7 +102,7 @@ static void *run(hashpipe_thread_args_t *args)
   while (run_threads())
   {
     do {
-      hpguppi_databuf_wait_rv = hpguppi_input_databuf_wait_filled(
+      hpguppi_databuf_wait_rv = hpguppi_databuf_wait_filled(
           indb, curblock_in);
       
       clock_gettime(CLOCK_MONOTONIC, &ts_now);
@@ -116,7 +116,7 @@ static void *run(hashpipe_thread_args_t *args)
 
       // We perform some status buffer updates every second
       if(update_status) {
-        sprintf(buf_status, "%d/%d", hpguppi_blade_output_databuf_total_status(outdb), N_INPUT_BLOCKS);
+        sprintf(buf_status, "%d/%d", hpguppi_databuf_total_status(outdb), N_INPUT_BLOCKS);
 
         hashpipe_status_lock_safe(&st);
         {
@@ -183,7 +183,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     if (!indb_data_dims_good_flag) {
-      hpguppi_input_databuf_set_free(indb, curblock_in);
+      hpguppi_databuf_set_free(indb, curblock_in);
       curblock_in  = (curblock_in + 1) % indb->header.n_block;
       continue;
     }
@@ -195,7 +195,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     // waiting for output buffer to be free
-    while ((hpguppi_databuf_wait_rv=hpguppi_blade_output_databuf_wait_free(outdb, curblock_out)) !=
+    while ((hpguppi_databuf_wait_rv=hpguppi_databuf_wait_free(outdb, curblock_out)) !=
         HASHPIPE_OK)
     {
       if (hpguppi_databuf_wait_rv == HASHPIPE_TIMEOUT && status_state != 2)
@@ -231,7 +231,7 @@ static void *run(hashpipe_thread_args_t *args)
     while(!
       blade_ata_b_enqueue(
         (void*) hpguppi_databuf_data(indb, curblock_in),
-        (void*) hpguppi_blade_databuf_data(outdb, curblock_out),
+        (void*) hpguppi_databuf_data(outdb, curblock_out),
         curblock_in
       )
     ){
@@ -246,7 +246,7 @@ static void *run(hashpipe_thread_args_t *args)
 
     {// Asynchronous CPU work 
       // copy across the header
-      databuf_header = hpguppi_blade_databuf_header(outdb, curblock_out);
+      databuf_header = hpguppi_databuf_header(outdb, curblock_out);
       memcpy(databuf_header, 
             hpguppi_databuf_header(indb, curblock_in), 
             BLOCK_HDR_SIZE);
@@ -268,8 +268,8 @@ static void *run(hashpipe_thread_args_t *args)
     // Dequeue all completed buffers
     while (blade_ata_b_dequeue(&dequeued_input_id))
     {
-      hpguppi_input_databuf_set_free(indb, dequeued_input_id);
-      hpguppi_blade_output_databuf_set_filled(outdb, input_output_blockid_pairs[dequeued_input_id]);
+      hpguppi_databuf_set_free(indb, dequeued_input_id);
+      hpguppi_databuf_set_filled(outdb, input_output_blockid_pairs[dequeued_input_id]);
       input_output_blockid_pairs[dequeued_input_id] = -1;
 
       // Update moving sum (for moving average)

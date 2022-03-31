@@ -35,7 +35,7 @@ hashpipe_databuf_t *hpguppi_blade_output_databuf_create(int instance_id, int dat
     strncpy(end_key, "END", 3);
     end_key[80]='\0';
     for (i=0; i<n_block; i++) { 
-        memcpy(hpguppi_blade_databuf_header(d,i), end_key, 80); 
+        memcpy(hpguppi_databuf_header(d,i), end_key, 80); 
     }
 
     return (hashpipe_databuf_t *)d;

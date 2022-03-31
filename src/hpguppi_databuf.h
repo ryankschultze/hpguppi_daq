@@ -13,9 +13,9 @@
 // but this keeps things 4K (i.e. page) aligned.
 #define ALIGNMENT_SIZE (4096)
 
-#define N_INPUT_BLOCKS 36
+#define N_INPUT_BLOCKS 12
 #define BLOCK_HDR_SIZE  (5*80*512)      // in bytes, from guppi_daq_server
-#define BLOCK_DATA_SIZE (240*1024*1024) // in bytes, from guppi_daq_server
+#define BLOCK_DATA_SIZE (128*1024*1024) // in bytes, from guppi_daq_server
 
 typedef struct hpguppi_input_block {
   char hdr[BLOCK_HDR_SIZE];
@@ -34,101 +34,96 @@ typedef struct hpguppi_input_databuf {
 } hpguppi_input_databuf_t;
 
 /*
- * INPUT BUFFER FUNCTIONS
+ * Universal Buffer Macros
+ */
+
+// Generic block
+typedef struct hpguppi_block {
+  char hdr[BLOCK_HDR_SIZE];
+  char data[];
+} hpguppi_block_t;
+
+// Generic databuf
+typedef struct hpguppi_databuf {
+  hashpipe_databuf_t header;
+  hashpipe_databuf_alignment padding; // Maintain data alignment
+  hpguppi_block_t block[];
+} hpguppi_databuf_t;
+
+#define hpguppi_databuf_attach(/*int*/ instance_id, /*int*/ databuf_id)\
+    hashpipe_databuf_attach(instance_id, databuf_id)
+
+#define hpguppi_databuf_detach(d)\
+    hashpipe_databuf_detach((hashpipe_databuf_t *)d)
+
+#define hpguppi_databuf_clear(d)\
+    hashpipe_databuf_clear((hashpipe_databuf_t *)d)
+
+#define hpguppi_databuf_block_status(d,block_id)\
+    hashpipe_databuf_block_status((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_total_status(d)\
+    hashpipe_databuf_total_status((hashpipe_databuf_t *)d)
+
+#define hpguppi_databuf_wait_free_timeout(d, block_id, timeout)\
+    hashpipe_databuf_wait_free_timeout((hashpipe_databuf_t *)d, block_id,\
+        timeout\
+    )
+
+#define hpguppi_databuf_wait_free(d, block_id)\
+    hashpipe_databuf_wait_free((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_busywait_free(d, block_id)\
+    hashpipe_databuf_busywait_free((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_wait_filled_timeout(d, block_id, timeout) \
+    hashpipe_databuf_wait_filled_timeout((hashpipe_databuf_t *)d, block_id, timeout)
+
+#define hpguppi_databuf_wait_filled(d, block_id)\
+    hashpipe_databuf_wait_filled((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_busywait_filled(d, block_id)\
+    hashpipe_databuf_busywait_filled((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_set_free(d, block_id)\
+    hashpipe_databuf_set_free((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_set_filled(d, block_id)\
+    hashpipe_databuf_set_filled((hashpipe_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_header(d, block_id)\
+    _hpguppi_databuf_header((hpguppi_databuf_t *)d, block_id)
+
+#define hpguppi_databuf_data(d, block_id)\
+    _hpguppi_databuf_data((hpguppi_databuf_t *)d, block_id)
+
+static inline char *_hpguppi_databuf_header(hpguppi_databuf_t *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[0].hdr + block_id*d->header.block_size;
+    }
+}
+
+static inline char *_hpguppi_databuf_data(hpguppi_databuf_t *d, int block_id) {
+    if(block_id < 0 || d->header.n_block < block_id) {
+        hashpipe_error(__FUNCTION__,
+            "block_id %s out of range [0, %d)",
+            block_id, d->header.n_block);
+        return NULL;
+    } else {
+        return d->block[0].data + block_id*d->header.block_size;
+    }
+}
+
+/*
+ * HPGUPPI INPUT BUFFER CREATE
  */
 
 hashpipe_databuf_t *hpguppi_input_databuf_create(int instance_id, int databuf_id);
-
-static inline hpguppi_input_databuf_t *hpguppi_input_databuf_attach(int instance_id, int databuf_id)
-{
-    return (hpguppi_input_databuf_t *)hashpipe_databuf_attach(instance_id, databuf_id);
-}
-
-static inline int hpguppi_input_databuf_detach(hpguppi_input_databuf_t *d)
-{
-    return hashpipe_databuf_detach((hashpipe_databuf_t *)d);
-}
-
-static inline void hpguppi_input_databuf_clear(hpguppi_input_databuf_t *d)
-{
-    hashpipe_databuf_clear((hashpipe_databuf_t *)d);
-}
-
-static inline int hpguppi_input_databuf_block_status(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_block_status((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_total_status(hpguppi_input_databuf_t *d)
-{
-    return hashpipe_databuf_total_status((hashpipe_databuf_t *)d);
-}
-
-static inline int hpguppi_input_databuf_wait_free_timeout(
-    hpguppi_input_databuf_t *d, int block_id, struct timespec *timeout)
-{
-    return hashpipe_databuf_wait_free_timeout((hashpipe_databuf_t *)d,
-        block_id, timeout);
-}
-
-static inline int hpguppi_input_databuf_wait_free(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_wait_free((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_busywait_free(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_busywait_free((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_wait_filled_timeout(
-    hpguppi_input_databuf_t *d, int block_id, struct timespec *timeout)
-{
-    return hashpipe_databuf_wait_filled_timeout((hashpipe_databuf_t *)d,
-        block_id, timeout);
-}
-
-static inline int hpguppi_input_databuf_wait_filled(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_wait_filled((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_busywait_filled(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_busywait_filled((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_set_free(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_set_free((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline int hpguppi_input_databuf_set_filled(hpguppi_input_databuf_t *d, int block_id)
-{
-    return hashpipe_databuf_set_filled((hashpipe_databuf_t *)d, block_id);
-}
-
-static inline char *hpguppi_databuf_header(struct hpguppi_input_databuf *d, int block_id) {
-    if(block_id < 0 || d->header.n_block < block_id) {
-        hashpipe_error(__FUNCTION__,
-            "block_id %s out of range [0, %d)",
-            block_id, d->header.n_block);
-        return NULL;
-    } else {
-        return d->block[block_id].hdr;
-    }
-}
-
-static inline char *hpguppi_databuf_data(struct hpguppi_input_databuf *d, int block_id) {
-    if(block_id < 0 || d->header.n_block < block_id) {
-        hashpipe_error(__FUNCTION__,
-            "block_id %s out of range [0, %d)",
-            block_id, d->header.n_block);
-        return NULL;
-    } else {
-        return d->block[block_id].data;
-    }
-}
 
 #if 0
 /////////// OLD STUFF /////////////

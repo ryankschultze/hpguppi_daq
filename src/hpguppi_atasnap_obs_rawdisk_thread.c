@@ -176,7 +176,7 @@ static void *run(hashpipe_thread_args_t * args)
       }
 
       // Waiting for input
-      rv=hpguppi_input_databuf_wait_filled(indb, curblock_in);
+      rv=hpguppi_databuf_wait_filled(indb, curblock_in);
       clock_gettime(CLOCK_MONOTONIC, &ts_block_recvd);
       if (rv == HASHPIPE_TIMEOUT)
       {
@@ -434,7 +434,7 @@ static void *run(hashpipe_thread_args_t * args)
       /*** RAW Disk write out END*/
     }
 
-    hpguppi_input_databuf_set_free(indb, curblock_in);
+    hpguppi_databuf_set_free(indb, curblock_in);
     blocks_per_second ++;
 
     // Update moving sum (for moving average)

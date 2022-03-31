@@ -209,7 +209,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     /* Wait for buf to have data */
-    rv = hpguppi_input_xgpu_databuf_wait_filled(db, curblock);
+    rv = hpguppi_databuf_wait_filled(db, curblock);
     clock_gettime(CLOCK_MONOTONIC, &ts_now);
     status_info_refresh_elapsed_ns = ELAPSED_NS(ts_updated_status_info, ts_now);
     if(status_info_refresh_elapsed_ns > status_info_refresh_period_ns) {
@@ -311,7 +311,7 @@ static void *run(hashpipe_thread_args_t *args)
                       pktstart, pktstop, pktidx);
       }
       /* Mark as free */
-      hpguppi_input_xgpu_databuf_set_free(db, curblock);
+      hpguppi_databuf_set_free(db, curblock);
 
       /* Go to next block */
       curblock = (curblock + 1) % db->header.n_block;
@@ -347,7 +347,7 @@ static void *run(hashpipe_thread_args_t *args)
         got_packet_0 = 0;
 
         /* Mark as free */
-        hpguppi_input_xgpu_databuf_set_free(db, curblock);
+        hpguppi_databuf_set_free(db, curblock);
 
         /* Go to next block */
         curblock = (curblock + 1) % db->header.n_block;
@@ -499,7 +499,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     /* Mark as free */
-    hpguppi_input_xgpu_databuf_set_free(db, curblock);
+    hpguppi_databuf_set_free(db, curblock);
 
     // Update moving sum (for moving average)
     clock_gettime(CLOCK_MONOTONIC, &ts_now);

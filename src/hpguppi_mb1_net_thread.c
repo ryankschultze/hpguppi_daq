@@ -167,7 +167,7 @@ static void finalize_block(struct datablock_stats *d)
     hputi4(header, "NPKT", d->npacket);
     hputi4(header, "NDROP", d->packets_per_block - d->npacket);
     hputs(header, "DROPSTAT", dropstat);
-    hpguppi_input_databuf_set_filled(d->db, d->block_idx);
+    hpguppi_databuf_set_filled(d->db, d->block_idx);
 }
 
 /* Push all blocks down a level, losing the first one */
@@ -836,17 +836,17 @@ static void *run(hashpipe_thread_args_t * args)
             /* Wait for new block to be free, then clear it
              * if necessary and fill its header with new values.
              */
-            netbuf_full = hpguppi_input_databuf_total_status(db);
+            netbuf_full = hpguppi_databuf_total_status(db);
             sprintf(netbuf_status, "%d/%d", netbuf_full, db->header.n_block);
             hashpipe_status_lock_safe(st);
             hputs(st->buf, status_key, "waitfree");
             hputs(st->buf, "NETBUFST", netbuf_status);
             hashpipe_status_unlock_safe(st);
-            while ((rv=hpguppi_input_databuf_wait_free(db, lblock->block_idx))
+            while ((rv=hpguppi_databuf_wait_free(db, lblock->block_idx))
                     != HASHPIPE_OK) {
                 if (rv==HASHPIPE_TIMEOUT) {
                     waiting=1;
-                    netbuf_full = hpguppi_input_databuf_total_status(db);
+                    netbuf_full = hpguppi_databuf_total_status(db);
                     sprintf(netbuf_status, "%d/%d", netbuf_full, db->header.n_block);
                     hashpipe_status_lock_safe(st);
                     hputs(st->buf, status_key, "blocked");

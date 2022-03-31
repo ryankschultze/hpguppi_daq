@@ -122,7 +122,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     /* Wait for buf to have data */
-    rv = hpguppi_input_xgpu_databuf_wait_filled(dbin, curblock_in);
+    rv = hpguppi_databuf_wait_filled(dbin, curblock_in);
     clock_gettime(CLOCK_MONOTONIC, &ts_now);
     status_info_refresh_elapsed_ns = ELAPSED_NS(ts_updated_status_info, ts_now);
     if(status_info_refresh_elapsed_ns > status_info_refresh_period_ns) {
@@ -137,7 +137,7 @@ static void *run(hashpipe_thread_args_t *args)
       continue;
     memcpy(&ts_stop_recv, &ts_now, sizeof(struct timespec));
 
-    databuf_ptr = hpguppi_xgpu_databuf_header(dbin, curblock_in);
+    databuf_ptr = hpguppi_databuf_header(dbin, curblock_in);
     hgetu8(databuf_ptr, "PIPERBLK", &timesample_perblock);// coincident
     hgetu4(databuf_ptr, "NCHAN", &ant_nchan);
     hgetu4(databuf_ptr, "NPOL", &npol);
@@ -152,7 +152,7 @@ static void *run(hashpipe_thread_args_t *args)
                       ant_nchan, timesample_perblock);
 
       /* Mark as free */
-      hpguppi_input_xgpu_databuf_set_free(dbin, curblock_in);
+      hpguppi_databuf_set_free(dbin, curblock_in);
 
       /* Go to next block */
       curblock_in = (curblock_in + 1) % dbin->header.n_block;
@@ -168,7 +168,7 @@ static void *run(hashpipe_thread_args_t *args)
     ) {
       first_block = 1;
       do {
-        rv = hpguppi_output_xgpu_databuf_wait_free(dbout, curblock_out);
+        rv = hpguppi_databuf_wait_free(dbout, curblock_out);
         if (rv == HASHPIPE_TIMEOUT) {
           if(status_index !=  1)
           {
@@ -181,15 +181,15 @@ static void *run(hashpipe_thread_args_t *args)
       } while (rv != HASHPIPE_OK);
 
       /* Mark useless block as filled */
-      memcpy(hpguppi_xgpu_output_databuf_header(dbout, curblock_out),
+      memcpy(hpguppi_databuf_header(dbout, curblock_out),
         databuf_ptr,
         HASHPIPE_STATUS_TOTAL_SIZE
       );
-      hpguppi_output_xgpu_databuf_set_filled(dbout, curblock_out);
+      hpguppi_databuf_set_filled(dbout, curblock_out);
       curblock_out = (curblock_out + 1) % dbout->header.n_block;
 
       /* Mark as free */
-      hpguppi_input_xgpu_databuf_set_free(dbin, curblock_in);
+      hpguppi_databuf_set_free(dbin, curblock_in);
 
       // Update moving sum (for moving average)
       clock_gettime(CLOCK_MONOTONIC, &ts_now);
@@ -242,7 +242,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     do {
-      rv = hpguppi_output_xgpu_databuf_wait_free(dbout, curblock_out);
+      rv = hpguppi_databuf_wait_free(dbout, curblock_out);
       if (rv == HASHPIPE_TIMEOUT) {
         if(status_index !=  1)
         {
@@ -290,19 +290,19 @@ static void *run(hashpipe_thread_args_t *args)
       hputi4(databuf_ptr, "X_TRILEN", xgpu_info.triLength); // Communicate to the downstream thread
 
       /* Mark as filled */
-      memcpy(hpguppi_xgpu_output_databuf_header(dbout, curblock_out),
+      memcpy(hpguppi_databuf_header(dbout, curblock_out),
         databuf_ptr,
         HASHPIPE_STATUS_TOTAL_SIZE
       );
-      hputu8(hpguppi_xgpu_output_databuf_header(dbout, curblock_out), "BLKSTART", integrated_blk_start_pktidx);
-      hpguppi_output_xgpu_databuf_set_filled(dbout, curblock_out);
+      hputu8(hpguppi_databuf_header(dbout, curblock_out), "BLKSTART", integrated_blk_start_pktidx);
+      hpguppi_databuf_set_filled(dbout, curblock_out);
       curblock_out = (curblock_out + 1) % dbout->header.n_block;
 
       ndrop_integration_start = ndrop_integration_end;
     }
 
     /* Mark as free */
-    hpguppi_input_xgpu_databuf_set_free(dbin, curblock_in);
+    hpguppi_databuf_set_free(dbin, curblock_in);
 
     // Update moving sum (for moving average)
     clock_gettime(CLOCK_MONOTONIC, &ts_now);

@@ -177,7 +177,7 @@ static void *run(hashpipe_thread_args_t * args)
       }
 
       // Waiting for input
-      rv=hpguppi_blade_output_databuf_wait_filled(indb, curblock_in);
+      rv=hpguppi_databuf_wait_filled(indb, curblock_in);
       clock_gettime(CLOCK_MONOTONIC, &ts_block_recvd);
       if (rv == HASHPIPE_TIMEOUT)
       {
@@ -208,7 +208,7 @@ static void *run(hashpipe_thread_args_t * args)
         waiting=0;
     }
 
-    datablock_header = hpguppi_blade_databuf_header(indb, curblock_in);
+    datablock_header = hpguppi_databuf_header(indb, curblock_in);
     hgetu8(datablock_header, "PKTSTART", &obs_start_pktidx);
     hgetu8(datablock_header, "PKTSTOP", &obs_stop_pktidx);
     hgetu8(datablock_header, "BLKSTART", &block_start_pktidx);
@@ -323,7 +323,7 @@ static void *run(hashpipe_thread_args_t * args)
       }
 
       /* Set up data ptr for qubeam routines */
-      pf.sub.data = (unsigned char *)hpguppi_blade_databuf_data(indb, curblock_in);
+      pf.sub.data = (unsigned char *)hpguppi_databuf_data(indb, curblock_in);
 
       // Wait for packet 0 before starting write
       // "packet 0" is the first packet/block of the new recording,
@@ -438,7 +438,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         /* Write data */
-        datablock_header = hpguppi_blade_databuf_data(indb, curblock_in);
+        datablock_header = hpguppi_databuf_data(indb, curblock_in);
         len = beam_blocksize;
         if(directio) {
             // Round up to next multiple of 512
@@ -496,7 +496,7 @@ static void *run(hashpipe_thread_args_t * args)
       /*** RAW Disk write out END*/
     }
 
-    hpguppi_blade_output_databuf_set_free(indb, curblock_in);
+    hpguppi_databuf_set_free(indb, curblock_in);
     blocks_per_second ++;
 
     // Update moving sum (for moving average)

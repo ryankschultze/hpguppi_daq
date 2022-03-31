@@ -122,7 +122,7 @@ static void wait_for_block_free(hpguppi_input_databuf_t *db, int block_idx,
   int rv;
   char ibvstat[80] = {0};
   char ibvbuf_status[80];
-  int ibvbuf_full = hpguppi_input_databuf_total_status(db);
+  int ibvbuf_full = hpguppi_databuf_total_status(db);
   sprintf(ibvbuf_status, "%d/%d", ibvbuf_full, db->header.n_block);
 
   hashpipe_status_lock_safe(st);
@@ -136,10 +136,10 @@ static void wait_for_block_free(hpguppi_input_databuf_t *db, int block_idx,
   }
   hashpipe_status_unlock_safe(st);
 
-  while ((rv=hpguppi_input_databuf_wait_free(db, block_idx))
+  while ((rv=hpguppi_databuf_wait_free(db, block_idx))
       != HASHPIPE_OK) {
     if (rv==HASHPIPE_TIMEOUT) {
-      ibvbuf_full = hpguppi_input_databuf_total_status(db);
+      ibvbuf_full = hpguppi_databuf_total_status(db);
       sprintf(ibvbuf_status, "%d/%d", ibvbuf_full, db->header.n_block);
       hashpipe_status_lock_safe(st);
       {
@@ -814,7 +814,7 @@ int debug_i=0, debug_j=0;
       ts_start = ts_now;
 
       // Timeout, update status buffer
-      update_status_buffer(st, hpguppi_input_databuf_total_status(db),
+      update_status_buffer(st, hpguppi_databuf_total_status(db),
           db->header.n_block, bytes_received, pkts_received, ns_elapsed,
           &sniffer_flag, round((double)fill_moving_sum_ns / db->header.n_block) / 1e6);
 
@@ -877,7 +877,7 @@ int debug_i=0, debug_j=0;
       // If time to advance the ring buffer block
       if(next_block > curblk+1) {
         // Mark curblk as filled
-        hpguppi_input_databuf_set_filled(db, curblk % N_INPUT_BLOCKS);
+        hpguppi_databuf_set_filled(db, curblk % N_INPUT_BLOCKS);
         clock_gettime(CLOCK_MONOTONIC, &ts_now);
         fill_elapsed_ns = ELAPSED_NS(ts_block_filled, ts_now);
         fill_moving_sum_ns +=
