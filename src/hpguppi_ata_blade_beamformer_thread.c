@@ -104,7 +104,7 @@ static void *run(hashpipe_thread_args_t *args)
 	UVH5_header_t uvh5_header = {0};
   char tel_info_toml_filepath[70] = {'\0'};
   char obs_info_toml_filepath[70] = {'\0'};
-  double *obs_antenna_positions, obs_beam_coordinates[BLADE_ATA_MODE_B_OUTPUT_NBEAM*2] = {0};
+  double obs_antenna_positions[BLADE_ATA_MODE_B_INPUT_NANT*3] = {0}, obs_beam_coordinates[BLADE_ATA_MODE_B_OUTPUT_NBEAM*2] = {0};
   struct blade_ata_mode_b_observation_meta observationMetaData = {0};
   struct LonLatAlt arrayReferencePosition = {0};
   
@@ -294,10 +294,6 @@ static void *run(hashpipe_thread_args_t *args)
         arrayReferencePosition.ALT = uvh5_header.altitude;
 
         // At this point we have XYZ uvh5_header.antenna_positions, and ENU uvh5_header._antenna_enu_positions
-        if(obs_antenna_positions) {
-          free(obs_antenna_positions);
-        }
-        obs_antenna_positions = (double*) malloc(uvh5_header.Nants_data*3*sizeof(double));
         for(i = 0; i < uvh5_header.Nants_data; i++){
           int ant_idx = uvh5_header._antenna_num_idx_map[
             uvh5_header._antenna_numbers_data[i]

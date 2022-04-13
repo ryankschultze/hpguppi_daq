@@ -79,6 +79,13 @@ bool blade_ata_b_initialize(
         .beamformerBlockSize = ata_b_config.beamformerBlockSize,
     };
 
+    config.antennaCalibrations.resize(
+        config.numberOfAntennas *
+        config.numberOfFrequencyChannels *
+        config.channelizerRate *
+        config.numberOfPolarizations
+    );
+    
     instance.guard = std::make_unique<Logger>();
     instance.runner = Runner<BladePipeline>::New(numberOfWorkers, config);
 
