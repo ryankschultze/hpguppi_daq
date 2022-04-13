@@ -15,6 +15,20 @@ struct blade_ata_mode_b_input_dims{
     uint32_t NPOLS;
 };
 
+struct blade_ata_mode_b_observation_meta{
+    double rfFrequencyHz; // OBSFREQ
+    double channelBandwidthHz; // CHANBW
+    double totalBandwidthHz; // CHANBW*FENCHAN
+    uint64_t frequencyStartIndex; // SCHAN
+    uint64_t referenceAntennaIndex; // ???
+};
+
+struct LonLatAlt{
+    double LON;
+    double LAT;
+    double ALT;
+};
+
 struct blade_ata_mode_b_config {
     struct blade_ata_mode_b_input_dims inputDims;
     uint32_t channelizerRate;
@@ -48,13 +62,24 @@ const struct blade_ata_mode_b_config BLADE_ATA_MODE_B_CONFIG = {
 };
 
 bool blade_use_device(int device_id);
-bool blade_ata_b_initialize(struct blade_ata_mode_b_config ata_b_config, size_t numberOfWorkers);
+bool blade_ata_b_initialize(
+    struct blade_ata_mode_b_config ata_b_config,
+    size_t numberOfWorkers,
+    struct blade_ata_mode_b_observation_meta* observationMeta,
+    struct LonLatAlt* arrayReferencePosition,
+    double* beamCoordinates_radecrad,
+    double* antennaPositions_xyz
+);
 size_t blade_ata_b_get_input_size();
 size_t blade_ata_b_get_output_size();
 size_t blade_ata_b_get_phasor_size();
 bool blade_pin_memory(void* buffer, size_t size);
-bool blade_ata_b_set_phasors(void* buffer, bool block);
-bool blade_ata_b_enqueue(void* input_ptr, void* output_ptr, size_t id);
+bool blade_ata_b_set_phasors(void* phasors, bool block);
+bool blade_ata_b_set_antenna_positions(void* xyz_positions, bool block);
+bool blade_ata_b_set_antenna_calibrations(void* calibrations, bool block);
+bool blade_ata_b_set_beam_coordinates(void* coordinates, bool block);
+bool blade_ata_b_set_boresight_coordinates(void* coordinate, bool block);
+bool blade_ata_b_enqueue(void* input_ptr, void* output_ptr, size_t id, double time_mjd, double dut1);
 bool blade_ata_b_dequeue(size_t* id);
 void blade_ata_b_terminate();
 

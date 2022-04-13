@@ -5,15 +5,70 @@
 #include <math.h>
 
 #include "hashpipe.h"
+#include "hpguppi_time.h"
 #include "hpguppi_databuf.h"
 #include "hpguppi_blade_databuf.h"
 #include "hpguppi_blade_ata_mode_b_capi.h"
+
+#include "uvh5/uvh5_toml.h"
+#include "radiointerferometryc99.h"
 
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
 
 #define ELAPSED_NS(start,stop) \
   (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
+
+double mjd_mid_block(char* databuf_header){
+  uint64_t pktidx, piperblk;
+  struct mjd_t mjd = {0};
+  uint64_t synctime = 0;
+  double chan_bw = 1.0;
+
+  double realtime_secs = 0.0;
+  struct timespec ts;
+
+  
+  hgetu8(databuf_header, "PKTIDX", &pktidx);
+  hgetu8(databuf_header, "PIPERBLK", &piperblk);
+  hgetr8(databuf_header, "CHAN_BW", &chan_bw);
+  hgetu8(databuf_header, "SYNCTIME", &synctime);
+
+  // Calc real-time seconds since SYNCTIME for pktidx, taken to be a multiple of PKTNTIME:
+  //
+  //                          pktidx
+  //     realtime_secs = -------------------
+  //                        1e6 * chan_bw
+  if(chan_bw != 0.0) {
+    realtime_secs = (pktidx + piperblk/2) / (1e6 * fabs(chan_bw));
+  }
+
+  ts.tv_sec = (time_t)(synctime + rint(realtime_secs));
+  ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
+
+  get_mjd_from_timespec(&ts, &(mjd.stt_imjd), &(mjd.stt_smjd), &(mjd.stt_offs));
+  return ((double)mjd.stt_imjd) + ((double) mjd.stt_smjd + mjd.stt_offs)/(86400.0);
+}
+
+// Populates `beam_coordinates` which should be nbeams*2 (beam-0 is boresight)
+void collect_beamCoordinates(int nbeams, double* beam_coordinates, char* databuf_header) {
+  hgetr8(databuf_header, "RA_STR", beam_coordinates+0);
+  beam_coordinates[0] = calc_deg2rad(beam_coordinates[0]);
+  hgetr8(databuf_header, "DEC_STR", beam_coordinates+1);
+  beam_coordinates[1] = calc_deg2rad(beam_coordinates[1]);
+  char coordkey[9] = "DEC_OFFX";
+  for(; nbeams > 1; nbeams--) {
+    memcpy(beam_coordinates+nbeams*2, beam_coordinates, sizeof(double)*2);
+
+    sprintf(coordkey, "RA_OFF%d", nbeams%10);
+    hgetr8(databuf_header, coordkey, beam_coordinates+nbeams*2+0);
+    beam_coordinates[nbeams*2+0] = calc_deg2rad(beam_coordinates[nbeams*2+0]);
+
+    sprintf(coordkey, "DEC_OFF%d", nbeams%10);
+    hgetr8(databuf_header, coordkey, beam_coordinates+nbeams*2+1);
+    beam_coordinates[nbeams*2+1] = calc_deg2rad(beam_coordinates[nbeams*2+1]);
+  }
+}
 
 static void *run(hashpipe_thread_args_t *args)
 {
@@ -45,6 +100,14 @@ static void *run(hashpipe_thread_args_t *args)
 
   char indb_data_dims_good_flag = 0;
 
+  /* UVH5 header variables*/
+	UVH5_header_t uvh5_header = {0};
+  char tel_info_toml_filepath[70] = {'\0'};
+  char obs_info_toml_filepath[70] = {'\0'};
+  double *obs_antenna_positions, obs_beam_coordinates[BLADE_ATA_MODE_B_OUTPUT_NBEAM*2] = {0};
+  struct blade_ata_mode_b_observation_meta observationMetaData = {0};
+  struct LonLatAlt arrayReferencePosition = {0};
+  
   /* BLADE variables */
   const size_t batch_size = 2;
   int input_output_blockid_pairs[N_INPUT_BLOCKS] = {0}; // input_id indexed associated output_id
@@ -73,7 +136,14 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
-  blade_ata_b_initialize(BLADE_ATA_MODE_B_CONFIG, batch_size);
+  blade_ata_b_initialize(
+    BLADE_ATA_MODE_B_CONFIG,
+    batch_size,
+    &observationMetaData,
+    &arrayReferencePosition,
+    obs_beam_coordinates,
+    obs_antenna_positions
+  );
 
   if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
     hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
@@ -98,6 +168,9 @@ static void *run(hashpipe_thread_args_t *args)
   int32_t input_buffer_dim_NCHAN = 0, prev_flagged_NCHAN = 0;
   int32_t input_buffer_dim_NTIME = 0, prev_flagged_NTIME = 0;
   int32_t input_buffer_dim_NPOLS = 0, prev_flagged_NPOLS = 0;
+
+  int64_t pktidx_obs_start, pktidx_obs_start_prev, pktidx_blk_start;
+  double timemjd_midblock, dut1; // DUT1
 
   while (run_threads())
   {
@@ -194,6 +267,67 @@ static void *run(hashpipe_thread_args_t *args)
       prev_flagged_NPOLS = input_buffer_dim_NPOLS;
     }
 
+    hgeti8(databuf_header, "PKTSTART", &pktidx_obs_start);
+    hgeti8(databuf_header, "BLKSTART", &pktidx_blk_start);
+
+    if(pktidx_obs_start != pktidx_obs_start_prev && pktidx_obs_start >= pktidx_blk_start){ // first block of observation
+        hgetr8(databuf_header, "OBSFREQ", &observationMetaData.rfFrequencyHz);
+        hgetr8(databuf_header, "CHANBW", &observationMetaData.channelBandwidthHz);
+        hgetr8(databuf_header, "FENCHAN", &observationMetaData.totalBandwidthHz);
+        observationMetaData.totalBandwidthHz *= observationMetaData.channelBandwidthHz;
+        hgetu8(databuf_header, "SCHAN", &observationMetaData.frequencyStartIndex);
+
+        hashpipe_status_lock_safe(&st);
+        {
+          hgets(st.buf, "TELINFOP", 70, tel_info_toml_filepath);
+          hgets(st.buf, "OBSINFOP", 70, obs_info_toml_filepath);
+        }
+        hashpipe_status_unlock_safe(&st);
+
+        hashpipe_info(thread_name, "Parsing '%s' as Telescope information.", tel_info_toml_filepath);
+        UVH5toml_parse_telescope_info(tel_info_toml_filepath, &uvh5_header);
+        hashpipe_info(thread_name, "Parsing '%s' as Observation information.", obs_info_toml_filepath);
+        UVH5toml_parse_observation_info(obs_info_toml_filepath, &uvh5_header);
+        UVH5Hadmin(&uvh5_header);
+        arrayReferencePosition.LAT = calc_deg2rad(uvh5_header.latitude);
+        arrayReferencePosition.LON = calc_deg2rad(uvh5_header.longitude);
+        arrayReferencePosition.ALT = uvh5_header.altitude;
+
+        // At this point we have XYZ uvh5_header.antenna_positions, and ENU uvh5_header._antenna_enu_positions
+        if(obs_antenna_positions) {
+          free(obs_antenna_positions);
+        }
+        obs_antenna_positions = (double*) malloc(uvh5_header.Nants_data*3*sizeof(double));
+        for(i = 0; i < uvh5_header.Nants_data; i++){
+          int ant_idx = uvh5_header._antenna_num_idx_map[
+            uvh5_header._antenna_numbers_data[i]
+          ];
+          obs_antenna_positions[i*3 + 0] = uvh5_header.antenna_positions[ant_idx*3 + 0];
+          obs_antenna_positions[i*3 + 1] = uvh5_header.antenna_positions[ant_idx*3 + 1];
+          obs_antenna_positions[i*3 + 2] = uvh5_header.antenna_positions[ant_idx*3 + 2];
+        }
+        // observationMetaData.referenceAntennaIndex = uvh5_header._antenna_num_idx_map[
+        //   uvh5_header._antenna_numbers_data[0]
+        // ];
+        observationMetaData.referenceAntennaIndex = 0;
+
+        collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM, obs_beam_coordinates, databuf_header);
+
+        blade_ata_b_terminate();
+        blade_ata_b_initialize(
+          BLADE_ATA_MODE_B_CONFIG,
+          batch_size,
+          &observationMetaData,
+          &arrayReferencePosition,
+          obs_beam_coordinates,
+          obs_antenna_positions
+        );
+    }
+    pktidx_obs_start_prev = pktidx_obs_start;
+    hgetr8(databuf_header, "DUT1", &dut1);
+    timemjd_midblock = mjd_mid_block(databuf_header);
+
+
     // waiting for output buffer to be free
     while ((hpguppi_databuf_wait_rv=hpguppi_databuf_wait_free(outdb, curblock_out)) !=
         HASHPIPE_OK)
@@ -232,7 +366,9 @@ static void *run(hashpipe_thread_args_t *args)
       blade_ata_b_enqueue(
         (void*) hpguppi_databuf_data(indb, curblock_in),
         (void*) hpguppi_databuf_data(outdb, curblock_out),
-        curblock_in
+        curblock_in,
+        timemjd_midblock,
+        dut1
       )
     ){
       if(status_state != 4){
