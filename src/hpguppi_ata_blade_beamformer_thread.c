@@ -14,6 +14,7 @@
 
 #include "uvh5/uvh5_toml.h"
 #include "radiointerferometryc99.h"
+#include "antenna_weights.h"
 
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
@@ -113,6 +114,10 @@ static void *run(hashpipe_thread_args_t *args)
   int input_output_blockid_pairs[N_INPUT_BLOCKS]; // input_id indexed associated output_id
   memset(input_output_blockid_pairs, -1, sizeof(int)*N_INPUT_BLOCKS);
   size_t dequeued_input_id = 0;
+
+  double _Complex* antenna_calibration_coeffs;
+  char obs_antenna_calibration_filepath[70] = {'\0'};
+  char** obs_antenna_names = NULL;
   
   int cudaDeviceId = args->instance_id;
   
@@ -137,7 +142,6 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
-  double _Complex* antenna_calibration_coeffs;
   //XXX Replace by actual calibration
   size_t size_of_calib = 20*192*2; //20 ants, 192chans, 2pol, HARCODED!!!!
   antenna_calibration_coeffs = 
@@ -294,10 +298,15 @@ static void *run(hashpipe_thread_args_t *args)
         observationMetaData.channelBandwidthHz *= 1e6;
         observationMetaData.totalBandwidthHz = fenchan * observationMetaData.channelBandwidthHz;
 
+        if(obs_antenna_names){
+          free(obs_antenna_names);
+        }
+
         hashpipe_status_lock_safe(&st);
         {
           hgets(st.buf, "TELINFOP", 70, tel_info_toml_filepath);
           hgets(st.buf, "OBSINFOP", 70, obs_info_toml_filepath);
+          hgets(st.buf, "CALWGHTP", 70, obs_antenna_calibration_filepath);
         }
         hashpipe_status_unlock_safe(&st);
 
@@ -310,6 +319,8 @@ static void *run(hashpipe_thread_args_t *args)
         arrayReferencePosition.LON = calc_deg2rad(uvh5_header.longitude);
         arrayReferencePosition.ALT = uvh5_header.altitude;
 
+        obs_antenna_names = malloc(uvh5_header.Nants_data*sizeof(char*));
+
         // At this point we have XYZ uvh5_header.antenna_positions, and ENU uvh5_header._antenna_enu_positions
         for(i = 0; i < uvh5_header.Nants_data; i++){
           int ant_idx = uvh5_header._antenna_num_idx_map[
@@ -318,6 +329,8 @@ static void *run(hashpipe_thread_args_t *args)
           obs_antenna_positions[i*3 + 0] = uvh5_header.antenna_positions[ant_idx*3 + 0];
           obs_antenna_positions[i*3 + 1] = uvh5_header.antenna_positions[ant_idx*3 + 1];
           obs_antenna_positions[i*3 + 2] = uvh5_header.antenna_positions[ant_idx*3 + 2];
+
+          obs_antenna_names[i] = uvh5_header.antenna_names[ant_idx];
         }
         // BLADE needs ECEF coordinates
         // It doesn't make sense to convert from ECEF back to XYZ in the uvh5 library
@@ -335,6 +348,29 @@ static void *run(hashpipe_thread_args_t *args)
         observationMetaData.referenceAntennaIndex = 0;
 
         collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM, obs_beam_coordinates, databuf_header);
+        if(
+          read_antenna_weights(
+            obs_antenna_calibration_filepath,
+            uvh5_header.Nants_data, // number of antenna of interest
+            obs_antenna_names, // the antenna of interest
+            observationMetaData.frequencyStartIndex, // the first channel
+            input_buffer_dim_NCHAN, // the number of channels
+            &antenna_calibration_coeffs // return value
+          )
+        ){
+          // Failed to open CALWGHTP file, set 1.0+0.0j
+          hashpipe_warn(thread_name, "CALWGHTP `%s` could not be opened.", obs_antenna_calibration_filepath);
+          errno = 0;
+          size_of_calib = 
+            input_buffer_dim_NANTS*
+            input_buffer_dim_NCHAN*
+            input_buffer_dim_NPOLS;
+          antenna_calibration_coeffs = malloc(size_of_calib*sizeof(double _Complex*));
+
+          for(i = 0; i < size_of_calib; i++){
+            antenna_calibration_coeffs[i] = 1.0 + 0.0*I;
+          }
+        }
 
         // Free previously queued buffers
         for(i = 0; i < indb->header.n_block; i++)
