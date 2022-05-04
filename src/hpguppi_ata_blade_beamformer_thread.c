@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include <math.h>
 
+#include <complex.h>
+
 #include "hashpipe.h"
 #include "hpguppi_time.h"
 #include "hpguppi_databuf.h"
@@ -47,28 +49,26 @@ double mjd_mid_block(char* databuf_header){
   ts.tv_nsec = (long)((realtime_secs - rint(realtime_secs)) * 1e9);
 
   get_mjd_from_timespec(&ts, &(mjd.stt_imjd), &(mjd.stt_smjd), &(mjd.stt_offs));
-  return ((double)mjd.stt_imjd) + ((double) mjd.stt_smjd + mjd.stt_offs)/(86400.0);
+  //double t = ((double)mjd.stt_imjd) + ((double) mjd.stt_smjd + mjd.stt_offs)/(86400.0);
+  //double t2 = ((double)synctime + (double)realtime_secs) / (double) 86400.0 + (double) 40587.0;
+  //fprintf(stderr, "diff is: %.16f %.16f\n", t, t2);
+  return (((double)mjd.stt_imjd) + ((double) mjd.stt_smjd + mjd.stt_offs)/(86400.0)) + 2400000.5;
 }
 
-// Populates `beam_coordinates` which should be nbeams*2 (beam-0 is boresight)
+// Populates `beam_coordinates` which should be nbeams*2 long (RA/DEC_OFFX pairs)
 void collect_beamCoordinates(int nbeams, double* beam_coordinates, char* databuf_header) {
-  hgetr8(databuf_header, "RA_STR", beam_coordinates+0);
-  beam_coordinates[0] = calc_deg2rad(beam_coordinates[0]);
-  hgetr8(databuf_header, "DEC_STR", beam_coordinates+1);
-  beam_coordinates[1] = calc_deg2rad(beam_coordinates[1]);
   char coordkey[9] = "DEC_OFFX";
-  for(; nbeams > 1; nbeams--) {
-    memcpy(beam_coordinates+nbeams*2, beam_coordinates, sizeof(double)*2);
+  for(int beam_idx = 0; beam_idx < nbeams; beam_idx++) {
+    sprintf(coordkey, "RA_OFF%d", beam_idx%10);
+    hgetr8(databuf_header, coordkey, beam_coordinates+beam_idx*2+0);
+    beam_coordinates[beam_idx*2+0] = calc_deg2rad(beam_coordinates[beam_idx*2+0]);
 
-    sprintf(coordkey, "RA_OFF%d", nbeams%10);
-    hgetr8(databuf_header, coordkey, beam_coordinates+nbeams*2+0);
-    beam_coordinates[nbeams*2+0] = calc_deg2rad(beam_coordinates[nbeams*2+0]);
-
-    sprintf(coordkey, "DEC_OFF%d", nbeams%10);
-    hgetr8(databuf_header, coordkey, beam_coordinates+nbeams*2+1);
-    beam_coordinates[nbeams*2+1] = calc_deg2rad(beam_coordinates[nbeams*2+1]);
+    sprintf(coordkey, "DEC_OFF%d", beam_idx%10);
+    hgetr8(databuf_header, coordkey, beam_coordinates+beam_idx*2+1);
+    beam_coordinates[beam_idx*2+1] = calc_deg2rad(beam_coordinates[beam_idx*2+1]);
   }
 }
+
 
 static void *run(hashpipe_thread_args_t *args)
 {
@@ -110,7 +110,8 @@ static void *run(hashpipe_thread_args_t *args)
   
   /* BLADE variables */
   const size_t batch_size = 2;
-  int input_output_blockid_pairs[N_INPUT_BLOCKS] = {0}; // input_id indexed associated output_id
+  int input_output_blockid_pairs[N_INPUT_BLOCKS]; // input_id indexed associated output_id
+  memset(input_output_blockid_pairs, -1, sizeof(int)*N_INPUT_BLOCKS);
   size_t dequeued_input_id = 0;
   
   int cudaDeviceId = args->instance_id;
@@ -136,13 +137,23 @@ static void *run(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(&st);
 
+  double _Complex* antenna_calibration_coeffs;
+  //XXX Replace by actual calibration
+  size_t size_of_calib = 20*192*2; //20 ants, 192chans, 2pol, HARCODED!!!!
+  antenna_calibration_coeffs = 
+    (double _Complex*) malloc(size_of_calib*sizeof (*antenna_calibration_coeffs));
+
+  for (size_t i; i<size_of_calib; i++)
+    antenna_calibration_coeffs[i] = 1.0 + 0.0*I;
+
   blade_ata_b_initialize(
     BLADE_ATA_MODE_B_CONFIG,
     batch_size,
     &observationMetaData,
     &arrayReferencePosition,
     obs_beam_coordinates,
-    obs_antenna_positions
+    obs_antenna_positions,
+    antenna_calibration_coeffs
   );
 
   if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
@@ -156,21 +167,16 @@ static void *run(hashpipe_thread_args_t *args)
     blade_pin_memory(hpguppi_databuf_data(outdb, i), BLADE_BLOCK_DATA_SIZE);
   }
 
-  float* phasor_buffer = malloc(blade_ata_b_get_phasor_size() * sizeof(float) * 2);
-  memset(phasor_buffer, 0, blade_ata_b_get_phasor_size() * sizeof(float) * 2);
-  for(int i = 0; i < blade_ata_b_get_phasor_size(); i++) { // set only real components
-      phasor_buffer[i*2] = 1.0;
-  }
-  blade_ata_b_set_phasors(phasor_buffer, true);
-  free(phasor_buffer);
-
   int32_t input_buffer_dim_NANTS = 0, prev_flagged_NANTS = 0;
   int32_t input_buffer_dim_NCHAN = 0, prev_flagged_NCHAN = 0;
   int32_t input_buffer_dim_NTIME = 0, prev_flagged_NTIME = 0;
   int32_t input_buffer_dim_NPOLS = 0, prev_flagged_NPOLS = 0;
 
   int64_t pktidx_obs_start, pktidx_obs_start_prev, pktidx_blk_start;
-  double timemjd_midblock, dut1; // DUT1
+  int fenchan;
+  double timemjd_midblock=0, dut1=0; // DUT1
+  timemjd_midblock += 1;
+  double timejd_midblock=0;
 
   while (run_threads())
   {
@@ -271,11 +277,22 @@ static void *run(hashpipe_thread_args_t *args)
     hgeti8(databuf_header, "BLKSTART", &pktidx_blk_start);
 
     if(pktidx_obs_start != pktidx_obs_start_prev && pktidx_obs_start >= pktidx_blk_start){ // first block of observation
-        hgetr8(databuf_header, "OBSFREQ", &observationMetaData.rfFrequencyHz);
-        hgetr8(databuf_header, "CHANBW", &observationMetaData.channelBandwidthHz);
-        hgetr8(databuf_header, "FENCHAN", &observationMetaData.totalBandwidthHz);
-        observationMetaData.totalBandwidthHz *= observationMetaData.channelBandwidthHz;
         hgetu8(databuf_header, "SCHAN", &observationMetaData.frequencyStartIndex);
+        hgetr8(databuf_header, "CHAN_BW", &observationMetaData.channelBandwidthHz);
+        hgeti4(databuf_header, "FENCHAN", &fenchan);
+        hgetr8(databuf_header, "OBSFREQ", &observationMetaData.rfFrequencyHz);
+
+        double tmp = (double)observationMetaData.rfFrequencyHz +
+          (-(double)observationMetaData.frequencyStartIndex - ((double)input_buffer_dim_NCHAN / 2.0)
+            + ((double)fenchan / 2.0) + 0.5
+          ) * (double)observationMetaData.channelBandwidthHz;
+
+
+        observationMetaData.rfFrequencyHz = tmp;
+
+        observationMetaData.rfFrequencyHz *= 1e6;
+        observationMetaData.channelBandwidthHz *= 1e6;
+        observationMetaData.totalBandwidthHz = fenchan * observationMetaData.channelBandwidthHz;
 
         hashpipe_status_lock_safe(&st);
         {
@@ -302,12 +319,33 @@ static void *run(hashpipe_thread_args_t *args)
           obs_antenna_positions[i*3 + 1] = uvh5_header.antenna_positions[ant_idx*3 + 1];
           obs_antenna_positions[i*3 + 2] = uvh5_header.antenna_positions[ant_idx*3 + 2];
         }
+        // BLADE needs ECEF coordinates
+        // It doesn't make sense to convert from ECEF back to XYZ in the uvh5 library
+        // but then back to ECEF here. TODO don't do the above
+        calc_position_to_ecef_frame_from_xyz(
+          obs_antenna_positions,
+          uvh5_header.Nants_data,
+          arrayReferencePosition.LON,
+          arrayReferencePosition.LAT,
+          arrayReferencePosition.ALT
+        );
         // observationMetaData.referenceAntennaIndex = uvh5_header._antenna_num_idx_map[
         //   uvh5_header._antenna_numbers_data[0]
         // ];
         observationMetaData.referenceAntennaIndex = 0;
 
         collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM, obs_beam_coordinates, databuf_header);
+
+        // Free previously queued buffers
+        for(i = 0; i < indb->header.n_block; i++)
+        {
+          if(input_output_blockid_pairs[i] != -1) {
+            hpguppi_databuf_set_free(indb, i);
+            // set filled old output, to synchronise the disk thread
+            hpguppi_databuf_set_filled(outdb, input_output_blockid_pairs[i]);
+            input_output_blockid_pairs[i] = -1;
+          }
+        }
 
         blade_ata_b_terminate();
         blade_ata_b_initialize(
@@ -316,7 +354,8 @@ static void *run(hashpipe_thread_args_t *args)
           &observationMetaData,
           &arrayReferencePosition,
           obs_beam_coordinates,
-          obs_antenna_positions
+          obs_antenna_positions,
+          antenna_calibration_coeffs
         );
     }
     pktidx_obs_start_prev = pktidx_obs_start;
@@ -338,7 +377,7 @@ static void *run(hashpipe_thread_args_t *args)
       }
       else
       {
-        hashpipe_error(thread_name, "error waiting for output buffer, rv: %i", hpguppi_databuf_wait_rv);
+        hashpipe_error(thread_name, "error waiting for output buffer #%d, rv: %i", curblock_out, hpguppi_databuf_wait_rv);
         pthread_exit(NULL);
         break;
       }
@@ -363,7 +402,7 @@ static void *run(hashpipe_thread_args_t *args)
         (void*) hpguppi_databuf_data(indb, curblock_in),
         (void*) hpguppi_databuf_data(outdb, curblock_out),
         curblock_in,
-        timemjd_midblock,
+        timejd_midblock,
         dut1
       )
     ){
@@ -384,7 +423,7 @@ static void *run(hashpipe_thread_args_t *args)
             BLOCK_HDR_SIZE);
       
       //TODO upate output_buffer headers to reflect that they contain beams
-      hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_MODE_B_OUTPUT_NBEAM * BLADE_ATA_MODE_B_ANT_NCHAN);
+      hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_MODE_B_ANT_NCHAN); // beams are split into separate files...
       hputi4(databuf_header, "NBEAMS", BLADE_ATA_MODE_B_OUTPUT_NBEAM);
       hputi4(databuf_header, "NBITS", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES*8/2);
       hputs(databuf_header, "DATATYPE", "FLOAT");
