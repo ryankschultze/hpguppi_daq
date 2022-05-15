@@ -57,7 +57,18 @@ double mjd_mid_block(char* databuf_header){
 }
 
 // Populates `beam_coordinates` which should be nbeams*2 long (RA/DEC_OFFX pairs)
-void collect_beamCoordinates(int nbeams, double* beam_coordinates, char* databuf_header) {
+void collect_beamCoordinates(int nbeams, double* beam_coordinates,
+    double* phase_center,
+    char* databuf_header) {
+
+  // Getting phase center
+  hgetr8(databuf_header, "RA_STR",  phase_center+0);
+  hgetr8(databuf_header, "DEC_STR", phase_center+1);
+  phase_center[0] = calc_deg2rad(phase_center[0]);
+  phase_center[1] = calc_deg2rad(phase_center[1]);
+
+
+  // Getting beam coordinates
   char coordkey[9] = "DEC_OFFX";
   for(int beam_idx = 0; beam_idx < nbeams; beam_idx++) {
     sprintf(coordkey, "RA_OFF%d", beam_idx%10);
@@ -106,6 +117,7 @@ static void *run(hashpipe_thread_args_t *args)
   char tel_info_toml_filepath[70] = {'\0'};
   char obs_info_toml_filepath[70] = {'\0'};
   double obs_antenna_positions[BLADE_ATA_MODE_B_INPUT_NANT*3] = {0}, obs_beam_coordinates[BLADE_ATA_MODE_B_OUTPUT_NBEAM*2] = {0};
+  double obs_phase_center[2] = {0};
   struct blade_ata_mode_b_observation_meta observationMetaData = {0};
   struct LonLatAlt arrayReferencePosition = {0};
   
@@ -155,6 +167,7 @@ static void *run(hashpipe_thread_args_t *args)
     batch_size,
     &observationMetaData,
     &arrayReferencePosition,
+    obs_phase_center,
     obs_beam_coordinates,
     obs_antenna_positions,
     antenna_calibration_coeffs
@@ -391,6 +404,7 @@ static void *run(hashpipe_thread_args_t *args)
           batch_size,
           &observationMetaData,
           &arrayReferencePosition,
+          obs_phase_center,
           obs_beam_coordinates,
           obs_antenna_positions,
           antenna_calibration_coeffs

@@ -68,6 +68,7 @@ bool blade_ata_b_initialize(
     size_t numberOfWorkers,
     struct blade_ata_mode_b_observation_meta* observationMeta,
     struct LonLatAlt* arrayReferencePosition,
+    double* obs_phase_center_radecrad,
     double* beamCoordinates_radecrad,
     double* antennaPositions_xyz,
     double _Complex* antennaCalibrations

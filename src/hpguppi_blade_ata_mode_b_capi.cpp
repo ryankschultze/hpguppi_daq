@@ -24,6 +24,7 @@ bool blade_ata_b_initialize(
     size_t numberOfWorkers,
     struct blade_ata_mode_b_observation_meta* observationMeta,
     struct LonLatAlt* arrayReferencePosition,
+    double* obs_phase_center_radecrad,
     double* beamCoordinates_radecrad,
     double* antennaPositions_xyz,
     double _Complex* antennaCalibrations
@@ -73,8 +74,8 @@ bool blade_ata_b_initialize(
             .ALT = arrayReferencePosition->ALT
         },
         .boresightCoordinate = {
-            .RA = beamCoordinates_radecrad[0],
-            .DEC = beamCoordinates_radecrad[1],
+            .RA = obs_phase_center_radecrad[0],
+            .DEC = obs_phase_center_radecrad[1]
         },
         .antennaPositions = antennaPositions,
         .antennaCalibrations = antennaCalibrationsCpp,
