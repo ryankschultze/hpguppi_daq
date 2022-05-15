@@ -363,6 +363,7 @@ static void *run(hashpipe_thread_args_t *args)
         free(antenna_calibration_coeffs);
         collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM,
             obs_beam_coordinates, obs_phase_center, databuf_header);
+        hashpipe_info(thread_name, "Parsing '%s' for antenna-weights information.", obs_antenna_calibration_filepath);
         if(
           read_antenna_weights(
             obs_antenna_calibration_filepath,
