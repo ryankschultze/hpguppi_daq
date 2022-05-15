@@ -347,7 +347,9 @@ static void *run(hashpipe_thread_args_t *args)
         // ];
         observationMetaData.referenceAntennaIndex = 0;
 
-        collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM, obs_beam_coordinates, databuf_header);
+        free(antenna_calibration_coeffs);
+        collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM,
+            obs_beam_coordinates, obs_phase_center, databuf_header);
         if(
           read_antenna_weights(
             obs_antenna_calibration_filepath,
@@ -359,7 +361,7 @@ static void *run(hashpipe_thread_args_t *args)
           )
         ){
           // Failed to open CALWGHTP file, set 1.0+0.0j
-          hashpipe_warn(thread_name, "CALWGHTP `%s` could not be opened.", obs_antenna_calibration_filepath);
+          hashpipe_warn(thread_name, "CALWGHTP `%s` could not be opened. Using 1.0+0.0j.", obs_antenna_calibration_filepath);
           errno = 0;
           size_of_calib = 
             input_buffer_dim_NANTS*
