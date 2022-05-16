@@ -8,6 +8,7 @@ AM_CFLAGS = -fopenmp -ggdb -fPIC -O3 -Wall -Werror -Wno-error=cpp -fno-strict-al
 AM_CFLAGS += -Wno-address-of-packed-member 
 AM_CFLAGS += -Wno-unused-const-variable
 AM_CFLAGS += -Wno-stringop-truncation
+AM_CFLAGS += -Wno-unused-result
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
@@ -28,7 +29,8 @@ hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_udp.c    \
 		  hpguppi_vdif.h   \
 		  polyco_struct.h  \
-		  psrfits.h
+		  psrfits.h \
+		  ata_antenna_weights_binary/include/antenna_weights.h
 
 libsla_support = slalib.h sla.c f77.h
 
@@ -40,7 +42,8 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_atasnap_obs_rawdisk_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
-		  hpguppi_fildisk_only_thread.c
+		  hpguppi_fildisk_only_thread.c \
+		  ata_antenna_weights_binary/src/antenna_weights.c
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
@@ -54,6 +57,7 @@ hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
 if BLADE_ENABLED
 # bladeapi library
 AM_CPPFLAGS += -I"@BLADEINCDIR@"
+AM_CPPFLAGS += -I"ata_antenna_weights_binary/include"
 
 hpguppi_blade_c_api_files = \
 		hpguppi_blade_ata_mode_b_capi.cpp \
@@ -96,7 +100,8 @@ hpguppi_databuf += \
 		hpguppi_xgpu_databuf.h
 
 hpguppi_threads += \
-		hpguppi_ata_xgpu_thread.c
+		hpguppi_ata_xgpu_thread.c \
+		hpguppi_ata_xintegration_thread.c
 
 hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
 hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
