@@ -223,8 +223,14 @@ static void *run(hashpipe_thread_args_t *args)
         blocks_in_integration = 1;
       }
       if(gpu_integration_block_count > 0) {
+        if(gpu_integration_block_count > blocks_in_integration) {
+          gpu_integration_block_count = blocks_in_integration;
+          hashpipe_info(thread_name, "XGPUINT overridden by smaller block_integration_count.");
+        }
+        else{
+          blocks_in_integration = ((blocks_in_integration+(gpu_integration_block_count-1))/gpu_integration_block_count)*gpu_integration_block_count;
+        }
         hashpipe_info(thread_name, "Clearing GPU integration every %u block(s).", gpu_integration_block_count);
-        blocks_in_integration = ((blocks_in_integration+(gpu_integration_block_count-1))/gpu_integration_block_count)*gpu_integration_block_count;
       }
 
       hashpipe_info(thread_name, "Integration length is %u block(s).", blocks_in_integration);
