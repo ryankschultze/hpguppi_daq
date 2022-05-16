@@ -24,13 +24,6 @@
 //#include "hpguppi_pksuwl.h"
 #include "hpguppi_util.h"
 
-#include "xgpu.h"
-#include <math.h>
-
-#ifndef DEBUG_RAWSPEC_CALLBACKS
-#define DEBUG_RAWSPEC_CALLBACKS (0)
-#endif
-
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
 
@@ -41,7 +34,7 @@ static void *run(hashpipe_thread_args_t *args)
 {
   // Local aliases to shorten access to args fields
   // Our output buffer happens to be a hpguppi_input_databuf
-  hpguppi_input_xgpu_databuf_t *dbin = (hpguppi_input_xgpu_databuf_t *)args->ibuf;
+  hpguppi_output_xgpu_databuf_t *dbin = (hpguppi_output_xgpu_databuf_t *)args->ibuf;
   hpguppi_output_xgpu_databuf_t *dbout = (hpguppi_output_xgpu_databuf_t *)args->obuf;
   hashpipe_status_t *st = &args->st;
   const char *thread_name = args->thread_desc->name;
@@ -50,21 +43,10 @@ static void *run(hashpipe_thread_args_t *args)
   // Used to calculate moving average of fill-to-free times for input blocks
   uint64_t fill_to_free_elapsed_ns;
   uint64_t fill_to_free_moving_sum_ns = 0;
-  uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
+  uint64_t fill_to_free_block_ns[N_XGPU_OUTPUT_BLOCKS] = {0};
   struct timespec ts_now = {0}, ts_stop_recv = {0}, ts_updated_status_info = {0};
   const uint64_t status_info_refresh_period_ns = 200*1000*1000;
   uint64_t status_info_refresh_elapsed_ns;
-
-  //Some xGPU stuff
-  XGPUInfo xgpu_info;
-  int xgpu_error = 0;
-  int cudaDeviceId = args->instance_id;
-  hashpipe_status_lock_safe(st);
-  {
-    hgeti4(st->buf, "CUDADEV", &cudaDeviceId);
-    hputi4(st->buf, "CUDADEV", cudaDeviceId);
-  }
-  hashpipe_status_unlock_safe(st);
 
   unsigned int ant_nchan, npol;
   uint64_t timesample_perblock;
@@ -72,24 +54,6 @@ static void *run(hashpipe_thread_args_t *args)
   unsigned int blocks_in_integration = 0;
   unsigned int integration_block_count = 0;
   unsigned int gpu_integration_block_count = 0;
-  // Get sizing info from library
-  xgpuInfo(&xgpu_info);
-
-  printf("Using xgpu: %u stations with %u channels and integration length %u\n",
-         xgpu_info.nstation, xgpu_info.nfrequency, xgpu_info.ntime);
-
-  XGPUContext xgpu_context;
-  // register all blocks as one region, and use input_offset
-  xgpu_context.array_h = (ComplexInput *)(dbin->block[0].data); //input; this will stop xGPU from allocating input buffer
-  xgpu_context.array_len = (dbin->header.n_block*sizeof(hpguppi_input_xgpu_block_t) - BLOCK_HDR_SIZE)/sizeof(ComplexInput);//xgpu_info.vecLength;
-  xgpu_context.matrix_h = (Complex *)(dbout->block[0].data); //output; direct xGPU to use ouptut databufs
-  xgpu_context.matrix_len = (dbout->header.n_block*sizeof_hpguppi_output_xgpu_block_t() - BLOCK_HDR_SIZE)/sizeof(Complex);//xgpu_info.triLength;
-
-  xgpu_error = xgpuInit(&xgpu_context, cudaDeviceId);
-  if (xgpu_error)
-  {
-    fprintf(stderr, "xgpuInit returned error code %d\n", xgpu_error); //XXX do something
-  }
 
   /* Set I/O priority class for this thread to "real time" */
   if (ioprio_set(IOPRIO_WHO_PROCESS, 0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 7)))
@@ -104,11 +68,13 @@ static void *run(hashpipe_thread_args_t *args)
   int rv = 0;
   int status_index = -1;
   uint64_t ndrop_integration_start, ndrop_integration_end;
-  // uint64_t blk_start_pktidx, obs_stop_pktidx;
   int first_block = 1;
   float uvh5_nsamples; // calculated for uvh5 benefit
   uint64_t blk_start_pktidx = 0, obs_start_pktidx = 0, obs_stop_pktidx = 0;
   uint64_t integrated_blk_start_pktidx = 0;
+  int32_t triLength;
+  UVH5_CI32_t* databuf_input_complex_ptr;
+  UVH5_CF64_t* databuf_output_complex_ptr;
 
   while (run_threads())
   {
@@ -130,7 +96,7 @@ static void *run(hashpipe_thread_args_t *args)
       memcpy(&ts_updated_status_info, &ts_now, sizeof(struct timespec));
 
       hashpipe_status_lock_safe(st);
-        hputr4(st->buf, "XGPBLKMS",
+        hputr4(st->buf, "XINBLKMS",
                 round((double)fill_to_free_moving_sum_ns / dbin->header.n_block) / 1e6);
       hashpipe_status_unlock_safe(st);
     }
@@ -142,24 +108,6 @@ static void *run(hashpipe_thread_args_t *args)
     hgetu8(databuf_ptr, "PIPERBLK", &timesample_perblock);// coincident
     hgetu4(databuf_ptr, "NCHAN", &ant_nchan);
     hgetu4(databuf_ptr, "NPOL", &npol);
-
-    if (xgpu_info.npol != npol ||
-        //xgpu_info.nstation != nstation ||
-        xgpu_info.nfrequency != ant_nchan ||
-        xgpu_info.ntime != timesample_perblock)
-    {
-      hashpipe_error(thread_name, "Correlating %u stations with %u channels and integration length %u\n\tObservation has %u channels and %u TimeSamplesPerBlock (PIPERBLK)\n",
-                      xgpu_info.nstation, xgpu_info.nfrequency, xgpu_info.ntime,
-                      ant_nchan, timesample_perblock);
-
-      /* Mark as free */
-      hpguppi_databuf_set_free(dbin, curblock_in);
-
-      /* Go to next block */
-      curblock_in = (curblock_in + 1) % dbin->header.n_block;
-
-      continue;
-    }
 
     hgetu8(databuf_ptr, "BLKSTART", &blk_start_pktidx);
     hgetu8(databuf_ptr, "PKTSTART", &obs_start_pktidx);
@@ -207,11 +155,10 @@ static void *run(hashpipe_thread_args_t *args)
     }
 
     if (first_block) {
-      // TODO if start obs clear the integration buffer
       first_block = 0;
+      integration_block_count = 0;
 
-      hashpipe_info(thread_name, "Observation start idx: %lu, first block start idx: %lu", obs_start_pktidx, blk_start_pktidx);
-
+      hgeti4(databuf_ptr, "X_TRILEN", &triLength);
       hgetr8(databuf_ptr, "XTIMEINT", &corr_integration_time);
       hgetr8(databuf_ptr, "TBIN", &tbin);
       gpu_integration_block_count = 0;
@@ -219,54 +166,18 @@ static void *run(hashpipe_thread_args_t *args)
 
       integration_block_count = 0;
       blocks_in_integration = (unsigned int) (corr_integration_time / (tbin * timesample_perblock) + 0.5);
+      if(gpu_integration_block_count > 0){
+        blocks_in_integration /= gpu_integration_block_count;
+      }
+      else {
+        gpu_integration_block_count = blocks_in_integration;
+        blocks_in_integration = 1;
+      }
       if(blocks_in_integration == 0) {
         blocks_in_integration = 1;
       }
-      if(gpu_integration_block_count > 0) {
-        hashpipe_info(thread_name, "Clearing GPU integration every %u block(s).", gpu_integration_block_count);
-        blocks_in_integration = ((blocks_in_integration+(gpu_integration_block_count-1))/gpu_integration_block_count)*gpu_integration_block_count;
-      }
-
-      hashpipe_info(thread_name, "Integration length is %u block(s).", blocks_in_integration);
-      
-      // Round up the number of integration blocks in the observation
-      double observation_integrations = ((double)(obs_stop_pktidx - obs_start_pktidx))/(blocks_in_integration*timesample_perblock);
-      uint64_t observation_integrations_rounded = observation_integrations + ((double)(blocks_in_integration*timesample_perblock)-1)/(blocks_in_integration*timesample_perblock);
-      hashpipe_info(thread_name, "Rounded the observation's integrations from %f up to %d", observation_integrations, observation_integrations_rounded);
-      obs_stop_pktidx = observation_integrations_rounded*blocks_in_integration*timesample_perblock + obs_start_pktidx;
-      hashpipe_info(thread_name, "\tIncreasing PKTSTOP to %lu", obs_stop_pktidx);
-
-      hashpipe_status_lock_safe(st);
-        hgetu8(st->buf, "NDROP", &ndrop_integration_start);
-        hputr8(st->buf, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
-        hputr4(st->buf, "XTIME", (obs_stop_pktidx - obs_start_pktidx) * tbin);
-        hputu4(st->buf, "XINTEGS", observation_integrations_rounded);
-        hputu8(st->buf, "PKTSTOP", obs_stop_pktidx);
-        // update DAQSTATE on behalf of diskthread while its next block is integrated
-        hputs(st->buf, "DAQSTATE", "recording"); 
-      hashpipe_status_unlock_safe(st);
-      hputr8(databuf_ptr, "XTIMEINT", blocks_in_integration * timesample_perblock * tbin);
-      hputr4(databuf_ptr, "XTIME", (obs_stop_pktidx - obs_start_pktidx) * tbin);
-      hputu4(databuf_ptr, "XINTEGS", observation_integrations_rounded);
-      hputu8(databuf_ptr, "PKTSTOP", obs_stop_pktidx);
-
-      if(gpu_integration_block_count > 0) {
-        blocks_in_integration = gpu_integration_block_count;
-      }
+      hashpipe_info(thread_name, "Clearing CPU integration every %u block(s).", blocks_in_integration);
     }
-
-    do {
-      rv = hpguppi_databuf_wait_free(dbout, curblock_out);
-      if (rv == HASHPIPE_TIMEOUT) {
-        if(status_index !=  1)
-        {
-          status_index = 1;
-          hashpipe_status_lock_safe(st);
-          hputs(st->buf, status_key, "blocked");
-          hashpipe_status_unlock_safe(st);
-        }
-      }
-    } while (rv != HASHPIPE_OK);
 
     if(status_index !=  2)
     {
@@ -276,33 +187,51 @@ static void *run(hashpipe_thread_args_t *args)
       hashpipe_status_unlock_safe(st);
     }
 
-    // Correlate
-    xgpu_context.input_offset = (curblock_in*sizeof(hpguppi_input_xgpu_block_t))/sizeof(ComplexInput);
+    // Integrate block into output
+    databuf_input_complex_ptr = (UVH5_CI32_t*) hpguppi_databuf_data(dbin, curblock_in);
     if(integration_block_count == 0) {
-      // Clear the previous integration
-      xgpuClearDeviceIntegrationBuffer(&xgpu_context);
-      xgpu_context.output_offset = (curblock_out*sizeof_hpguppi_output_xgpu_block_t())/sizeof(Complex);
+      /* Wait for output buffer to be free */
+      do {
+        rv = hpguppi_databuf_wait_free(dbout, curblock_out);
+        if (rv == HASHPIPE_TIMEOUT) {
+          if(status_index !=  1)
+          {
+            status_index = 1;
+            hashpipe_status_lock_safe(st);
+            hputs(st->buf, status_key, "blocked");
+            hashpipe_status_unlock_safe(st);
+          }
+        }
+      } while (rv != HASHPIPE_OK);
+
+      databuf_output_complex_ptr = (UVH5_CF64_t*) hpguppi_databuf_data(dbout, curblock_out);
+      memset(databuf_output_complex_ptr,
+        0,
+        hpguppi_output_xgpu_block_data_byte_size()
+      );
+      
       integrated_blk_start_pktidx = blk_start_pktidx;
     }
 
-    xgpu_error = xgpuCudaXengine(&xgpu_context, ++integration_block_count == blocks_in_integration ? SYNCOP_DUMP : SYNCOP_SYNC_TRANSFER); //XXX figure out flags (85 Gbps with SYNCOP_DUMP)
-    if (xgpu_error)
-      fprintf(stderr, "xgpuCudaXengine returned error code %d\n", xgpu_error);
+    // Integrate INT32_complex input to DOUBLE_complex output.
+    for(int i = 0; i < triLength; i++){
+      databuf_output_complex_ptr[i].r += (double)databuf_input_complex_ptr[i].r;
+      databuf_output_complex_ptr[i].i += (double)databuf_input_complex_ptr[i].i;
+    }
+    integration_block_count++;
 
     if (integration_block_count == blocks_in_integration) {
       integration_block_count = 0;
-      // Correlation done. Reorder the matrix and dump to disk
-      xgpuReorderMatrix(xgpu_context.matrix_h + xgpu_context.output_offset);
 
       hashpipe_status_lock_safe(st);
         hgetu8(st->buf, "NDROP", &ndrop_integration_end);
       hashpipe_status_unlock_safe(st);
+
       hputu8(databuf_ptr, "NDROP", ndrop_integration_end - ndrop_integration_start);
 
-      uvh5_nsamples = 1.0 - ((float)(ndrop_integration_end - ndrop_integration_start))/(blocks_in_integration*timesample_perblock);
+      uvh5_nsamples = 1.0 - ((float)(ndrop_integration_end - ndrop_integration_start))/(blocks_in_integration*gpu_integration_block_count*timesample_perblock);
       hputr4(databuf_ptr, "NSAMPLES", uvh5_nsamples);
-      hputi4(databuf_ptr, "X_TRILEN", xgpu_info.triLength); // Communicate to the downstream thread
-
+      
       /* Mark as filled */
       memcpy(hpguppi_databuf_header(dbout, curblock_out),
         databuf_ptr,
@@ -338,18 +267,18 @@ static void *run(hashpipe_thread_args_t *args)
   pthread_exit(NULL);
 }
 
-static hashpipe_thread_desc_t xgpu_thread = {
-  name : "hpguppi_ata_xgpu_thread",
-  skey : "XGPUSTAT",
+static hashpipe_thread_desc_t xintegration_thread = {
+  name : "hpguppi_ata_xintegration_thread",
+  skey : "XINTSTAT",
   init : NULL,
   run : run,
-  ibuf_desc : {hpguppi_input_xgpu_databuf_create},
+  ibuf_desc : {hpguppi_output_xgpu_databuf_create},
   obuf_desc : {hpguppi_output_xgpu_databuf_create}
 };
 
 static __attribute__((constructor)) void ctor()
 {
-  register_hashpipe_thread(&xgpu_thread);
+  register_hashpipe_thread(&xintegration_thread);
 }
 
 // vi: set ts=8 sw=2 noet :

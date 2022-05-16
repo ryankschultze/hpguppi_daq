@@ -18,9 +18,19 @@
 
 #include <hashpipe.h>
 
+#include "uvh5.h"
 #include "hpguppi_databuf.h"
 
 #define XGPU_BLOCK_DATA_SIZE 2*BLOCK_DATA_SIZE // in bytes, from guppi_daq_server
+
+
+#define XGPU_INTEGRATE_AS_CF64_ON_CPU
+
+#ifdef XGPU_INTEGRATE_AS_CF64_ON_CPU
+#define XGPU_OUTPUT_BLOCK_ELEMENT_T UVH5_CF64_t
+#else
+#define XGPU_OUTPUT_BLOCK_ELEMENT_T Complex
+#endif
 
 typedef struct hpguppi_input_xgpu_block {
   char hdr[BLOCK_HDR_SIZE];
@@ -52,9 +62,9 @@ typedef struct hpguppi_output_xgpu_databuf {
 } hpguppi_output_xgpu_databuf_t;
 
 static inline size_t hpguppi_output_xgpu_block_data_byte_size() {
-    XGPUInfo xgpu_info = {0};
-    xgpuInfo(&xgpu_info);
-    return xgpu_info.matLength*sizeof(Complex);
+  XGPUInfo xgpu_info = {0};
+  xgpuInfo(&xgpu_info);
+  return xgpu_info.matLength*sizeof(XGPU_OUTPUT_BLOCK_ELEMENT_T);
 }
 
 // #define sizeof(hpguppi_output_xgpu_block_t) (hpguppi_output_xgpu_block_data_byte_size()+BLOCK_HDR_SIZE)

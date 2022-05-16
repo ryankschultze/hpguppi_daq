@@ -379,7 +379,11 @@ static void *run(hashpipe_thread_args_t * args)
             break;
           }
         }
-        UVH5open(fname, &uvh5_file, UVH5TcreateCI32()); // TODO if DP4A
+        #ifdef XGPU_INTEGRATE_AS_CF64_ON_CPU
+        UVH5open(fname, &uvh5_file, UVH5TcreateCF64());
+        #else
+        UVH5open(fname, &uvh5_file, UVH5TcreateCI32());
+        #endif
         // if () {
         //   hashpipe_error(thread_name, "Error opening file.");
         //   pthread_exit(NULL);
@@ -397,12 +401,21 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         // memset(uvh5_file.visdata, 1, uvh5_header->Nbls*uvh5_header->Npols*uvh5_header->Nfreqs);
+        #ifdef XGPU_INTEGRATE_AS_CF64_ON_CPU
+        UVH5visdata_from_xgpu_double_output(
+          (UVH5_CF64_t*) hpguppi_databuf_data(indb, curblock_in),
+          (UVH5_CF64_t*) uvh5_file.visdata,
+          xgpu_output_elements,
+          &uvh5_file.header
+        );
+        #else
         UVH5visdata_from_xgpu_int_output(
           (UVH5_CI32_t*) hpguppi_databuf_data(indb, curblock_in),
           (UVH5_CI32_t*) uvh5_file.visdata,
           xgpu_output_elements,
           &uvh5_file.header
         );
+        #endif
 
         uvh5_header->time_array[0] += + tau/DAYSEC;
         // uvh5_header->lst_array[0] = calc_lst(uvh5_header->time_array[0], dut1) + longitude_rad;
