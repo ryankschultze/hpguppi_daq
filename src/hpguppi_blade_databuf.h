@@ -18,15 +18,7 @@
 
 #include "hpguppi_databuf.h"
 
-#include "hpguppi_blade_ata_mode_b_config.h"
-
-#define BLADE_BLOCK_OUTPUT_DATA_SIZE (BLADE_ATA_MODE_B_OUTPUT_NBEAM *\
-                               BLADE_ATA_MODE_B_ANT_NCHAN *\
-                               BLADE_ATA_MODE_B_NTIME *\
-                               BLADE_ATA_MODE_B_NPOL *\
-                               BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES)
-
-#define BLADE_BLOCK_DATA_SIZE ((BLADE_BLOCK_OUTPUT_DATA_SIZE/BLADE_ATA_MODE_B_OUTPUT_MEMCPY2D_WIDTH)*BLADE_ATA_MODE_B_OUTPUT_MEMCPY2D_DPITCH)
+#include "hpguppi_ata_blade_mode.h"
 
 typedef struct {
   char hdr[BLOCK_HDR_SIZE];

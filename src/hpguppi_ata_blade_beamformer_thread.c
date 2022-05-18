@@ -9,8 +9,8 @@
 #include "hashpipe.h"
 #include "hpguppi_time.h"
 #include "hpguppi_databuf.h"
+#include "hpguppi_ata_blade_mode.h"
 #include "hpguppi_blade_databuf.h"
-#include "hpguppi_blade_ata_mode_b_capi.h"
 
 #include "uvh5/uvh5_toml.h"
 #include "radiointerferometryc99.h"
@@ -116,9 +116,9 @@ static void *run(hashpipe_thread_args_t *args)
 	UVH5_header_t uvh5_header = {0};
   char tel_info_toml_filepath[70] = {'\0'};
   char obs_info_toml_filepath[70] = {'\0'};
-  double obs_antenna_positions[BLADE_ATA_MODE_B_INPUT_NANT*3] = {0}, obs_beam_coordinates[BLADE_ATA_MODE_B_OUTPUT_NBEAM*2] = {0};
+  double obs_antenna_positions[BLADE_ATA_INPUT_NANT*3] = {0}, obs_beam_coordinates[BLADE_ATA_OUTPUT_NBEAM*2] = {0};
   double obs_phase_center[2] = {0};
-  struct blade_ata_mode_b_observation_meta observationMetaData = {0};
+  struct blade_ata_observation_meta observationMetaData = {0};
   struct LonLatAlt arrayReferencePosition = {0};
   
   /* BLADE variables */
@@ -162,8 +162,8 @@ static void *run(hashpipe_thread_args_t *args)
   for (size_t i; i<size_of_calib; i++)
     antenna_calibration_coeffs[i] = 1.0 + 0.0*I;
 
-  blade_ata_b_initialize(
-    BLADE_ATA_MODE_B_CONFIG,
+  blade_ata_initialize(
+    BLADE_ATA_CONFIG,
     batch_size,
     &observationMetaData,
     &arrayReferencePosition,
@@ -173,8 +173,8 @@ static void *run(hashpipe_thread_args_t *args)
     antenna_calibration_coeffs
   );
 
-  if(BLADE_BLOCK_DATA_SIZE != blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES){
-    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_b_get_output_size()*BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES);
+  if(BLADE_BLOCK_DATA_SIZE != blade_ata_get_output_size()*BLADE_ATA_OUTPUT_ELEMENT_BYTES){
+    hashpipe_error(thread_name, "BLADE_BLOCK_DATA_SIZE %lu != %lu BLADE configured output size.", BLADE_BLOCK_DATA_SIZE, blade_ata_get_output_size()*BLADE_ATA_OUTPUT_ELEMENT_BYTES);
     pthread_exit(NULL);
   }
 
@@ -247,32 +247,32 @@ static void *run(hashpipe_thread_args_t *args)
     hgeti4(databuf_header, "PIPERBLK", &input_buffer_dim_NTIME);
     hgeti4(databuf_header, "NPOL", &input_buffer_dim_NPOLS);
 
-    if(input_buffer_dim_NANTS != BLADE_ATA_MODE_B_INPUT_NANT){
+    if(input_buffer_dim_NANTS != BLADE_ATA_CONFIG.inputDims.NANTS){
       indb_data_dims_good_flag = 0;
       if(prev_flagged_NANTS != input_buffer_dim_NANTS){
         prev_flagged_NANTS = input_buffer_dim_NANTS;
-        hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, BLADE_ATA_MODE_B_INPUT_NANT);
+        hashpipe_error(thread_name, "Incoming data_buffer has NANTS %lu != %lu. Ignored.", input_buffer_dim_NANTS, BLADE_ATA_CONFIG.inputDims.NANTS);
       }
     }
-    else if(input_buffer_dim_NCHAN != BLADE_ATA_MODE_B_ANT_NCHAN){
+    else if(input_buffer_dim_NCHAN != BLADE_ATA_CONFIG.inputDims.NCHANS){
       indb_data_dims_good_flag = 0;
       if(prev_flagged_NCHAN != input_buffer_dim_NCHAN){
         prev_flagged_NCHAN = input_buffer_dim_NCHAN;
-        hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, BLADE_ATA_MODE_B_ANT_NCHAN);
+        hashpipe_error(thread_name, "Incoming data_buffer has NCHANS %lu != %lu. Ignored.", input_buffer_dim_NCHAN, BLADE_ATA_CONFIG.inputDims.NCHANS);
       }
     }
-    else if(input_buffer_dim_NTIME != BLADE_ATA_MODE_B_NTIME){
+    else if(input_buffer_dim_NTIME != BLADE_ATA_CONFIG.inputDims.NTIME){
       indb_data_dims_good_flag = 0;
       if(prev_flagged_NTIME != input_buffer_dim_NTIME){
         prev_flagged_NTIME = input_buffer_dim_NTIME;
-        hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, BLADE_ATA_MODE_B_NTIME);
+        hashpipe_error(thread_name, "Incoming data_buffer has NTIME %lu != %lu. Ignored.", input_buffer_dim_NTIME, BLADE_ATA_CONFIG.inputDims.NTIME);
       }
     }
-    else if(input_buffer_dim_NPOLS != BLADE_ATA_MODE_B_NPOL){
+    else if(input_buffer_dim_NPOLS != BLADE_ATA_CONFIG.inputDims.NPOLS){
       indb_data_dims_good_flag = 0;
       if(prev_flagged_NPOLS != input_buffer_dim_NPOLS){
         prev_flagged_NPOLS = input_buffer_dim_NPOLS;
-        hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, BLADE_ATA_MODE_B_NPOL);
+        hashpipe_error(thread_name, "Incoming data_buffer has NPOLS %lu != %lu. Ignored.", input_buffer_dim_NPOLS, BLADE_ATA_CONFIG.inputDims.NPOLS);
       }
     }
 
@@ -359,7 +359,7 @@ static void *run(hashpipe_thread_args_t *args)
         observationMetaData.referenceAntennaIndex = 0;
 
         free(antenna_calibration_coeffs);
-        collect_beamCoordinates(BLADE_ATA_MODE_B_OUTPUT_NBEAM,
+        collect_beamCoordinates(BLADE_ATA_OUTPUT_NBEAM,
             obs_beam_coordinates, obs_phase_center, databuf_header);
         hashpipe_info(thread_name, "Parsing '%s' for antenna-weights information.", obs_antenna_calibration_filepath);
         if(
@@ -397,9 +397,9 @@ static void *run(hashpipe_thread_args_t *args)
           }
         }
 
-        blade_ata_b_terminate();
-        blade_ata_b_initialize(
-          BLADE_ATA_MODE_B_CONFIG,
+        blade_ata_terminate();
+        blade_ata_initialize(
+          BLADE_ATA_CONFIG,
           batch_size,
           &observationMetaData,
           &arrayReferencePosition,
@@ -449,7 +449,7 @@ static void *run(hashpipe_thread_args_t *args)
     // Asynchronously queue
     input_output_blockid_pairs[curblock_in] = curblock_out;
     while(!
-      blade_ata_b_enqueue(
+      blade_ata_enqueue(
         (void*) hpguppi_databuf_data(indb, curblock_in),
         (void*) hpguppi_databuf_data(outdb, curblock_out),
         curblock_in,
@@ -474,11 +474,11 @@ static void *run(hashpipe_thread_args_t *args)
             BLOCK_HDR_SIZE);
       
       //TODO upate output_buffer headers to reflect that they contain beams
-      hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_MODE_B_ANT_NCHAN); // beams are split into separate files...
-      hputi4(databuf_header, "NBEAMS", BLADE_ATA_MODE_B_OUTPUT_NBEAM);
-      hputi4(databuf_header, "NBITS", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES*8/2);
+      hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_CONFIG.inputDims.NCHANS); // beams are split into separate files...
+      hputi4(databuf_header, "NBEAMS", BLADE_ATA_OUTPUT_NBEAM);
+      hputi4(databuf_header, "NBITS", BLADE_ATA_OUTPUT_NBITS);
       hputs(databuf_header, "DATATYPE", "FLOAT");
-      hputs(databuf_header, "SMPLTYPE", BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES == 8 ? "CF32" : "CF16");
+      hputs(databuf_header, "SMPLTYPE", BLADE_ATA_OUTPUT_SAMPLE_TYPE);
       hputi4(databuf_header, "BLOCSIZE", BLADE_BLOCK_DATA_SIZE);
     }
 
@@ -488,7 +488,7 @@ static void *run(hashpipe_thread_args_t *args)
     curblock_out = (curblock_out + 1) % outdb->header.n_block;
 
     // Dequeue all completed buffers
-    while (blade_ata_b_dequeue(&dequeued_input_id))
+    while (blade_ata_dequeue(&dequeued_input_id))
     {
       hpguppi_databuf_set_free(indb, dequeued_input_id);
       hpguppi_databuf_set_filled(outdb, input_output_blockid_pairs[dequeued_input_id]);
@@ -505,7 +505,7 @@ static void *run(hashpipe_thread_args_t *args)
   }
 
   hashpipe_info(thread_name, "returning");
-  blade_ata_b_terminate();
+  blade_ata_terminate();
   return NULL;
 }
 

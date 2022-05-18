@@ -60,6 +60,13 @@ AM_CPPFLAGS += -I"@BLADEINCDIR@"
 AM_CPPFLAGS += -I"ata_antenna_weights_binary/include"
 
 hpguppi_blade_c_api_files = \
+		hpguppi_blade_capi.h \
+		hpguppi_blade_capi.cpp \
+		hpguppi_blade_ata_structs.h \
+		hpguppi_blade_ata_mode.h \
+		hpguppi_blade_ata_mode_a_capi.cpp \
+		hpguppi_blade_ata_mode_a_capi.h \
+		hpguppi_blade_ata_mode_a_config.h \
 		hpguppi_blade_ata_mode_b_capi.cpp \
 		hpguppi_blade_ata_mode_b_capi.h \
 		hpguppi_blade_ata_mode_b_config.h

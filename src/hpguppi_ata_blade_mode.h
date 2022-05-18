@@ -1,0 +1,64 @@
+#ifndef _HPGUPPI_ATA_BLADE_MODE_H_
+#define _HPGUPPI_ATA_BLADE_MODE_H_
+
+#define BLADE_ATA_MODE_A 0
+#define BLADE_ATA_MODE_B 1
+
+#define BLADE_ATA_MODE BLADE_ATA_MODE_B
+
+#if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+#include "hpguppi_blade_ata_mode_a_config.h"
+#include "hpguppi_blade_ata_mode_a_capi.h"
+
+#define BLADE_ATA_CONFIG BLADE_ATA_MODE_A_CONFIG
+#define BLADE_BLOCK_OUTPUT_DATA_SIZE BLADE_ATA_MODE_A_OUTPUT_DATA_SIZE
+#define BLADE_BLOCK_DATA_SIZE BLADE_ATA_MODE_A_DATA_SIZE
+#define BLADE_ATA_OUTPUT_ELEMENT_BYTES BLADE_ATA_MODE_A_OUTPUT_N_BYTES
+#define BLADE_ATA_INPUT_NANT BLADE_ATA_MODE_A_INPUT_NANT
+#define BLADE_ATA_OUTPUT_NBEAM BLADE_ATA_MODE_A_OUTPUT_NBEAM
+
+#define BLADE_ATA_OUTPUT_NBITS BLADE_ATA_OUTPUT_ELEMENT_BYTES*8
+#define BLADE_ATA_OUTPUT_SAMPLE_TYPE "F32"
+
+#define blade_ata_initialize blade_ata_a_initialize
+#define blade_ata_get_input_size blade_ata_a_get_input_size
+#define blade_ata_get_output_size blade_ata_a_get_output_size
+#define blade_ata_set_antenna_positions blade_ata_a_set_antenna_positions
+#define blade_ata_set_antenna_calibrations blade_ata_a_set_antenna_calibrations
+#define blade_ata_set_beam_coordinates blade_ata_a_set_beam_coordinates
+#define blade_ata_set_boresight_coordinates blade_ata_a_set_boresight_coordinates
+#define blade_ata_enqueue blade_ata_a_enqueue
+#define blade_ata_dequeue blade_ata_a_dequeue
+#define blade_ata_terminate blade_ata_a_terminate
+
+#endif // BLADE_ATA_MODE_A
+
+#if BLADE_ATA_MODE == BLADE_ATA_MODE_B
+#include "hpguppi_blade_ata_mode_b_config.h"
+#include "hpguppi_blade_ata_mode_b_capi.h"
+
+#define BLADE_ATA_CONFIG BLADE_ATA_MODE_B_CONFIG
+#define BLADE_BLOCK_OUTPUT_DATA_SIZE BLADE_ATA_MODE_B_OUTPUT_DATA_SIZE
+#define BLADE_BLOCK_DATA_SIZE BLADE_ATA_MODE_B_DATA_SIZE
+#define BLADE_ATA_OUTPUT_ELEMENT_BYTES BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES
+#define BLADE_ATA_INPUT_NANT BLADE_ATA_MODE_B_INPUT_NANT
+#define BLADE_ATA_OUTPUT_NBEAM BLADE_ATA_MODE_B_OUTPUT_NBEAM
+
+#define BLADE_ATA_OUTPUT_NBITS BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES*8/2
+#define BLADE_ATA_OUTPUT_SAMPLE_TYPE (BLADE_ATA_MODE_B_OUTPUT_NCOMPLEX_BYTES == 8 ? "CF32" : "CF16")
+
+#define blade_ata_initialize blade_ata_b_initialize
+#define blade_ata_get_input_size blade_ata_b_get_input_size
+#define blade_ata_get_output_size blade_ata_b_get_output_size
+#define blade_ata_set_antenna_positions blade_ata_b_set_antenna_positions
+#define blade_ata_set_antenna_calibrations blade_ata_b_set_antenna_calibrations
+#define blade_ata_set_beam_coordinates blade_ata_b_set_beam_coordinates
+#define blade_ata_set_boresight_coordinates blade_ata_b_set_boresight_coordinates
+#define blade_ata_enqueue blade_ata_b_enqueue
+#define blade_ata_dequeue blade_ata_b_dequeue
+#define blade_ata_terminate blade_ata_b_terminate
+
+#endif // BLADE_ATA_MODE_B
+
+
+#endif // _HPGUPPI_ATA_BLADE_MODE_H_
