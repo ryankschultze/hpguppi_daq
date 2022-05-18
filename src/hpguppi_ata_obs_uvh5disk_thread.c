@@ -305,9 +305,14 @@ static void *run(hashpipe_thread_args_t * args)
             uvh5_header->freq_array[i] = (obs_freq + (i+0.5)*chan_bw) * 1e6;
           }
 
-          uvh5_header->instrument = "ATA";
+          uvh5_header->instrument = malloc(71);
+          uvh5_header->instrument[70] = '\0';
+          strncpy(uvh5_header->instrument, "UNKNOWN", 8);
+          hgets(datablock_header, "TELESCOP", 70, uvh5_header->instrument);
+
           uvh5_header->object_name = malloc(71);
           uvh5_header->object_name[70] = '\0';
+          strncpy(uvh5_header->instrument, "UNKNOWN", 8);
           hgets(datablock_header, "SRC_NAME", 70, uvh5_header->object_name);
 
           uvh5_header->history = history;

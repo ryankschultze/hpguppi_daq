@@ -44,6 +44,7 @@ ata:
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
     - BINDPORT=10000
+    - TELESCOP=ATA
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
@@ -122,6 +123,7 @@ dev:
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
     - BINDPORT=10000
+    - TELESCOP=ATA
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
   instance_bindhost: [enp97s0f1, enp225s0f1]
