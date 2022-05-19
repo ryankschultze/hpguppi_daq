@@ -118,6 +118,21 @@ dev:
         - PROJID=xGPU
         - UVH5TELP=/opt/mnt/share/telinfo_ata.toml
         - UVH5OBSP=/opt/mnt/share/obsinfo.toml
+        - XGPUINT=8
+      ibv_blade_b:
+        - HPCONFIG=DEV_IBV->FTP->BLADE_B->RAW
+        - PROJID=blade
+        - BACKEND=GUPPI
+        - TELINFOP=/opt/mnt/share/telinfo_ata.toml
+        - OBSINFOP=/opt/mnt/share/obsinfo.toml
+        - CALWGHTP=/opt/mnt/share/ant_weights_1+0j.bin
+      ibv_blade_a:
+        - HPCONFIG=DEV_IBV->FTP->BLADE_A->FIL
+        - PROJID=blade
+        - BACKEND=FIL
+        - TELINFOP=/opt/mnt/share/telinfo_ata.toml
+        - OBSINFOP=/opt/mnt/share/obsinfo.toml
+        - CALWGHTP=/opt/mnt/share/ant_weights_1+0j.bin
     - DIRECTIO=1
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
@@ -136,6 +151,16 @@ dev:
       - hpguppi_ata_ibv_payload_order_thread
       - hpguppi_ata_xgpu_thread
       - hpguppi_ata_obs_uvh5disk_thread
+    ibv_blade_b:
+      - hpguppi_ibvpkt_thread
+      - hpguppi_ata_ibv_payload_order_thread
+      - hpguppi_ata_blade_beamformer_thread
+      - hpguppi_ata_blade_obs_rawdisk_thread
+    ibv_blade_a:
+      - hpguppi_ibvpkt_thread
+      - hpguppi_ata_ibv_payload_order_thread
+      - hpguppi_ata_blade_beamformer_thread
+      - hpguppi_ata_fildisk_thread
   cpu_core_count_config:
     16:
       instance_cpu_core_0: [1, 17]

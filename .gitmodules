@@ -1,3 +1,6 @@
 [submodule "src/ata_antenna_weights_binary"]
 	path = src/ata_antenna_weights_binary
 	url = https://github.com/MydonSolutions/ata_antenna_weights_binary
+[submodule "src/mysigproc"]
+	path = src/mysigproc
+	url = https://github.com/wfarah/mysigproc

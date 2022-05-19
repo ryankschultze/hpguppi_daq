@@ -9,6 +9,8 @@ AM_CFLAGS += -Wno-address-of-packed-member
 AM_CFLAGS += -Wno-unused-const-variable
 AM_CFLAGS += -Wno-stringop-truncation
 AM_CFLAGS += -Wno-unused-result
+AM_CFLAGS += -Wno-format-truncation
+AM_CFLAGS += -Wno-unused-but-set-variable
 
 # Convenience variables to group source files
 hpguppi_databuf = hpguppi_databuf.h \
@@ -30,7 +32,8 @@ hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_vdif.h   \
 		  polyco_struct.h  \
 		  psrfits.h \
-		  ata_antenna_weights_binary/include/antenna_weights.h
+		  ata_antenna_weights_binary/include/antenna_weights.h \
+		  mysigproc/mysigproc_utils.h
 
 libsla_support = slalib.h sla.c f77.h
 
@@ -40,10 +43,12 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_mb128ch_net_thread.c \
 		  hpguppi_ata_ibv_payload_order_thread.c \
 		  hpguppi_atasnap_obs_rawdisk_thread.c \
+		  hpguppi_ata_fildisk_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
 		  hpguppi_fildisk_only_thread.c \
-		  ata_antenna_weights_binary/src/antenna_weights.c
+		  ata_antenna_weights_binary/src/antenna_weights.c \
+			mysigproc/mysigproc_utils.c
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
@@ -53,6 +58,7 @@ hpguppi_daq_la_CFLAGS 	= $(AM_CFLAGS)
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
+#hpguppi_daq_la_CFLAGS  += -I./mysigproc
 
 if BLADE_ENABLED
 # bladeapi library
