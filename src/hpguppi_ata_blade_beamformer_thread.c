@@ -488,7 +488,7 @@ static void *run(hashpipe_thread_args_t *args)
       
       //TODO upate output_buffer headers to reflect that they contain beams
       hputi4(databuf_header, "OBSNCHAN", BLADE_ATA_CONFIG.inputDims.NCHANS); // beams are split into separate files...
-      hputi4(databuf_header, "NBEAMS", BLADE_ATA_OUTPUT_NBEAM);
+      hputi4(databuf_header, "NBEAMS", BLADE_ATA_CONFIG.beamformerBeams);
       hputi4(databuf_header, "NBITS", BLADE_ATA_OUTPUT_NBITS);
       hputs(databuf_header, "DATATYPE", "FLOAT");
       hputs(databuf_header, "SMPLTYPE", BLADE_ATA_OUTPUT_SAMPLE_TYPE);
@@ -516,28 +516,33 @@ static void *run(hashpipe_thread_args_t *args)
       float* tpf_output = (float*) hpguppi_databuf_data(outdb, input_output_blockid_pairs[dequeued_input_id]);
 
       const int npol = BLADE_ATA_CONFIG.numberOfOutputPolarizations;
+      const int nbeams = BLADE_ATA_CONFIG.beamformerBeams;
       const int nfreq = BLADE_ATA_CONFIG.inputDims.NCHANS;
       const int ntime = BLADE_ATA_CONFIG.inputDims.NTIME / BLADE_ATA_CONFIG.integrationSize;
-      const int ntimepol_prod = ntime*npol;
-      const int npolfreq_prod = npol*nfreq;
+      int b,f,t,p;
 
-      for (size_t i = 0; i < nfreq; i++)
+      for (b = 0; b < nbeams; b++)
       {
-          for (size_t j = 0; j < ntime; j++)
-          {
-              for (size_t k = 0; k < npol; k++)
-              {
-                  tpf_output[
-                      j*npolfreq_prod +
-                      k*nfreq +
-                      i
-                  ] = ftp_output[
-                      i*ntimepol_prod +
-                      j*npol +
-                      k
-                  ];
-              }
-          }
+        for (f = 0; f < nfreq; f++)
+        {
+            for (t = 0; t < ntime; t++)
+            {
+                for (p = 0; p < npol; p++)
+                {
+                    tpf_output[
+                        ((  b *ntime
+                          + t)*npol
+                          + p)*nfreq
+                          + f
+                    ] = ftp_output[
+                        ((  b *nfreq
+                          + f)*ntime
+                          + t)*npol
+                          + p
+                    ];
+                }
+            }
+        }
       }
       #endif
 
