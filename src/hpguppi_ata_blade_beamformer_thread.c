@@ -124,6 +124,12 @@ static void *run(hashpipe_thread_args_t *args)
   /* BLADE variables */
   const size_t batch_size = 2;
   int input_output_blockid_pairs[N_INPUT_BLOCKS]; // input_id indexed associated output_id
+  #if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+  float* ftp_outputblocks[N_INPUT_BLOCKS];
+  for(size_t i = 0; i < N_INPUT_BLOCKS; i++){
+    ftp_outputblocks[i] = malloc(BLADE_BLOCK_OUTPUT_DATA_SIZE);
+  }
+  #endif
   memset(input_output_blockid_pairs, -1, sizeof(int)*N_INPUT_BLOCKS);
   size_t dequeued_input_id = 0;
 
@@ -191,6 +197,9 @@ static void *run(hashpipe_thread_args_t *args)
 
   int64_t pktidx_obs_start, pktidx_obs_start_prev, pktidx_blk_start;
   int fenchan;
+  #if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+  double tbin;
+  #endif
   double timejd_midblock=0, dut1=0;
 
   while (run_threads())
@@ -451,7 +460,11 @@ static void *run(hashpipe_thread_args_t *args)
     while(!
       blade_ata_enqueue(
         (void*) hpguppi_databuf_data(indb, curblock_in),
+        #if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+        (void*) ftp_outputblocks[curblock_out],
+        #elif BLADE_ATA_MODE == BLADE_ATA_MODE_B
         (void*) hpguppi_databuf_data(outdb, curblock_out),
+        #endif
         curblock_in,
         timejd_midblock,
         dut1
@@ -480,6 +493,12 @@ static void *run(hashpipe_thread_args_t *args)
       hputs(databuf_header, "DATATYPE", "FLOAT");
       hputs(databuf_header, "SMPLTYPE", BLADE_ATA_OUTPUT_SAMPLE_TYPE);
       hputi4(databuf_header, "BLOCSIZE", BLADE_BLOCK_DATA_SIZE);
+      #if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+      hputi4(databuf_header, "NPOL", BLADE_ATA_CONFIG.numberOfOutputPolarizations);
+      hgetr8(databuf_header, "TBIN", &tbin);
+      tbin *= BLADE_ATA_CONFIG.integrationSize;
+      hputr8(databuf_header, "TBIN", tbin);
+      #endif
     }
 
     // hashpipe_info(thread_name, "batched block #%d as input #%d.", curblock_in, inputs_batched);
@@ -491,6 +510,37 @@ static void *run(hashpipe_thread_args_t *args)
     while (blade_ata_dequeue(&dequeued_input_id))
     {
       hpguppi_databuf_set_free(indb, dequeued_input_id);
+      #if BLADE_ATA_MODE == BLADE_ATA_MODE_A
+      // Mode A has filterbank outputs, so transpose the binary data to suit that of .fil files
+      float* ftp_output = ftp_outputblocks[input_output_blockid_pairs[dequeued_input_id]];
+      float* tpf_output = (float*) hpguppi_databuf_data(outdb, input_output_blockid_pairs[dequeued_input_id]);
+
+      const int npol = BLADE_ATA_CONFIG.numberOfOutputPolarizations;
+      const int nfreq = BLADE_ATA_CONFIG.inputDims.NCHANS;
+      const int ntime = BLADE_ATA_CONFIG.inputDims.NTIME / BLADE_ATA_CONFIG.integrationSize;
+      const int ntimepol_prod = ntime*npol;
+      const int npolfreq_prod = npol*nfreq;
+
+      for (size_t i = 0; i < nfreq; i++)
+      {
+          for (size_t j = 0; j < ntime; j++)
+          {
+              for (size_t k = 0; k < npol; k++)
+              {
+                  tpf_output[
+                      j*npolfreq_prod +
+                      k*nfreq +
+                      i
+                  ] = ftp_output[
+                      i*ntimepol_prod +
+                      j*npol +
+                      k
+                  ];
+              }
+          }
+      }
+      #endif
+
       hpguppi_databuf_set_filled(outdb, input_output_blockid_pairs[dequeued_input_id]);
       input_output_blockid_pairs[dequeued_input_id] = -1;
 
