@@ -22,7 +22,7 @@
 #define ELAPSED_NS(start,stop) \
   (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
 
-double mjd_mid_block(char* databuf_header){
+double jd_mid_block(char* databuf_header){
   uint64_t pktidx, piperblk;
   struct mjd_t mjd = {0};
   uint64_t synctime = 0;
@@ -191,9 +191,7 @@ static void *run(hashpipe_thread_args_t *args)
 
   int64_t pktidx_obs_start, pktidx_obs_start_prev, pktidx_blk_start;
   int fenchan;
-  double timemjd_midblock=0, dut1=0; // DUT1
-  timemjd_midblock += 1;
-  double timejd_midblock=0;
+  double timejd_midblock=0, dut1=0;
 
   while (run_threads())
   {
@@ -413,7 +411,7 @@ static void *run(hashpipe_thread_args_t *args)
     }
     pktidx_obs_start_prev = pktidx_obs_start;
     hgetr8(databuf_header, "DUT1", &dut1);
-    timemjd_midblock = mjd_mid_block(databuf_header);
+    timejd_midblock = jd_mid_block(databuf_header);
 
 
     // waiting for output buffer to be free
