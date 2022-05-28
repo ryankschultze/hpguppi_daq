@@ -75,6 +75,11 @@ static int init(hashpipe_thread_args_t *args)
   const char * status_key = args->thread_desc->skey;
   hashpipe_status_t *st = &args->st;
 
+  // THREAD_COUNT align number of packet-slots per block (ibverbs_pkt_thread utilised)
+  struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(dbin);
+  hashpipe_info(thread_name, "Aligning %d packet-slots per block to nearest smaller multiple of %d", pktbuf_info->slots_per_block, ATA_IBV_THREAD_COUNT);
+  pktbuf_info->slots_per_block -= pktbuf_info->slots_per_block%ATA_IBV_THREAD_COUNT;
+
   // Non-network essential paramaters
   int blocsize=BLOCK_DATA_SIZE;
   int directio=1;
@@ -811,17 +816,20 @@ int debug_i=0, debug_j=0;
       hashpipe_status_unlock_safe(st);
     }
 
-    // Update PKTIDX in status buffer if it is a new pkt_blk_num
-    if(wblk[0].block_num != last_pkt_blk_num){
-      last_pkt_blk_num = wblk[0].block_num;
+    hashpipe_status_lock_safe(st);
+    {
+      hputu8(st->buf, "PKTIDX", pkt_info.pktidx);//wblk[0].packet_idx);
 
-      hashpipe_status_lock_safe(st);
-        hputu8(st->buf, "BLKIDX", last_pkt_blk_num/obs_info.pktidx_per_block);
-        hputu8(st->buf, "PKTIDX", wblk[0].packet_idx);
-        hputu8(st->buf, "BLKSTART", wblk[0].packet_idx);
-        hputu8(st->buf, "BLKSTOP", wblk[1].packet_idx);
-      hashpipe_status_unlock_safe(st);
+      // Update PKTIDX in status buffer if it is a new pkt_blk_num
+      if(wblk[0].block_num != last_pkt_blk_num){
+        last_pkt_blk_num = wblk[0].block_num;
+
+          hputu8(st->buf, "BLKIDX", last_pkt_blk_num/obs_info.pktidx_per_block);
+          hputu8(st->buf, "BLKSTART", wblk[0].packet_idx);
+          hputu8(st->buf, "BLKSTOP", wblk[1].packet_idx);
+      }
     }
+    hashpipe_status_unlock_safe(st);
     
     if(wblk[n_wblock-1].npacket > 0) {
       // Time to advance the blocks!!!
