@@ -461,7 +461,7 @@ static void *run(hashpipe_thread_args_t * args)
             latitude_rad
           );
 
-          UVH5permutate_uvws(uvh5_header);
+          UVH5permute_uvws(uvh5_header);
         }
 
         UVH5write_dynamic(&uvh5_file);

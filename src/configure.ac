@@ -201,8 +201,8 @@ fi
 
 if test $has_libradiointerferometry = 0; then
   if test $uvh5_enabled = 1; then
-    LIBRADIOINTERFEROMETRYDIR="${LIBUVH5DIR}/../external_src/radiointerferometryc99/builddir"
-    RADIOINTERFEROMETRYINCDIR="${LIBUVH5DIR}/../external_src/radiointerferometryc99/include"
+    LIBRADIOINTERFEROMETRYDIR="${LIBUVH5DIR}/subprojects/radiointerferometryc99"
+    RADIOINTERFEROMETRYINCDIR="${LIBUVH5DIR}/../subprojects/radiointerferometryc99/include"
     has_libradiointerferometry=1;
   fi
 fi
@@ -213,7 +213,7 @@ if test $has_libradiointerferometry = 0; then
   radiointerferometry_enabled=0;
 else
   #AC_MSG_RESULT([yes])
-  AC_MSG_NOTICE([RadioInterferometryC99 will be linked.])
+  AC_MSG_NOTICE([RadioInterferometryC99 will be linked ${LIBRADIOINTERFEROMETRYDIR}.])
   AC_SUBST(LIBRADIOINTERFEROMETRYDIR,${LIBRADIOINTERFEROMETRYDIR})
   
   AC_SUBST(RADIOINTERFEROMETRYINCDIR,${RADIOINTERFEROMETRYINCDIR})
