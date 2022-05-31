@@ -51,7 +51,6 @@ bool blade_ata_b_initialize(
             antennaCalibrationsCpp.size()*sizeof(antennaCalibrationsCpp[0]));
 
     BladePipeline::Config config = {
-        .numberOfBeams = ata_b_config.inputDims.NBEAMS,
         .numberOfAntennas  = ata_b_config.inputDims.NANTS,
         .numberOfFrequencyChannels = ata_b_config.inputDims.NCHANS,
         .numberOfTimeSamples  = ata_b_config.inputDims.NTIME,
