@@ -4,12 +4,11 @@
 # Basic library dependencies
 
 ## [Hashpipe](https://github.com/david-macmahon/hashpipe/)
-- [ ] Rebase Hpguppi_daq to [hashpipe_master](https://github.com/MydonSolutions/hpguppi_daq/tree/hashpipe_master)
 
 This is foundational of course.
 
 ```
-$ git clone -b ae6c1541a1000f921ba1e0d5aafee6be6f8a8740 https://github.com/MydonSolutions/hashpipe
+$ git clone -b 44b432af3c88ff6ccd224f526ac2b06674af04a8 https://github.com/david-macmahon/hashpipe
 $ cd hashpipe
 $ autoreconf -is && ./configure && make
 ```

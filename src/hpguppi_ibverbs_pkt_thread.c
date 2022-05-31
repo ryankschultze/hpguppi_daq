@@ -452,28 +452,20 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
   // Send memory region is just one packet.  Recv memory region spans a data block, with
   // one recv memory region registered per block (see recv_mr_num).
   hibv_ctx->send_mr_size = (size_t)hibv_ctx->send_pkt_num * hibv_ctx->pkt_size_max;
-  hibv_ctx->recv_mr_size = sizeof(db->block[0].data);
+  hibv_ctx->recv_mr_size = db->header.n_block * sizeof(db->header.block_size);
 
   // Allocate memory for send_mr_buf
-  hibv_ctx->send_mr_num = 1;
-  hibv_ctx->send_mr_bufs = malloc(hibv_ctx->send_mr_num * sizeof(uint8_t *));
-  for(i=0; i<hibv_ctx->send_mr_num; i++){
-    if(!(hibv_ctx->send_mr_bufs[0] = (uint8_t *)calloc(
-        hibv_ctx->send_pkt_num, hibv_ctx->pkt_size_max))) {
-      return HASHPIPE_ERR_SYS;
-    }
+  if(!(hibv_ctx->send_mr_buf = (uint8_t *)calloc(
+      hibv_ctx->send_pkt_num, hibv_ctx->pkt_size_max))) {
+    return HASHPIPE_ERR_SYS;
   }
   // Point recv_mr_buf to starts of block 0
-  hibv_ctx->recv_mr_num = db->header.n_block;
-  hibv_ctx->recv_mr_bufs = malloc(hibv_ctx->recv_mr_num * sizeof(uint8_t *));
-  for(i=0; i<hibv_ctx->recv_mr_num; i++){
-    hibv_ctx->recv_mr_bufs[i] = (uint8_t *)db->block[i].data;
-  }
+  hibv_ctx->recv_mr_buf = (uint8_t *)db->block[0].data;
 
   // Setup send WR's num_sge and SGEs' addr/length fields
   hibv_ctx->send_pkt_buf[0].wr.num_sge = 1;
   hibv_ctx->send_pkt_buf[0].wr.sg_list = hibv_ctx->send_sge_buf;
-  hibv_ctx->send_sge_buf[0].addr = (uint64_t)hibv_ctx->send_mr_bufs[0];
+  hibv_ctx->send_sge_buf[0].addr = (uint64_t)hibv_ctx->send_mr_buf;
   hibv_ctx->send_sge_buf[0].length = hibv_ctx->pkt_size_max;
 
   // Setup recv WRs' num_sge and SGEs' addr/length fields
@@ -899,7 +891,7 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
-        curr_rpkt->wr.sg_list[i].lkey = hibv_ctx->recv_mrs[next_block % db->header.n_block]->lkey;
+        curr_rpkt->wr.sg_list[i].lkey = hibv_ctx->recv_mr->lkey;
       }
 
       // Advance slot
