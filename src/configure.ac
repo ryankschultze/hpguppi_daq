@@ -35,6 +35,9 @@ AX_CHECK_RAWSPEC
 # Check for xgpu
 AX_CHECK_XGPU
 
+# Check for uvh5
+AX_CHECK_UVH5C99
+
 # Checks for libraries.
 #AC_CHECK_LIB([pthread], [pthread_create])
 AC_CHECK_LIB([m], [cos])
@@ -85,24 +88,6 @@ AC_ARG_WITH([cuda-include],
               CUDAINCDIR=""
               has_cuda_include=0
             ])
-
-AC_ARG_WITH([libuvh5],
-            AC_HELP_STRING([--with-libuvh5=DIR],
-                           [Location of UVH5C99 library]),
-            [
-              LIBUVH5DIR="$withval"
-              has_libuvh5=1
-            ],
-            [
-              LIBUVH5DIR=""
-              has_libuvh5=0
-            ])
-
-AC_ARG_WITH([uvh5-include],
-            AC_HELP_STRING([--with-uvh5-include=DIR],
-                           [Location of UVH5C99 include directory]),
-            [UVH5INCDIR="$withval"],
-            [UVH5INCDIR="${LIBUVH5DIR}/../include"])
 
 AC_ARG_WITH([libradiointerferometry],
             AC_HELP_STRING([--with-libradiointerferometry=DIR],
@@ -156,20 +141,6 @@ if test $has_cuda_include = 1; then
   cuda_enabled=1;
 fi
 
-if test $has_libuvh5 = 0; then
-  #AC_MSG_RESULT([no])
-  AC_MSG_NOTICE([Library UVH5C99 not provided. UVH5 will not be linked.])
-  uvh5_enabled=0;
-else
-  #AC_MSG_RESULT([yes])
-  AC_MSG_NOTICE([UVH5 will be linked.])
-  AC_SUBST(LIBUVH5DIR,${LIBUVH5DIR})
-  
-  AC_SUBST(UVH5INCDIR,${UVH5INCDIR})
-  AC_MSG_NOTICE([UVH5C99 include directory set to ${UVH5INCDIR}])
-  uvh5_enabled=1;
-fi
-
 if test $has_libradiointerferometry = 0; then
   if test $uvh5_enabled = 1; then
     LIBRADIOINTERFEROMETRYDIR="${LIBUVH5DIR}/subprojects/radiointerferometryc99"
@@ -208,15 +179,6 @@ AS_IF([test $cuda_enabled = 1],
   ],
   [
     AM_CONDITIONAL(CUDA_ENABLED, false)
-  ])
-
-AS_IF([test $uvh5_enabled = 1],
-  [
-    AM_CONDITIONAL(UVH5_ENABLED, true)
-    AC_DEFINE(UVH5_ENABLED,[],[Use UVH5C99])
-  ],
-  [
-    AM_CONDITIONAL(UVH5_ENABLED, false)
   ])
 
 AS_IF([test $radiointerferometry_enabled = 1],

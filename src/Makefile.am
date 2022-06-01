@@ -113,21 +113,24 @@ hpguppi_databuf += \
 		hpguppi_xgpu_databuf.h
 
 hpguppi_threads += \
-		hpguppi_ata_xgpu_thread.c \
+		hpguppi_ata_xgpu_thread.c
+if UVH5C99_ENABLED
+hpguppi_threads += \
 		hpguppi_ata_xintegration_thread.c
+endif
 
 hpguppi_daq_la_LDFLAGS += -L"@XGPU_LIBDIR@" -lxgpu -Xlinker -lrt
 hpguppi_daq_la_CFLAGS  += -I "@XGPU_INCDIR@"
 endif
 
-if UVH5_ENABLED
+if UVH5C99_ENABLED
 hpguppi_threads += \
 		hpguppi_ata_obs_uvh5disk_thread.c
-hpguppi_daq_la_LDFLAGS += -L"@LIBUVH5DIR@"
+hpguppi_daq_la_LDFLAGS += -L"@UVH5C99_LIBDIR@"
 hpguppi_daq_la_LIBADD += -luvh5
-hpguppi_daq_la_CFLAGS  += -I "@UVH5INCDIR@"
-hpguppi_daq_la_CFLAGS  += -I "@UVH5INCDIR@/../external_src/tomlc99"
-endif # UVH5_ENABLED 
+hpguppi_daq_la_CFLAGS  += -I "@UVH5C99_INCDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@UVH5C99_INCDIR@/../external_src/tomlc99"
+endif # UVH5C99_ENABLED 
 
 if RADIOINTERFEROMETRY_ENABLED
 hpguppi_daq_la_LDFLAGS += -L"@LIBRADIOINTERFEROMETRYDIR@"
