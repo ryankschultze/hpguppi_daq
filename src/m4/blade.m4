@@ -54,6 +54,12 @@ AC_DEFUN([AX_CHECK_BLADE], [
 
     AC_SUBST(BLADE_LIBDIR,${BLADEDIR}/lib/x86_64-linux-gnu)
 
+    AS_IF([test $cuda_enabled = 1],
+    [],
+    [
+      AC_MSG_ERROR([CUDA include not specified.])
+    ])
+
     blade_enabled=1;
   fi
   

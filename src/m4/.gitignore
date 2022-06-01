@@ -9,6 +9,7 @@
 !hashpipe.m4
 !rawspec.m4
 !xgpu.m4
+!cuda.m4
 !blade.m4
 !uvh5c99.m4
 !radiointerferometryc99.m4

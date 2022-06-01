@@ -85,7 +85,7 @@ libbladeapi_la_CXXFLAGS = -std=c++2a -I "@BLADE_INCDIR@"
 libbladeapi_la_LDFLAGS = -L"@BLADE_LIBDIR@"
 libbladeapi_la_LIBADD = -lblade
 if CUDA_ENABLED
-libbladeapi_la_CXXFLAGS  += -I "@CUDAINCDIR@"
+libbladeapi_la_CXXFLAGS  += -I "@CUDA_INCDIR@"
 endif
 
 # hpguppi extension
@@ -106,7 +106,7 @@ hpguppi_daq_la_CFLAGS  += -I "@BLADE_INCDIR@"
 endif
 
 if CUDA_ENABLED
-hpguppi_daq_la_CFLAGS  += -I "@CUDAINCDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@CUDA_INCDIR@"
 endif
 
 if XGPU_ENABLED

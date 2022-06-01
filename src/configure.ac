@@ -35,6 +35,9 @@ AX_CHECK_RAWSPEC
 # Check for xgpu
 AX_CHECK_XGPU
 
+# Check for cuda
+AX_CHECK_CUDA
+
 # Check for blade
 AX_CHECK_BLADE
 
@@ -64,33 +67,6 @@ AC_CHECK_LIB([sla], [sla_obs_],
              # Not found there, error
              AC_MSG_ERROR([SLA library not found]))
 LDFLAGS="${orig_LDFLAGS}"
-
-AC_ARG_WITH([cuda-include],
-            AC_HELP_STRING([--with-cuda-include=DIR],
-                           [Location of CUDA include directory]),
-            [
-              CUDAINCDIR="$withval"
-              has_cuda_include=1
-            ],
-            [
-              CUDAINCDIR=""
-              has_cuda_include=0
-            ])
-
-if test $has_cuda_include = 1; then
-  AC_SUBST(CUDAINCDIR,${CUDAINCDIR})
-  AC_MSG_NOTICE([CUDA include directory set to ${CUDAINCDIR}])
-  cuda_enabled=1;
-fi
-
-AS_IF([test $cuda_enabled = 1],
-  [
-    AM_CONDITIONAL(CUDA_ENABLED, true)
-    AC_DEFINE(CUDA_ENABLED,[],[Use CUDA])
-  ],
-  [
-    AM_CONDITIONAL(CUDA_ENABLED, false)
-  ])
 
 ## Checks for header files.
 #AC_CHECK_HEADERS([netdb.h stdint.h stdlib.h string.h sys/socket.h sys/time.h unistd.h zlib.h])
