@@ -32,7 +32,6 @@ hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_vdif.h   \
 		  polyco_struct.h  \
 		  psrfits.h \
-		  ata_antenna_weights_binary/include/antenna_weights.h \
 		  mysigproc/mysigproc_utils.h
 
 libsla_support = slalib.h sla.c f77.h
@@ -47,7 +46,6 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 		  hpguppi_rawdisk_thread.c \
 		  hpguppi_rawdisk_only_thread.c \
 		  hpguppi_fildisk_only_thread.c \
-		  ata_antenna_weights_binary/src/antenna_weights.c \
 			mysigproc/mysigproc_utils.c
 
 # This is the hpguppi_daq plugin
@@ -62,8 +60,12 @@ hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
 
 if BLADE_ENABLED
 # bladeapi library
-AM_CPPFLAGS += -I"@BLADEINCDIR@"
-AM_CPPFLAGS += -I"ata_antenna_weights_binary/include"
+AM_CPPFLAGS += -I"@BLADE_INCDIR@"
+AM_CFLAGS += -I"ata_antenna_weights_binary/include"
+
+hpguppi_support += \
+		ata_antenna_weights_binary/src/antenna_weights.c \
+		ata_antenna_weights_binary/include/antenna_weights.h
 
 hpguppi_blade_c_api_files = \
 		hpguppi_blade_capi.h \
@@ -79,8 +81,8 @@ hpguppi_blade_c_api_files = \
 
 noinst_LTLIBRARIES = libbladeapi.la
 libbladeapi_la_SOURCES = $(hpguppi_blade_c_api_files)
-libbladeapi_la_CXXFLAGS = -std=c++20 -I "@BLADEINCDIR@"
-libbladeapi_la_LDFLAGS = -L"@LIBBLADEDIR@"
+libbladeapi_la_CXXFLAGS = -std=c++2a -I "@BLADE_INCDIR@"
+libbladeapi_la_LDFLAGS = -L"@BLADE_LIBDIR@"
 libbladeapi_la_LIBADD = -lblade
 if CUDA_ENABLED
 libbladeapi_la_CXXFLAGS  += -I "@CUDAINCDIR@"
@@ -99,8 +101,8 @@ hpguppi_threads += \
 		hpguppi_ata_blade_obs_rawdisk_thread.c
 
 hpguppi_daq_la_LIBADD  += -lblade libbladeapi.la
-hpguppi_daq_la_LDFLAGS += -L"@LIBBLADEDIR@" -Wl,-rpath,"@LIBBLADEDIR@"
-hpguppi_daq_la_CFLAGS  += -I "@BLADEINCDIR@"
+hpguppi_daq_la_LDFLAGS += -L"@BLADE_LIBDIR@" -Wl,-rpath,"@BLADE_LIBDIR@"
+hpguppi_daq_la_CFLAGS  += -I "@BLADE_INCDIR@"
 endif
 
 if CUDA_ENABLED
