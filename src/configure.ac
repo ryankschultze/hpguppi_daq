@@ -154,7 +154,7 @@ AC_ARG_WITH([radiointerferometry-include],
 if test $has_libblade = 0; then
   #AC_MSG_RESULT([no])
   AC_MSG_NOTICE([Library BLADE not provided. BLADE will not be enabled.])
-  blade_enabled=1;
+  blade_enabled=0;
 else
   #AC_MSG_RESULT([yes])
   AC_MSG_NOTICE([BLADE will be enabled.])
