@@ -1,0 +1,106 @@
+# serial 1 xgpu.m4
+AC_DEFUN([AX_CHECK_XGPU], [
+  AC_PREREQ([2.65])dnl
+  AC_ARG_WITH(
+    [xgpu],
+    AC_HELP_STRING([--with-xgpu=DIR],
+                  [Location of xGPU library]),
+    [
+      XGPUDIR="$withval"
+      has_xgpu=1
+    ],
+    [
+      XGPUDIR=""
+      has_xgpu=0
+    ]
+  )
+
+  AC_ARG_WITH([xgpu-include],
+              AC_HELP_STRING([--with-xgpu-include=DIR],
+                            [Location of xGPU include directory (${XGPUDIR})]),
+              [XGPUINCDIR="$withval"],
+              [XGPUINCDIR="${XGPUDIR}"]
+  )
+
+
+  if test $has_xgpu = 0; then
+    AC_MSG_NOTICE([Library xGPU not provided. xGPU will not be enabled.])
+    xgpu_enabled=0;
+  else
+    # test xgpu before enabling
+    orig_LDFLAGS="${LDFLAGS}"
+    LDFLAGS="${orig_LDFLAGS} -L${XGPUDIR}/lib"
+    AC_CHECK_LIB([xgpu], [xgpuInit],
+                # Found
+                AC_SUBST(XGPU_LIBDIR,${XGPUDIR}/lib),
+                # Not found there, check XGPUDIR
+                AS_UNSET(ac_cv_lib_xgpu_xgpuInit)
+                LDFLAGS="${orig_LDFLAGS} -L${XGPUDIR}"
+                AC_CHECK_LIB([xgpu], [xgpuInit],
+                            # Found
+                            AC_SUBST(XGPU_LIBDIR,${XGPUDIR}),
+                            # Not found there, error
+                            AC_MSG_ERROR([xGPU library not found])))
+    LDFLAGS="${orig_LDFLAGS}"
+
+    AC_CHECK_FILE([${XGPUDIR}/include/xgpu.h],
+                  # Found
+                  AC_SUBST(XGPU_INCDIR,${XGPUDIR}/include),
+                  # Not found there, check XGPUDIR
+                  AC_CHECK_FILE([${XGPUDIR}/xgpu.h],
+                                # Found
+                                AC_SUBST(XGPU_INCDIR,${XGPUDIR}),
+                                # Not found there, error
+                                AC_MSG_ERROR([XGPU.h header file not found])))
+
+    xgpu_enabled=1;
+    
+    AC_MSG_NOTICE([xGPU will be enabled.])
+  fi
+
+
+  AS_IF([test $xgpu_enabled = 1],
+    [
+      AM_CONDITIONAL(XGPU_ENABLED, true)
+      AC_DEFINE(XGPU_ENABLED,[],[Use xGPU])
+    ],
+    [
+      AM_CONDITIONAL(XGPU_ENABLED, false)
+    ]
+  )
+])
+
+dnl Calls AX_CHECK_XGPU and then checks for and uses xgpuinfo to define the
+dnl following macros in config.h:
+dnl
+dnl   XGPU_NSTATION   - Number of dual-pol(!) stations per xGPU instance
+dnl   XGPU_NFREQUENCY - Number of frequency channels per xGPU instance
+dnl   XGPU_NTIME      - Number of time samples per freqency channel per xGPU
+dnl                     instance
+dnl
+AC_DEFUN([AX_CHECK_XGPUINFO], [
+  AC_PREREQ([2.65])dnl
+  AX_CHECK_XGPU
+  AC_CHECK_FILE([${XGPUDIR}/bin/xgpuinfo],
+              # Found
+              AC_SUBST(XGPU_BINDIR,${XGPUDIR}/bin),
+              # Not found there, check XGPUDIR
+              AC_CHECK_FILE([${XGPUDIR}/xgpuinfo],
+                              # Found
+                              AC_SUBST(XGPU_BINDIR,${XGPUDIR}),
+                              # Not found there, error
+                              AC_MSG_ERROR([xgpuinfo program not found])))
+
+  AC_DEFINE_UNQUOTED([XGPU_NSTATION],
+                  [`${XGPU_BINDIR}/xgpuinfo | sed -n '/Number of stations: /{s/.*: //;p}'`],
+                  [Number of stations == Ninputs/2])
+
+  AC_DEFINE_UNQUOTED([XGPU_NFREQUENCY],
+                  [`${XGPU_BINDIR}/xgpuinfo | sed -n '/Number of frequencies: /{s/.*: //;p}'`],
+                  [Number of frequency channels per xGPU instance])
+
+  AC_DEFINE_UNQUOTED([XGPU_NTIME],
+                  [`${XGPU_BINDIR}/xgpuinfo | sed -n '/time samples per GPU integration: /{s/.*: //;p}'`],
+                  [Number of time samples (i.e. spectra) per xGPU integration])
+  ])
+])

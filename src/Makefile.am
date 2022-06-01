@@ -116,8 +116,8 @@ hpguppi_threads += \
 		hpguppi_ata_xgpu_thread.c \
 		hpguppi_ata_xintegration_thread.c
 
-hpguppi_daq_la_LDFLAGS += -L"@LIBXGPUDIR@" -lxgpu -Xlinker -lrt
-hpguppi_daq_la_CFLAGS  += -I "@XGPUINCDIR@"
+hpguppi_daq_la_LDFLAGS += -L"@XGPU_LIBDIR@" -lxgpu -Xlinker -lrt
+hpguppi_daq_la_CFLAGS  += -I "@XGPU_INCDIR@"
 endif
 
 if UVH5_ENABLED
