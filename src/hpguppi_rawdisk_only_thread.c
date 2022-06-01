@@ -130,7 +130,7 @@ static void *run(hashpipe_thread_args_t * args)
         hashpipe_status_unlock_safe(st);
 
         /* Wait for buf to have data */
-        rv = hpguppi_input_databuf_wait_filled(db, curblock);
+        rv = hpguppi_databuf_wait_filled(db, curblock);
         if (rv!=0) continue;
 
         /* Read param struct for this block */
@@ -165,7 +165,7 @@ static void *run(hashpipe_thread_args_t * args)
 		    pktstart, pktstop, pktidx);
 	    }
 	    /* Mark as free */
-	    hpguppi_input_databuf_set_free(db, curblock);
+	    hpguppi_databuf_set_free(db, curblock);
 
 	    /* Go to next block */
 	    curblock = (curblock + 1) % db->header.n_block;
@@ -300,7 +300,7 @@ static void *run(hashpipe_thread_args_t * args)
         }
 
         /* Mark as free */
-        hpguppi_input_databuf_set_free(db, curblock);
+        hpguppi_databuf_set_free(db, curblock);
 
         /* Go to next block */
         curblock = (curblock + 1) % db->header.n_block;
