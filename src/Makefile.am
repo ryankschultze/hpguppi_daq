@@ -132,11 +132,11 @@ hpguppi_daq_la_CFLAGS  += -I "@UVH5C99_INCDIR@"
 hpguppi_daq_la_CFLAGS  += -I "@UVH5C99_INCDIR@/../external_src/tomlc99"
 endif # UVH5C99_ENABLED 
 
-if RADIOINTERFEROMETRY_ENABLED
-hpguppi_daq_la_LDFLAGS += -L"@LIBRADIOINTERFEROMETRYDIR@"
+if RADIOINTERFEROMETRYC99_ENABLED
+hpguppi_daq_la_LDFLAGS += -L"@RADIOINTERFEROMETRYC99_LIBDIR@"
 hpguppi_daq_la_LIBADD += -lradiointerferometryc99
-hpguppi_daq_la_CFLAGS  += -I "@RADIOINTERFEROMETRYINCDIR@"
-endif # RADIOINTERFEROMETRY_ENABLED 
+hpguppi_daq_la_CFLAGS  += -I "@RADIOINTERFEROMETRYC99_INCDIR@"
+endif # RADIOINTERFEROMETRYC99_ENABLED 
 
 # Installed scripts
 dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \
