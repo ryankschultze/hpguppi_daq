@@ -45,11 +45,11 @@ hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
 lib_LTLIBRARIES = hpguppi_daq.la
 hpguppi_daq_la_SOURCES  = $(hpguppi_databuf) $(hpguppi_support) $(libsla_support) $(hpguppi_threads)
 hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
-hpguppi_daq_la_CFLAGS 	= $(AM_CFLAGS)
+hpguppi_daq_la_CFLAGS 	= $(AM_CFLAGS) -I"@RAWSPEC_INCDIR@"
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"
 hpguppi_daq_la_LDFLAGS += -L"@HASHPIPE_LIBDIR@" -Wl,-rpath,"@HASHPIPE_LIBDIR@"
-#hpguppi_daq_la_CFLAGS  += -I./mysigproc
+hpguppi_daq_la_LDFLAGS += -L"@RAWSPEC_LIBDIR@" -Wl,-rpath,"@RAWSPEC_LIBDIR@"
 
 if BLADE_ENABLED
 # bladeapi library
