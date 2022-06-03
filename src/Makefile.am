@@ -19,34 +19,27 @@ hpguppi_databuf = hpguppi_databuf.h \
 hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_atasnap.c \
 		  hpguppi_params.c \
-		  hpguppi_mkfeng.h \
-		  hpguppi_pksuwl.h \
-		  hpguppi_rawspec.h \
-		  hpguppi_rawspec.c \
+ 		  hpguppi_rawspec.h \
+ 		  hpguppi_rawspec.c \
 		  hpguppi_time.h   \
 		  hpguppi_time.c   \
 		  hpguppi_util.h   \
 		  hpguppi_util.c   \
-		  hpguppi_udp.h    \
-		  hpguppi_udp.c    \
-		  hpguppi_vdif.h   \
 		  polyco_struct.h  \
 		  psrfits.h \
 		  mysigproc/mysigproc_utils.h
 
+# hpguppi_support += \
+#		  hpguppi_udp.h    \
+#		  hpguppi_udp.c
+
 libsla_support = slalib.h sla.c f77.h
 
 hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
-		  hpguppi_net_thread.c \
-		  hpguppi_mb1_net_thread.c \
-		  hpguppi_mb128ch_net_thread.c \
-		  hpguppi_ata_ibv_payload_order_thread.c \
-		  hpguppi_atasnap_obs_rawdisk_thread.c \
-		  hpguppi_ata_fildisk_thread.c \
-		  hpguppi_rawdisk_thread.c \
-		  hpguppi_rawdisk_only_thread.c \
-		  hpguppi_fildisk_only_thread.c \
-			mysigproc/mysigproc_utils.c
+		hpguppi_ata_ibv_payload_order_thread.c \
+		hpguppi_atasnap_obs_rawdisk_thread.c \
+		hpguppi_ata_fildisk_thread.c \
+		mysigproc/mysigproc_utils.c
 
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
@@ -141,14 +134,7 @@ hpguppi_daq_la_CFLAGS  += -I "@RADIOINTERFEROMETRYC99_INCDIR@"
 endif # RADIOINTERFEROMETRYC99_ENABLED 
 
 # Installed scripts
-dist_bin_SCRIPTS = hpguppi_gbtstatus_loop.rb \
-		   hpguppi_init.sh           \
-		   init_atasnap_hashpipe.sh           \
-		   kill_hpguppi.sh           \
-		   start_hpguppi.sh
+dist_bin_SCRIPTS = init_hpguppi.py
 
-check_PROGRAMS = test_vdifhdr
-
-test_vdifhdr_SOURCES = test_vdifhdr.c hpguppi_pksuwl.h hpguppi_vdif.h
 
 # vi: set ts=8 noet :
