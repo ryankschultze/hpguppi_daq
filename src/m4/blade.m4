@@ -4,7 +4,7 @@ AC_DEFUN([AX_CHECK_BLADE], [
 
   AC_ARG_WITH([blade],
             AC_HELP_STRING([--with-blade=DIR],
-                           [Location of BLADE library]),
+                           [Location of BLADE install directory]),
             [
               BLADEDIR="$withval"
               has_blade=1

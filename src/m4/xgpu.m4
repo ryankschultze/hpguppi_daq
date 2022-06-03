@@ -4,7 +4,7 @@ AC_DEFUN([AX_CHECK_XGPU], [
   AC_ARG_WITH(
     [xgpu],
     AC_HELP_STRING([--with-xgpu=DIR],
-                  [Location of xGPU library]),
+                  [Location of xGPU install directory]),
     [
       XGPUDIR="$withval"
       has_xgpu=1
@@ -14,14 +14,6 @@ AC_DEFUN([AX_CHECK_XGPU], [
       has_xgpu=0
     ]
   )
-
-  AC_ARG_WITH([xgpu-include],
-              AC_HELP_STRING([--with-xgpu-include=DIR],
-                            [Location of xGPU include directory (${XGPUDIR})]),
-              [XGPUINCDIR="$withval"],
-              [XGPUINCDIR="${XGPUDIR}"]
-  )
-
 
   if test $has_xgpu = 0; then
     AC_MSG_NOTICE([Library xGPU not provided. xGPU will not be enabled.])

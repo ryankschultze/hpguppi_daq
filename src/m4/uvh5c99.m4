@@ -4,7 +4,7 @@ AC_DEFUN([AX_CHECK_UVH5C99], [
 
   AC_ARG_WITH([uvh5],
             AC_HELP_STRING([--with-uvh5=DIR],
-                           [Location of UVH5C99 library]),
+                           [Location of UVH5C99 install directory]),
             [
               UVH5C99DIR="$withval"
               has_uvh5=1
