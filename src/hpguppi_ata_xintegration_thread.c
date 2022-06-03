@@ -24,6 +24,8 @@
 //#include "hpguppi_pksuwl.h"
 #include "hpguppi_util.h"
 
+#include "uvh5.h"
+
 #define ELAPSED_S(start,stop) \
   ((int64_t)stop.tv_sec-start.tv_sec)
 
