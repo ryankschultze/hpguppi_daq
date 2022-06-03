@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.65])
 AC_INIT([FULL-PACKAGE-NAME], [VERSION], [BUG-REPORT-ADDRESS])
-AM_INIT_AUTOMAKE([foreign])
+AM_INIT_AUTOMAKE([foreign subdir-objects])
 LT_INIT
 AM_SILENT_RULES([yes])
 AC_CONFIG_SRCDIR([hpguppi_databuf.h])
