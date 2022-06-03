@@ -1,7 +1,92 @@
-# SETI ATA Hashpipe Data Acquisition
+# Hashpipe SETI Data Acquisition
 
-This uses this version of [hashpipe](https://github.com/MydonSolutions/hashpipe/tree/ae6c1541a1000f921ba1e0d5aafee6be6f8a8740).
-## Compilation
+----------------------------------------------
+# Basic library dependencies
+
+## [Hashpipe](https://github.com/david-macmahon/hashpipe/)
+- [ ] Rebase Hpguppi_daq to [hashpipe_master](https://github.com/MydonSolutions/hpguppi_daq/tree/hashpipe_master)
+
+This is foundational of course.
+
+```
+$ git clone -b ae6c1541a1000f921ba1e0d5aafee6be6f8a8740 https://github.com/MydonSolutions/hashpipe
+$ cd hashpipe
+$ autoreconf -is && ./configure && make
+```
+
+## [Rawspec](https://github.com/UCBerkeleySETI/rawspec)
+- [ ] Handle lack of rawspec
+
+Hpguppi_daq currently expects this for certain files that aren't always in use:
+- hpguppi_rawspec # support
+- hpguppi_fildisk_only_thread # Legacy
+- hpguppi_rawdisk_thread # Legacy
+- hpguppi_ata_fildisk_thread # Contemporary filterbank output
+
+```
+$ git clone -b floating_point https://github.com/MydonSolutions/rawspec
+$ cd rawspec
+$ make
+```
+
+[CUDA](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html) is required.
+
+## [SLA](https://github.com/scottransom/pyslalib)
+- [ ] ? Absorb into radiointerferometryc99.
+
+Hpguppi_daq uses in only a few critical places:
+- hpguppi_params # manage struct meta-data from status key-values
+- hpguppi_time # MJD time calculation
+
+```
+$ git clone https://github.com/scottransom/pyslalib
+$ cd pyslalib
+$ make
+```
+
+# Situational library dependencies
+
+## [UVH5C99](https://github.com/MydonSolutions/uvh5c99)
+
+This library simplifies the authoring of UVH5 files in C. It's a dependency of:
+- hpguppi_ata_obs_uvh5disk_thread
+
+```
+$ git clone https://github.com/MydonSolutions/uvh5c99
+$ cd uvh5c99
+$ git submodule init
+$ meson build
+$ cd build
+$ ninja test
+```
+
+## [XGPU](https://github.com/GPU-correlators/xGPU)
+
+Correlation is accomplished using xGPU. It's a dependency of:
+- hpguppi_ata_xgpu_thread
+- hpguppi_xgpu_databuf
+- hpguppi_atasnap_xgpu_disk_thread
+
+```
+$ git clone https://github.com/GPU-correlators/xGPU
+$ cd xGPU/src
+$ make clean && make NTIME=32768 NTIME_PIPE=128 NPOL=2 NFREQUENCY=512 NSTATION=16 CUDA_ARCH=sm_86 DP4A=yes
+```
+
+## [BLADE](https://github.com/luigifcruz/blade)
+
+Beamforming is accomplished with BLADE empowered threads:
+- hpguppi_ata_blade_beamformer_thread
+
+```
+$ git clone https://github.com/luigifcruz/blade
+$ cd blade
+$ CC=gcc-10 CXX=g++-10 meson build -Dprefix=${PWD}/install
+$ cd build
+$ ninja test && ninja install
+```
+
+# Compilation
 
 The `$ ./configure` step determines which threads are compiled and indeed available for deployment.
 
@@ -20,8 +105,26 @@ Provide the compilation directory (i.e. xGPU/src).
 - [`--with-uvh5`](https://github.com/MydonSolutions/uvh5c99) will enable UVH5 related threads.
 Provide the compilation directory (i.e. uvh5c99/build).
 
+All in all:
+`hpguppi_daq/src$ CXX=g++-11 ./configure --with-libsla=../../pyslalib --with-hashpipe=../../hashpipe/src/.libs --with-cuda-include=/usr/local/cuda-11.4.1/include --with-xgpu=../../xGPU/src --with-uvh5=../../uvh5c99/build --with-rawspec=../../rawspec --with-blade=../../blade/install`
+
 Thereafter, `$ make` compiles the threads into `$ ./.libs/hpguppi_daq.so`.
 
-## Instantiation
+# Instantiation
 
 The `init_hpguppi.py` script assesses the `config_hpguppi.yaml` file to achieve the instance-system named as the first positional argument. The script is typically executed with super-user privileges.
+
+# Further Notes
+
+## System optimisation
+
+[Optimal BIOS settings](https://hpcadvisorycouncil.atlassian.net/wiki/spaces/HPCWORKS/pages/1280442391/AMD+2nd+Gen+EPYC+CPU+Tuning+Guide+for+InfiniBand+HPC?focusedCommentId=2152333319)
+- APBDIS = 1 [NB Configuration]
+- Fixed SOC Pstate = P0 [NB Configuration]
+- IOMMU = disabled [NB Configuration]
+- DF Cstates = disabled [NB Configuration]
+- SMT = disabled [CPU Configuration]
+- Local APIC mode = x2APIC [CPU Configuration]
+- NUMA nodes per socket = NPS1 [ACPI Settings]
+- L3 cache as NUMA = disabled [ACPI Settings (ACPI SRAT L3 Cache As NUMA Domain)] {{{ it’s recommended to be enabled, but then causes too many NUMA nodes }}}
+- PCIe Relaxed Ordering = enabled [PCIe/PCI/PnP Configuration]
