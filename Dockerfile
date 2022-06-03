@@ -97,13 +97,14 @@ ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH}
 RUN cd /work \
 && git clone https://github.com/luigifcruz/blade \
 && cd blade \
-    git submodule update --init \
+&& git submodule update --init \
 && CC=gcc-10 CXX=g++-10 meson build -Dprefix=${PWD}/install \
 && cd build \
 && ninja install
 
 ## Hpguppi_daq
 RUN cd /work/hpguppi_daq/src \
+&& git submodule update --init \
 && autoreconf -is \
 && CXX=g++-10 ./configure \
     --with-sla-lib=/work/pyslalib \
