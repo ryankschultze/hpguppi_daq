@@ -283,6 +283,7 @@ def run(
 
 	# Setup environment
 	environment_keys = environment_keys
+	system_environment_keys_start_index = len(environment_keys)
 	if 'hashpipe_keyfile' in system:
 		environment_keys.append('HASHPIPE_KEYFILE={}'.format(system['hashpipe_keyfile']))
 	if 'environment' in system:
@@ -328,7 +329,7 @@ def run(
 		print()
 		out_logio.write('%'*20+'\n')
 
-	print(' '.join(cmd))
+	print(' '.join(environment_keys[system_environment_keys_start_index:] + cmd))
 
 	if not dry_run:
 		subprocess.Popen(cmd, env=hashpipe_env, stdout=out_logio, stderr=err_logio)
