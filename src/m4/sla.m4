@@ -3,7 +3,7 @@ AC_DEFUN([AX_CHECK_SLA], [
   AC_PREREQ([2.65])dnl
 
   AC_ARG_WITH([libsla],
-              AC_HELP_STRING([--with-libsla=DIR],
+              AC_HELP_STRING([--with-sla-lib=DIR],
                             [Location of SLA library]),
               [LIBSLADIR="$withval"],
               [LIBSLADIR="."])
