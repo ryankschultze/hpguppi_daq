@@ -41,7 +41,7 @@ Hpguppi_daq uses in only a few critical places:
 ```
 $ git clone https://github.com/scottransom/pyslalib
 $ cd pyslalib
-$ make
+$ make libsla.so
 ```
 
 # Situational library dependencies
@@ -115,6 +115,16 @@ Thereafter, `$ make` compiles the threads into `$ ./.libs/hpguppi_daq.so`.
 The `init_hpguppi.py` script assesses the `config_hpguppi.yaml` file to achieve the instance-system named as the first positional argument. The script is typically executed with super-user privileges.
 
 # Further Notes
+
+## [rb-hashpipe](https://github.com/david-macmahon/rb-hashpipe)
+```
+$ git clone https://github.com/david-macmahon/rb-hashpipe
+$ cd rb-hashpipe
+$ rake package 
+$ sudo apt install libncurses5-dev
+$ cd pkg
+$ sudo gem install --local ./hashpipe-0.6.3.gem -- --with-hashpipe-include=../../hashpipe/src --with-hashpipestatus-lib=../../hashpipe/src/.libs
+```
 
 ## System optimisation
 
