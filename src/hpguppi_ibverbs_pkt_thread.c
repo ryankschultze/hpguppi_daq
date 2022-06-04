@@ -259,37 +259,6 @@ parse_ibvpktsz(struct hpguppi_pktbuf_info *pktbuf_info, char * ibvpktsz)
   return 0;
 }
 
-// Function to get the offset within a slot corresponding to an (unaligned)
-// offset within a packet.  This accounts for the padding between chunks.  For
-// example, if the chuck sizes are 14,20,1500 (e.g. MAC,IP,PAYLOAD) and the
-// chunks are aligned on 64 byte boundaries, then (unaligned) packet offset 34
-// (e.g. start of PAYLOAD) would have (aligned) slot offset 64.
-off_t
-hpguppi_pktbuf_slot_offset(hpguppi_input_databuf_t *db, off_t pkt_offset)
-{
-  int i;
-  off_t slot_offset;
-  struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(db);
-  for(i=0; i<pktbuf_info->num_chunks; i++) {
-    // If pkt_offset is within this chunk, break out of loop
-    if(pkt_offset < pktbuf_info->chunks[i].chunk_size) {
-      break;
-    }
-    pkt_offset -= pktbuf_info->chunks[i].chunk_size;
-  }
-
-  // If pkt_offset exceeds sum of chunk sizes (i.e. if we didn't break out of
-  // the loop early), it's an error, but we recurse until we get down to a
-  // pkt_offset that doesn't exceed the sum of chuck sizes.
-  if(i == pktbuf_info->num_chunks) {
-    slot_offset = hpguppi_pktbuf_slot_offset(db, pkt_offset);
-  } else {
-    slot_offset = pktbuf_info->chunks[i].chunk_offset + pkt_offset;
-  }
-
-  return slot_offset;
-}
-
 // Function to get a pointer to a databuf's hashpipe_ibv_context structure.
 // Assumes that the hashpipe_ibv_context  structure is tucked into the
 // "padding" bytes of the hpguppi_intput_databuf just after the pktbuf_info
@@ -323,36 +292,6 @@ hpguppi_ibvpkt_flow(
     ether_type, vlan_tag,
     src_ip,     dst_ip,
     src_port,   dst_port);
-}
-
-// Function that threads can call to wait for hpguppi_ibvpkt_thread to finalize
-// ibverbs setup.  After this funtion returns, the underlying
-// hashpipe_ibv_context structure used by hpguppi_ibvpkt_thread will be fully
-// initialized and flows can be created/destroyed by calling
-// hpguppi_ibvpkt_flow().
-void
-hpguppi_ibvpkt_wait_running(hashpipe_status_t * st)
-{
-  char ibvstat[80] = {0};
-  struct timespec ts_sleep = {
-    .tv_sec  = 0,
-    .tv_nsec = 100*1000*1000 // 100 ms
-  };
-
-  // Loop until break when IBVSTAT is "running"
-  for(;;) {
-    hashpipe_status_lock_safe(st);
-    {
-      hgets(st->buf,  "IBVSTAT", sizeof(ibvstat), ibvstat);
-    }
-    hashpipe_status_unlock_safe(st);
-
-    if(!strcmp(ibvstat, "running")) {
-      break;
-    }
-
-    nanosleep(&ts_sleep, NULL);
-  }
 }
 
 // The hpguppi_ibverbs_init() function sets up the hashpipe_ibv_context
@@ -489,67 +428,58 @@ hpguppi_ibverbs_init(struct hashpipe_ibv_context * hibv_ctx,
 // Use with caution!!!
 static
 struct ibv_flow *
-create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
+create_sniffer_flow(struct hashpipe_ibv_context * hibv_ctx, uint16_t sniffer_flag)
 {
-  struct ibv_flow_attr sniffer_flow_attr = {
-    .comp_mask      = 0,
-    .type           = IBV_FLOW_ATTR_SNIFFER,
-    .size           = sizeof(sniffer_flow_attr),
-    .priority       = 0,
-    .num_of_specs   = 0,
-    .port           = hibv_ctx->port_num,
-    .flags          = 0
-  };
-
-  return ibv_create_flow(hibv_ctx->qp[0], &sniffer_flow_attr);
-}
-
-// Create MAC-sniffer flow
-// Use with caution!!!
-static
-struct ibv_flow *
-create_macsniffer_flow(struct hashpipe_ibv_context * hibv_ctx)
-{
-  // hashpipe_ibv_flow(hibv_ctx,
-  //   hibv_ctx->max_flows-1, IBV_FLOW_SPEC_UDP,
-  //   hibv_ctx->mac,    NULL,
-  //   0, 0,
-  //   0, 0,
-  //   0, 0);
-  // return hibv_ctx->ibv_flows[hibv_ctx->max_flows-1];
-  struct hashpipe_ibv_flow flow = {
+  struct hashpipe_ibv_flow sniffer_flow = {
     .attr = {
       .comp_mask      = 0,
       .type           = IBV_FLOW_ATTR_NORMAL,
-      .size           = sizeof(flow.attr)
+      .size           = sizeof(sniffer_flow.attr)
                         + sizeof(struct ibv_flow_spec_ipv4)
                         + sizeof(struct ibv_flow_spec_eth)
                         + sizeof(struct ibv_flow_spec_tcp_udp),
       .priority       = 0,
-      .num_of_specs   = 3,
+      .num_of_specs   = 0,
       .port           = hibv_ctx->port_num,
       .flags          = 0
     },
     .spec_eth = {
       .type   = IBV_FLOW_SPEC_ETH,
-      .size   = sizeof(flow.spec_eth),
+      .size   = sizeof(sniffer_flow.spec_eth),
     },
     .spec_ipv4 = {
       .type   = IBV_FLOW_SPEC_IPV4,
-      .size   = sizeof(flow.spec_ipv4),
+      .size   = sizeof(sniffer_flow.spec_ipv4),
     },
     .spec_tcp_udp = {
       .type   = IBV_FLOW_SPEC_UDP,
-      .size   = sizeof(flow.spec_tcp_udp),
-      // .val.dst_port = htobe16(dst_port),
-      // .mask.dst_port = 0xffff,
+      .size   = sizeof(sniffer_flow.spec_tcp_udp),
+      .val.dst_port = htobe16(sniffer_flag),
+      .mask.dst_port = sniffer_flag >= 1024 ? 0xffff : 0x0,
     }
   };
 
-  memcpy(flow.spec_eth.val.dst_mac, hibv_ctx->mac, 6);
-  memset(flow.spec_eth.mask.dst_mac, 0xff, 6);
+  if(sniffer_flag > 1) {
+    hashpipe_info(
+      __FUNCTION__,
+      "Masked sniffer ibv_flow to destination MAC %02X:%02X:%02X:%02X:%02X:%02X",
+      hibv_ctx->mac[0],
+      hibv_ctx->mac[1],
+      hibv_ctx->mac[2],
+      hibv_ctx->mac[3],
+      hibv_ctx->mac[4],
+      hibv_ctx->mac[5]
+    );
+    sniffer_flow.attr.num_of_specs = 1;
+    memcpy(sniffer_flow.spec_eth.val.dst_mac, hibv_ctx->mac, 6);
+    memset(sniffer_flow.spec_eth.mask.dst_mac, 0xff, 6);
+  }
+  if(sniffer_flag >= 49152) {
+    hashpipe_info(__FUNCTION__, "Masked sniffer ibv_flow to ephemeral port %d (in range [49152, 65535]).", sniffer_flag);
+    sniffer_flow.attr.num_of_specs = 3;
+  }
 
-  return ibv_create_flow(hibv_ctx->qp[0], (struct ibv_flow_attr *) &flow);
+  return ibv_create_flow(hibv_ctx->qp[0], (struct ibv_flow_attr*) &sniffer_flow);
 }
 
 // Destroy sniffer flow
@@ -761,30 +691,6 @@ int debug_i=0, debug_j=0;
   }
   hashpipe_status_unlock_safe(st);
 
-  if(sniffer_flag == 1) {
-    if(!(sniffer_flow = create_sniffer_flow(hibv_ctx))) {
-      hashpipe_error(thread_name, "create_sniffer_flow failed");
-      errno = 0;
-      sniffer_flag = -1;
-    } else {
-      hashpipe_info(thread_name, "create_sniffer_flow succeeded");
-    }
-  }
-  else if(sniffer_flag == 2) {
-    if(!(sniffer_flow = create_macsniffer_flow(hibv_ctx))) {
-      hashpipe_error(thread_name, "create_macsniffer_flow failed");
-      errno = 0;
-      sniffer_flag = -1;
-    } else {
-      hashpipe_info(thread_name, "create_macsniffer_flow succeeded");
-    }
-  } else {
-    hashpipe_info(thread_name, "macsniffer_flow disabled");
-  }
-
-  // Initialize ts_start with current time
-  clock_gettime(CLOCK_MONOTONIC_RAW, &ts_start);
-
   // Main loop
   while (run_threads()) {
     hibv_rpkt = hashpipe_ibv_recv_pkts(hibv_ctx, 50); // 50 ms timeout
@@ -814,23 +720,15 @@ int debug_i=0, debug_j=0;
       pkts_received = 0;
 
       // Manage sniffer_flow as needed
-      if(sniffer_flag == 1 && !sniffer_flow) {
-        if(!(sniffer_flow = create_sniffer_flow(hibv_ctx))) {
+      if(sniffer_flag > 0 && !sniffer_flow) {
+        if(!(sniffer_flow = create_sniffer_flow(hibv_ctx, sniffer_flag))) {
           hashpipe_error(thread_name, "create_sniffer_flow failed");
           errno = 0;
           sniffer_flag = -1;
         } else {
           hashpipe_info(thread_name, "create_sniffer_flow succeeded");
         }
-      } else if (sniffer_flag == 2 && !sniffer_flow) {
-        if(!(sniffer_flow = create_macsniffer_flow(hibv_ctx))) {
-          hashpipe_error(thread_name, "create_macsniffer_flow failed");
-          errno = 0;
-          sniffer_flag = -1;
-        } else {
-          hashpipe_info(thread_name, "create_macsniffer_flow succeeded");
-        }
-      } else if (sniffer_flag < 1 && sniffer_flag > 2 && sniffer_flow) {
+      } else if (sniffer_flag == 0 && sniffer_flow) {
         if(destroy_sniffer_flow(sniffer_flow)) {
           hashpipe_error(thread_name, "destroy_sniffer_flow failed");
           errno = 0;

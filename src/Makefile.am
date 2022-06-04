@@ -19,6 +19,8 @@ hpguppi_databuf = hpguppi_databuf.h \
 hpguppi_support = hpguppi_atasnap.h \
 		  hpguppi_atasnap.c \
 		  hpguppi_params.c \
+		  hpguppi_pktbuf.h \
+		  hpguppi_pktbuf.c \
  		  hpguppi_rawspec.h \
  		  hpguppi_rawspec.c \
 		  hpguppi_time.h   \
@@ -35,16 +37,23 @@ hpguppi_support = hpguppi_atasnap.h \
 
 libsla_support = slalib.h sla.c f77.h
 
-hpguppi_threads = hpguppi_ibverbs_pkt_thread.c \
+hpguppi_threads = \
 		hpguppi_ata_ibv_payload_order_thread.c \
 		hpguppi_atasnap_obs_rawdisk_thread.c \
 		hpguppi_ata_fildisk_thread.c \
 		mysigproc/mysigproc_utils.c
 
+if IBVERBS_ENABLED
+hpguppi_daq_la_LIBADD = -lhashpipe_ibverbs
+hpguppi_threads += hpguppi_ibverbs_pkt_thread.c
+else
+hpguppi_daq_la_LIBADD = -lhashpipe
+endif
+
 # This is the hpguppi_daq plugin
 lib_LTLIBRARIES = hpguppi_daq.la
 hpguppi_daq_la_SOURCES  = $(hpguppi_databuf) $(hpguppi_support) $(libsla_support) $(hpguppi_threads)
-hpguppi_daq_la_LIBADD   = -lsla -lrt -lrawspec -lhashpipe_ibverbs
+hpguppi_daq_la_LIBADD  += -lsla -lrt -lrawspec
 hpguppi_daq_la_CFLAGS 	= $(AM_CFLAGS) -I"@RAWSPEC_INCDIR@"
 hpguppi_daq_la_LDFLAGS  = -avoid-version -module -shared -export-dynamic
 hpguppi_daq_la_LDFLAGS += -L"@LIBSLADIR@" -Wl,-rpath,"@LIBSLADIR@"

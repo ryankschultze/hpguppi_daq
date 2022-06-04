@@ -37,10 +37,10 @@
 #include "hpguppi_time.h"
 #include "hpguppi_util.h"
 #include "hpguppi_atasnap.h"
-#include "hpguppi_ibverbs_pkt_thread.h"
+#include "hpguppi_pktbuf.h"
 
 #include <omp.h>
-#define ATA_IBV_FOR_PACKET_THREAD_COUNT 12
+#define ATA_IBV_FOR_PACKET_THREAD_COUNT 8
 #define ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT 1
 #define ATA_IBV_THREAD_COUNT ATA_IBV_FOR_PACKET_THREAD_COUNT*ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT
 
@@ -192,43 +192,22 @@ int debug_i=0, debug_j=0;
   const char * thread_name = args->thread_desc->name;
   const char * status_key = args->thread_desc->skey;
 
-  // Max flows allowed (optionally from hpguppi_ibvpkt_thread via status
-  // buffer)
-  uint32_t max_flows = 16;
-  // NIC to listen on
-  char interface_name[IFNAMSIZ] = {0};
-  // MAC of the NIC
-  uint8_t interface_mac[6] = {0};
   // Port to listen on
-  uint32_t port = 10000;
+  uint32_t bindport = 0; // zero leads to no sniffer_flow being created
 
   // Update status_key with idle state and get max_flows, port
   hashpipe_status_lock_safe(st);
   {
     hputs(st->buf, status_key, "listen");
-    hgetu4(st->buf, "MAXFLOWS", &max_flows);
-    hgetu4(st->buf, "BINDPORT", &port);
-    // Store bind port in status buffer (in case it was not there before).
-    hputu4(st->buf, "BINDPORT", port);
-    // Store NIC interface name in order to query its MAC with hashpipe_ibv_get_interface_info
-    hgets(st->buf,  "IBVIFACE",
-        sizeof(interface_name), interface_name);
-    if(interface_name[0] == '\0') {
-      hgets(st->buf,  "BINDHOST",
-          sizeof(interface_name), interface_name);
-      if(interface_name[0] == '\0') {
-        strcpy(interface_name, "eth4");
-        hputs(st->buf, "IBVIFACE", interface_name);
-      }
+    hgetu4(st->buf, "BINDPORT", &bindport);
+    if(bindport == 0) {
+      hashpipe_warn(thread_name, "No ibv_flow will be created.");
     }
+
+    // Store bind port in status buffer (in case it was not there before).
+    hputu4(st->buf, "BINDPORT", bindport);
   }
   hashpipe_status_unlock_safe(st);
-
-  // Make sure we got a non-zero max_flows
-  if(max_flows == 0) {
-    hashpipe_error(thread_name, "MAXFLOWS must be non-zero!");
-    return NULL;
-  }
 
   // Misc counters, etc
   int rv=0;
@@ -389,29 +368,14 @@ int debug_i=0, debug_j=0;
     hashpipe_warn(thread_name, "The slots per block (%lu) should be a multiple of the parallelism (%d) for optimal performance.", slots_per_block, ATA_IBV_THREAD_COUNT);
   }
 
-  if(hashpipe_ibv_get_interface_info(interface_name, interface_mac, NULL)) {
-    hashpipe_error(interface_name, "error getting interace info");
-    errno = 0;
-    return NULL;
-  }
-
-  hashpipe_info(thread_name, "IBV Flow Destination MAC: %02X:%02X:%02X:%02X:%02X:%02X", interface_mac[0], interface_mac[1], interface_mac[2], interface_mac[3], interface_mac[4], interface_mac[5]);
-  if(hpguppi_ibvpkt_flow(dbin, 0, IBV_FLOW_SPEC_UDP,
-        interface_mac, NULL, 0, 0,
-        0, 0, 0, port))
-  {
-    hashpipe_error(thread_name, "hashpipe_ibv_flow error: (errno %d)", errno);
-    hashpipe_info(thread_name, "exiting!");
-    pthread_exit(NULL);
-
-    return NULL;
-  }
-
   hashpipe_status_lock_safe(st);
   {
     hputi4(st->buf, "NETTHRDS", ATA_IBV_THREAD_COUNT);
+    // trigger creation of sniffer ibv_flow (0 leads to no sniffer_flow being created)
+    hputi4(st->buf, "IBVSNIFF", bindport);
   }
   hashpipe_status_unlock_safe(st);
+
   #if ATA_IBV_TRANSPOSE_PACKET_THREAD_COUNT > 1 && ATA_IBV_FOR_PACKET_THREAD_COUNT > 1
     omp_set_nested(1);
   #endif
