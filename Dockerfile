@@ -48,9 +48,9 @@ COPY . /work/hpguppi_daq
 WORKDIR /work
 ## Hashpipe
 RUN cd /work \
-&& git clone https://github.com/MydonSolutions/hashpipe \
+&& git clone -b seti https://github.com/MydonSolutions/hashpipe \
 && cd hashpipe/src \
-&& git checkout ae6c1541a1000f921ba1e0d5aafee6be6f8a8740 \
+&& git checkout 81a79e626d4fe78f3f7cc6209be45b8569fae42d \
 && autoreconf -is \
 && ./configure \
 && make

@@ -8,8 +8,9 @@
 This is foundational of course.
 
 ```
-$ git clone -b 44b432af3c88ff6ccd224f526ac2b06674af04a8 https://github.com/david-macmahon/hashpipe
+$ git clone -b seti https://github.com/MydonSolutions/hashpipe
 $ cd hashpipe
+$ git checkout 81a79e626d4fe78f3f7cc6209be45b8569fae42d
 $ autoreconf -is && ./configure && make
 ```
 
