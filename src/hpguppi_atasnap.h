@@ -198,15 +198,16 @@
 #include <string.h>
 #include <pthread.h>
 #include "hashpipe.h"
-#include "hpguppi_xgpu_databuf.h"
 #include "hpguppi_time.h"
 #include "hpguppi_util.h"
 #include "hashpipe_packet.h"
 
 #if ATA_PAYLOAD_TRANSPOSE == ATA_PAYLOAD_TRANSPOSE_FTP
+#include "hpguppi_databuf.h"
 #define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_databuf_create
 #define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_databuf
 #else
+#include "hpguppi_xgpu_databuf.h"
 #define ATA_IBV_OUT_DATABUF_CREATE hpguppi_input_xgpu_databuf_create
 #define ATA_IBV_OUT_DATABUF_T struct hpguppi_input_xgpu_databuf
 #endif
