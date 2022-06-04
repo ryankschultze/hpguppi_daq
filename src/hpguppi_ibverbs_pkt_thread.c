@@ -891,7 +891,6 @@ int debug_i=0, debug_j=0;
       base_addr = (uint64_t)hpguppi_pktbuf_block_slot_ptr(db, next_block, next_slot);
       for(i=0; i<num_chunks; i++) {
         curr_rpkt->wr.sg_list[i].addr = base_addr + chunks[i].chunk_offset;
-        curr_rpkt->wr.sg_list[i].lkey = hibv_ctx->recv_mr->lkey;
       }
 
       // Advance slot
