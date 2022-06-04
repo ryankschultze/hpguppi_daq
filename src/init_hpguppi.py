@@ -1,4 +1,4 @@
-#!/home/sonata/miniconda3/bin/python
+#!/usr/bin/env python3
 import argparse
 import os, sys
 import yaml
