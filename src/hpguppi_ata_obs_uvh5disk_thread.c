@@ -98,6 +98,7 @@ static void *run(hashpipe_thread_args_t * args)
   double dut1 = 0.0;
   double tau;
   double chan_bw, obs_freq;
+  int npols, nants;
   size_t xgpu_output_elements;
 
   /* Misc counters, etc */
@@ -125,8 +126,13 @@ static void *run(hashpipe_thread_args_t * args)
   time_t curtime = 0;
   char timestr[32] = {0};
 
+  char* token;
   char tel_info_toml_filepath[70] = {'\0'};
-  char obs_info_toml_filepath[70] = {'\0'};
+  char antenna_names_csv[70] = {'\0'};
+  char polarizations_list[3] = {'\0'};
+  char antnames_key[9] = {'\0'};
+  UVH5_inputpair_t* inputpairs;
+  int inputpairs_index;
 
   uint32_t blocks_per_second = 0;
 
@@ -284,18 +290,65 @@ static void *run(hashpipe_thread_args_t * args)
           // set header scalar data
           hgeti4(datablock_header, "NCHAN", &uvh5_header->Nfreqs);
           hgetr8(datablock_header, "CHAN_BW", &chan_bw);
+          hgeti4(datablock_header, "NPOL", &npols);
+          hgeti4(datablock_header, "NANTS", &nants);
           hgetr8(datablock_header, "OBSFREQ", &obs_freq);
-          hgets(datablock_header, "UVH5TELP", 70, tel_info_toml_filepath);
-          hgets(datablock_header, "UVH5OBSP", 70, obs_info_toml_filepath);
+          hgets(datablock_header, "UVH5TELP", 71, tel_info_toml_filepath);
+          hgets(datablock_header, "POLS", npols+1, polarizations_list);
           uvh5_header->Nspws = 1;
           uvh5_header->Ntimes = 0; // initially
           uvh5_header->Nblts = 0; // uvh5_header->Nbls * uvh5_header->Ntimes;
+          uvh5_header->Npols = npols*npols; // uvh5_header->Npols is the pol-products
+          uvh5_header->Nants_data = nants;
+          uvh5_header->Nbls = (uvh5_header->Nants_data*(uvh5_header->Nants_data+1))/2;
+          UVH5Halloc(uvh5_header);
+
+          hashpipe_info(thread_name, "polarizations_list: %s", polarizations_list);
+          // populate pol-product array
+          char pol_product[3] = {'\0'};
+          for (size_t i = 0; i < npols; i++) {
+            pol_product[0] = polarizations_list[i];
+            for (size_t j = 0; j < npols; j++) {
+              pol_product[1] = polarizations_list[j];
+              uvh5_header->polarization_array[i*2+j] = UVH5polarisation_string_key(pol_product, npols);
+              hashpipe_info(thread_name, "pol_product: %s:%d", pol_product, uvh5_header->polarization_array[i*2+j]);
+            }
+          }
 
           hashpipe_info(thread_name, "Parsing '%s' as Telescope information.", tel_info_toml_filepath);
           UVH5toml_parse_telescope_info(tel_info_toml_filepath, uvh5_header);
-          hashpipe_info(thread_name, "Parsing '%s' as Observation information.", obs_info_toml_filepath);
-          UVH5toml_parse_observation_info(obs_info_toml_filepath, uvh5_header);
+ 
+          inputpairs = malloc(nants*npols*sizeof(UVH5_inputpair_t));
+          inputpairs_index = 0;
+          for(int antnames_index = 0; inputpairs_index < nants*npols; antnames_index++) {
+            snprintf(antnames_key, 9, "ANTNMS%02d", antnames_index%100);
+            antenna_names_csv[0] = '\0';
+            hgets(datablock_header, antnames_key, 71, antenna_names_csv);
+            if(antenna_names_csv[0] == '\0') {
+              hashpipe_warn(thread_name, "No such key '%s' while inputpairs_index (%d) < nants*npols (%d)!", antnames_key, inputpairs_index, nants*npols);
+              break;
+            }
+            
+            token = strtok(antenna_names_csv,",");
+            while(token != NULL && inputpairs_index < nants*npols) {
+              
+              const int strlength = strlen(token);
+              for(int p = 0; p < npols; p++){
+                inputpairs[inputpairs_index].antenna = malloc(strlength+1);
+                strncpy(inputpairs[inputpairs_index].antenna, token, strlength+1);
+                inputpairs[inputpairs_index++].polarization = polarizations_list[p];
+              }
+              token = strtok(NULL, ",");
+            }
+          }
+
+          UVH5parse_input_map(uvh5_header, inputpairs);
           UVH5Hadmin(uvh5_header);
+          
+          for(i = 0; i < nants*npols; i++) {
+            free(inputpairs[i].antenna);
+          }
+          free(inputpairs);
 
           uvh5_header->spw_array[0] = 1;
           obs_freq -= uvh5_header->Nfreqs*chan_bw/2;
