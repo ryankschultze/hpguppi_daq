@@ -19,8 +19,6 @@ $ autoreconf -is && ./configure && make
 
 Hpguppi_daq currently expects this for certain files that aren't always in use:
 - hpguppi_rawspec # support
-- hpguppi_fildisk_only_thread # Legacy
-- hpguppi_rawdisk_thread # Legacy
 - hpguppi_ata_fildisk_thread # Contemporary filterbank output
 
 ```

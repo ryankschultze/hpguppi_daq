@@ -76,31 +76,32 @@ RUN cd /work \
 && make libsla.so
 
 ## UVH5C99
-RUN cd /work \
-&& git clone https://github.com/MydonSolutions/uvh5c99 \
-&& cd uvh5c99 \
-&& git submodule update --init \
-&& meson build \
-&& cd build \
-&& ninja
+## without UVH5C99 as only xgpu-correlator mode uses it (and there is a static dependency there)
+# RUN cd /work \
+# && git clone https://github.com/MydonSolutions/uvh5c99 \
+# && cd uvh5c99 \
+# && git submodule update --init \
+# && meson build \
+# && cd build \
+# && ninja
 
 ## XGPU
-RUN cd /work \
-&& git clone https://github.com/GPU-correlators/xGPU \
-&& cd xGPU/src \
-&& make clean \
-&& make NTIME=32768 NTIME_PIPE=128 NPOL=2 NFREQUENCY=512 NSTATION=16 CUDA_ARCH=sm_86 DP4A=yes
+## without xgpu due to container lacking gpu
+# RUN cd /work \
+# && git clone https://github.com/GPU-correlators/xGPU \
+# && cd xGPU/src \
+# && make clean \
+# && make NTIME=32768 NTIME_PIPE=128 NPOL=2 NFREQUENCY=512 NSTATION=16 CUDA_ARCH=sm_86 DP4A=yes
 
 ## BLADE
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH}
-ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LIBRARY_PATH}
-RUN cd /work \
-&& git clone https://github.com/luigifcruz/blade \
-&& cd blade \
-&& git submodule update --init \
-&& CC=gcc-10 CXX=g++-10 meson build -Dprefix=${PWD}/install \
-&& cd build \
-&& ninja install
+## without blade due to container lacking gpu
+# RUN cd /work \
+# && git clone https://github.com/luigifcruz/blade \
+# && cd blade \
+# && git submodule update --init \
+# && CC=gcc-10 CXX=g++-10 meson build -Dprefix=${PWD}/install \
+# && cd build \
+# && ninja install
 
 ## Hpguppi_daq
 RUN cd /work/hpguppi_daq/src \
@@ -110,14 +111,15 @@ RUN cd /work/hpguppi_daq/src \
     --with-sla-lib=/work/pyslalib \
     --with-hashpipe=/work/hashpipe/src/.libs \
     --with-cuda-include=/usr/local/cuda-11.4.1/include \
-    --with-xgpu=/work/xGPU/src \
-    --with-uvh5=/work/uvh5c99/build \
     --with-rawspec=/work/rawspec \
-    --with-blade=/work/blade/install \
 && make
+#   --with-uvh5=/work/uvh5c99/build \
+#   --with-xgpu=/work/xGPU/src \ # without xgpu due to container lacking gpu
+#   --with-blade=/work/blade/install \ # without blade due to container lacking gpu
 
 ## RB-HASHPIPE
 RUN cd /work \
+&& gem install redis \
 && git clone https://github.com/david-macmahon/rb-hashpipe \
 && cd rb-hashpipe \
 && rake package \
