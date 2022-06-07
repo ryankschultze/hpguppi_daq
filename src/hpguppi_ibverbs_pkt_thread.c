@@ -519,6 +519,9 @@ update_status_buffer(hashpipe_status_t *st, int nfull, int nblocks,
     if(*sniffer_flag > -1) {
       hgeti4(st->buf, "IBVSNIFF", sniffer_flag);
     }
+    else {
+      hputi4(st->buf, "IBVSNIFF", *sniffer_flag);
+    }
   }
   hashpipe_status_unlock_safe(st);
 }
