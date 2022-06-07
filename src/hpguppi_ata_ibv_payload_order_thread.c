@@ -94,6 +94,8 @@ static int init(hashpipe_thread_args_t *args)
   double tbin=1e-6;
   char obs_mode[80] = {0};
   struct rlimit rlim;
+  // Port to listen on
+  uint32_t bindport = 0; // zero leads to no sniffer_flow being created
 
   strcpy(obs_mode, "RAW");
 
@@ -127,6 +129,8 @@ static int init(hashpipe_thread_args_t *args)
   hashpipe_status_lock_safe(st);
   {
     // Get info from status buffer if present (no change if not present)
+    hgetu4(st->buf, "BINDPORT", &bindport);
+
     hgeti4(st->buf, "BLOCSIZE", &blocsize);
     hgeti4(st->buf, "DIRECTIO", &directio);
     hgeti4(st->buf, "NANTS", &nants);
@@ -172,6 +176,14 @@ static int init(hashpipe_thread_args_t *args)
     hputs(st->buf, status_key, "init");
     hputu8(st->buf, "PKTSTART", 0);
     hputu8(st->buf, "PKTSTOP", 0);
+
+    // Store bind port in status buffer (in case it was not there before).
+    hputu4(st->buf, "BINDPORT", bindport);
+    
+    if(bindport > 0) {
+      hashpipe_info(thread_name, "Setting IBVSNIFF to BINDPORT to trigger sniffer ibv_flow creation.");
+      hputi4(st->buf, "IBVSNIFF", bindport);
+    }
   }
   hashpipe_status_unlock_safe(st);
 
@@ -192,20 +204,10 @@ int debug_i=0, debug_j=0;
   const char * thread_name = args->thread_desc->name;
   const char * status_key = args->thread_desc->skey;
 
-  // Port to listen on
-  uint32_t bindport = 0; // zero leads to no sniffer_flow being created
-
-  // Update status_key with idle state and get max_flows, port
+  // Update status_key with idle state
   hashpipe_status_lock_safe(st);
   {
     hputs(st->buf, status_key, "listen");
-    hgetu4(st->buf, "BINDPORT", &bindport);
-    if(bindport == 0) {
-      hashpipe_warn(thread_name, "No ibv_flow will be created.");
-    }
-
-    // Store bind port in status buffer (in case it was not there before).
-    hputu4(st->buf, "BINDPORT", bindport);
   }
   hashpipe_status_unlock_safe(st);
 
@@ -371,8 +373,6 @@ int debug_i=0, debug_j=0;
   hashpipe_status_lock_safe(st);
   {
     hputi4(st->buf, "NETTHRDS", ATA_IBV_THREAD_COUNT);
-    // trigger creation of sniffer ibv_flow (0 leads to no sniffer_flow being created)
-    hputi4(st->buf, "IBVSNIFF", bindport);
   }
   hashpipe_status_unlock_safe(st);
 
@@ -510,7 +510,7 @@ int debug_i=0, debug_j=0;
           hputr4(st->buf, "NETBLKMS",
               round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
 
-          buf_full = hpguppi_ata_ibv_output_databuf_total_status(dbout);
+          buf_full = hpguppi_databuf_total_status(dbout);
           sprintf(buf_status, "%d/%d", buf_full, dbout->header.n_block);
           hputs(st->buf, "NETBUFST", buf_status);
         }
