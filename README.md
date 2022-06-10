@@ -22,7 +22,7 @@ Hpguppi_daq currently expects this for certain files that aren't always in use:
 - hpguppi_ata_fildisk_thread # Contemporary filterbank output
 
 ```
-$ git clone -b floating_point https://github.com/MydonSolutions/rawspec
+$ git clone -b seti https://github.com/MydonSolutions/rawspec
 $ cd rawspec
 $ make
 ```

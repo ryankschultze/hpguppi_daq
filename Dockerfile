@@ -55,17 +55,10 @@ RUN cd /work \
 && ./configure \
 && make
 
-## Rawspec: CUDA samples for helper_cuda.h
-RUN cd /usr/local/cuda \
-&& git clone https://github.com/NVIDIA/cuda-samples.git samples \
-&& cd samples \
-&& mkdir common \
-&& cp -r Common common/inc
-
 ## Rawspec
 ENV CUDA_ROOT=/usr/local/cuda
 RUN cd /work \
-&& git clone -b floating_point https://github.com/MydonSolutions/rawspec \
+&& git clone -b seti https://github.com/MydonSolutions/rawspec \
 && cd rawspec \
 && make
 
