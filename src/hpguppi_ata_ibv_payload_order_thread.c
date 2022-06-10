@@ -146,7 +146,6 @@ static int init(hashpipe_thread_args_t *args)
     // Prevent div-by-zero errors (should never happen...)
     if(nants == 0) {
       nants = 1;
-      hputi4(st->buf, "NANTS", nants);
     }
 
     // If CHAN_BW is zero, set to default value (1 MHz)
@@ -162,6 +161,7 @@ static int init(hashpipe_thread_args_t *args)
     hputs(st->buf, "DAQSTATE", "LISTEN");
     hputi4(st->buf, "BLOCSIZE", blocsize);
     hputi4(st->buf, "DIRECTIO", directio);
+    hputi4(st->buf, "NANTS", nants);
     hputi4(st->buf, "NBITS", nbits);
     hputi4(st->buf, "NPOL", npol);
     hputr8(st->buf, "OBSBW", obsbw);
@@ -181,7 +181,7 @@ static int init(hashpipe_thread_args_t *args)
     hputu4(st->buf, "BINDPORT", bindport);
     
     if(bindport > 0) {
-      hashpipe_info(thread_name, "Setting IBVSNIFF to BINDPORT to trigger sniffer ibv_flow creation.");
+      hashpipe_info(thread_name, "Setting IBVSNIFF to BINDPORT (%d) to trigger sniffer ibv_flow creation.", bindport);
       hputi4(st->buf, "IBVSNIFF", bindport);
     }
   }
