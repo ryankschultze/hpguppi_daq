@@ -40,6 +40,7 @@ libsla_support = slalib.h sla.c f77.h
 hpguppi_threads = \
 		hpguppi_ata_ibv_payload_order_thread.c \
 		hpguppi_atasnap_obs_rawdisk_thread.c \
+		guppiraw_ibv_packetize_thread.c \
 		hpguppi_ata_fildisk_thread.c \
 		mysigproc/mysigproc_utils.c
 
