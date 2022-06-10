@@ -317,10 +317,11 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
   // Get any obs info from status buffer, store values
   hashpipe_status_lock_safe(st);
   {
+    hgetu4(st->buf, "BLOCSIZE", &obs_info->eff_block_size);
     // Read (no change if not present)
     hgetu4(st->buf, "FENCHAN",  &obs_info->fenchan);
     hgetu4(st->buf, "NANTS",    &obs_info->nants);
-    hgetu4(st->buf, "NCHAN",    &obs_info->nchan);
+    hgetu4(st->buf, "OBSNCHAN", &obs_info->nchan);
     hgetu4(st->buf, "NPOL",     &obs_info->pkt_npol);
     hgetu4(st->buf, "NBITS",    &obs_info->time_nbits);
     hgetu4(st->buf, "PKTNTIME", &obs_info->pkt_ntime);
@@ -329,6 +330,7 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
     hgetr8(st->buf, "OBSBW",    &obs_info->obs_bw);
   }
   hashpipe_status_unlock_safe(st);
+  obs_info->nchan /= obs_info->nants;
 
   // if no change in obs_info
   if (*validity != OBS_UNKNOWN &&
@@ -346,7 +348,7 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
     return 0;
   }
   else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
-    ata_snap_populate_block_related_fields(BLOCK_DATA_SIZE, obs_info);
+    ata_snap_populate_block_related_fields(obs_info->eff_block_size, obs_info);
     *validity = OBS_SEEMS_VALID;
     return 1;
   } else { // if change in obs_info and obs_info seems invalid
