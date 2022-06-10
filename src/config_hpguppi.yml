@@ -28,13 +28,13 @@ ata:
     - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/home/sonata/dev/hdf5_tests/build:/lib/x86_64-linux-gnu/:/opt/mnt/lib
   options:
     - ibv:
-        - HPCONFIG=IBV->FTP->DISK
+        - HPCONFIG=IBV-FTP-DISK
         - PROJID=dmpauto
       ibv_blade:
-        - HPCONFIG=IBV->FTP->BLADE->DISK
+        - HPCONFIG=IBV-FTP-BLADE-DISK
         - PROJID=blade
       ibv_xgpu:
-        - HPCONFIG=IBV->TFP_DP4A->xGPU->UVH5
+        - HPCONFIG=IBV-TFP_DP4A-xGPU-UVH5
         - BACKEND=UVH5
         - PROJID=xGPU
         - UVH5TELP=/opt/mnt/share/telinfo_ata.toml
@@ -43,7 +43,7 @@ ata:
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
-    - BINDPORT=10000
+    - BINDPORT=50000
     - TELESCOP=ATA
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
@@ -113,21 +113,21 @@ dev:
     - LD_LIBRARY_PATH=/home/sonata/src/hashpipe/src/.libs:/home/sonata/dev/hdf5_tests/build:/lib/x86_64-linux-gnu/:/opt/mnt/lib
   options:
     - xgpu:
-        - HPCONFIG=DEV_IBV->TFPDP4A->XGPU->UVH5
+        - HPCONFIG=DEV_IBV-TFPDP4A-XGPU-UVH5
         - BACKEND=UVH5
         - PROJID=xGPU
         - UVH5TELP=/opt/mnt/share/telinfo_ata.toml
         - UVH5OBSP=/opt/mnt/share/obsinfo.toml
         - XGPUINT=8
       ibv_blade_b:
-        - HPCONFIG=DEV_IBV->FTP->BLADE_B->RAW
+        - HPCONFIG=DEV_IBV-FTP-BLADE_B-RAW
         - PROJID=blade
         - BACKEND=GUPPI
         - TELINFOP=/opt/mnt/share/telinfo_ata.toml
         - OBSINFOP=/opt/mnt/share/obsinfo.toml
         - CALWGHTP=/opt/mnt/share/ant_weights_1+0j.bin
       ibv_blade_a:
-        - HPCONFIG=DEV_IBV->FTP->BLADE_A->FIL
+        - HPCONFIG=DEV_IBV-FTP-BLADE_A-FIL
         - PROJID=blade
         - BACKEND=FIL
         - TELINFOP=/opt/mnt/share/telinfo_ata.toml
@@ -137,7 +137,7 @@ dev:
     - IBVPKTSZ=42,16,8208
     # - IBVPKTSZ=42,16,4112
     - CUDADEV=$INSTANCE
-    - BINDPORT=10000
+    - BINDPORT=50000
     - TELESCOP=ATA
   instance_numanode_bind: [0, 1]
   instance_datadir: [/mnt/buf0, /mnt/buf1]
