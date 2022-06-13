@@ -116,7 +116,6 @@ static int init(hashpipe_thread_args_t *args)
 	rlim.rlim_max = (rlim.rlim_max < rlim.rlim_cur ? rlim.rlim_cur : rlim.rlim_max);
   if(setrlimit(RLIMIT_RTPRIO, &rlim)) {
     hashpipe_error(thread_name, "setrlimit(RLIMIT_RTPRIO)");
-    return HASHPIPE_ERR_PARAM;
   }
 
   struct sched_param sched_param = {
