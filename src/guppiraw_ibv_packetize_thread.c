@@ -191,6 +191,7 @@ static int init(hashpipe_thread_args_t *args)
   int guppifile_fd = open(guppifile_path, O_RDONLY);
 
   if (guppifile_fd == -1) {
+    hashpipe_error(thread_name, "Failed to open `RAWSTEM` specified %s.", guppifile_path);
     return HASHPIPE_ERR_PARAM;
   }
 
