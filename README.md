@@ -1,6 +1,15 @@
 # Hashpipe SETI Data Acquisition
 
 ----------------------------------------------
+
+# Dockerfile usage
+
+```
+docker -t hp_daq .
+
+docker run -it --cap-add IPC_LOCK --volume ${PWD}/tests:/mnt/buf0 hp_daq
+```
+
 # Basic library dependencies
 
 ## [Hashpipe](https://github.com/david-macmahon/hashpipe/)
