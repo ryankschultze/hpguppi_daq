@@ -121,7 +121,8 @@ RUN cd /work \
 && gem install \
     --local ./hashpipe-0.6.3.gem -- \
     --with-hashpipe-include=/work/hashpipe/src \
-    --with-hashpipestatus-lib=/work/hashpipe/src/.libs
+    --with-hashpipestatus-lib=/work/hashpipe/src/.libs \
+&& gem install curses
 
 ## Hpguppi_daq
 COPY . /work/hpguppi_daq
