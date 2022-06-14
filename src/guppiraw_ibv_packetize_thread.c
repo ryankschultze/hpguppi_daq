@@ -8,26 +8,12 @@
 // packet data.
 
 #define _GNU_SOURCE 1
-//#include <stdio.h>
-//#include <sys/types.h>
 #include <stdlib.h>
-#include <sched.h>
-#include <math.h>
 #include <unistd.h>
-#include <limits.h>
 #include <string.h>
-#include <time.h>
-#include <pthread.h>
 #include <errno.h>
-#include <sys/stat.h>
 #include <sys/types.h>
 #include <fcntl.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/time.h>
-#include <sys/resource.h>
 
 #include "hashpipe.h"
 #include "hpguppi_databuf.h"
@@ -258,10 +244,10 @@ static int init(hashpipe_thread_args_t *args)
     return HASHPIPE_ERR_PARAM;
   }
   
-  if(pktbuf_info->chunks[2].chunk_size != (pktnchan*pktntime*blockn_pol*2*nbits)/8) {
+  if(pktbuf_info->chunks[2].chunk_size < (pktnchan*pktntime*blockn_pol*2*nbits)/8) {
     hashpipe_error(
       thread_name,
-      "pktbuf_info->chunks[2].chunk_size (%d) != (%d*%d*%d*2*%d/8) pktnchan*pktntime*npol*nbits/8",
+      "pktbuf_info->chunks[2].chunk_size (%d) < (%d*%d*%d*2*%d/8) pktnchan*pktntime*npol*nbits/8",
       pktbuf_info->chunks[2].chunk_size, pktnchan, pktntime, blockn_pol, nbits
     );
     return HASHPIPE_ERR_PARAM;
@@ -286,11 +272,9 @@ static void * run(hashpipe_thread_args_t * args)
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(dbout);
   const struct hpguppi_pktbuf_chunk * chunks = pktbuf_info->chunks;
   const size_t slots_per_block = pktbuf_info->slots_per_block;
-  const uint16_t pktpayload_bytesize = chunks[2].chunk_size;
   uint32_t pktnchan=-1, pktntime=-1;
   
   uint32_t blockn_ant, blockn_freq, blockn_time, blockn_pol;
-  size_t blocktime_stride, atomic_slice, blockfreq_stride, blockant_stride;
   uint16_t blockant_i=0, blockfreq_i=0, blocktime_i=0, blockpol_i=0;
   uint64_t pktidx=0;
   uint32_t schan=0;
@@ -328,10 +312,17 @@ static void * run(hashpipe_thread_args_t * args)
   hashpipe_status_unlock_safe(st);
   blockn_freq /= blockn_ant;
   
-  if(pktpayload_bytesize != (pktnchan*pktntime*blockn_pol*2*nbits)/8) {
-    hashpipe_error(thread_name, "pktpayload_bytesize (%d) != (%d*%d*%d*2*%d/8) pktnchan*pktntime*npol*nbits/8", pktpayload_bytesize, pktnchan, pktntime, blockn_pol, nbits);
-    pthread_exit(NULL);
-    return NULL;
+  if(chunks[2].chunk_size != (pktnchan*pktntime*blockn_pol*2*nbits)/8) {
+    hashpipe_warn(
+      thread_name,
+      "Excessive pktpayload_bytesize is suboptimal: (%d) != (%d = %d*%d*%d*2*%d/8) pktnchan*pktntime*npol*nbits/8",
+        chunks[2].chunk_size,
+        (pktnchan*pktntime*blockn_pol*2*nbits)/8,
+        pktnchan,
+        pktntime,
+        blockn_pol,
+        nbits
+    );
   }
 
   blockn_time = blocsize / ((blockn_ant * blockn_freq * blockn_pol * 2 * nbits)/8);
@@ -351,10 +342,10 @@ static void * run(hashpipe_thread_args_t * args)
 
   // GUPPI RAW data-block is (slowest)[NANT, FREQ, TIME, POL, complex-sample](fastest)
   // RTR
-  blocktime_stride = (blockn_pol * 2 * nbits)/8;
-  atomic_slice = pktntime * blocktime_stride;
-  blockfreq_stride = blockn_time * blocktime_stride;
-  blockant_stride = blockn_ant * blockfreq_stride;
+  const size_t blocktime_stride = (blockn_pol * 2 * nbits)/8;
+  const size_t atomic_slice = pktntime * blocktime_stride;
+  const size_t blockfreq_stride = blockn_time * blocktime_stride;
+  const size_t blockant_stride = blockn_freq * blockfreq_stride;
 
   while(hpguppi_databuf_wait_free(dbout, curblk) == HASHPIPE_TIMEOUT && run_threads());
 
@@ -372,8 +363,10 @@ static void * run(hashpipe_thread_args_t * args)
       lseek(guppifile_fd, 0, SEEK_SET);
 
       uint64_t pktstart=0, pktstop=0;
+      hgetu8(guppifile_header, "PKTIDX", &pktstart);
       hgetu8(guppifile_header, "PKTSTART", &pktstart);
       hgetu8(guppifile_header, "PKTSTOP", &pktstop);
+      hashpipe_info(thread_name, "PKTSTOP: %llu", pktstop);
 
       hashpipe_status_lock_safe(st);
         hputu8(st->buf, "PKTSTART", pktstart);
@@ -400,8 +393,7 @@ static void * run(hashpipe_thread_args_t * args)
         break;
       }
       if(pktidx != raw_hdr.pktidx) {
-        hashpipe_error(thread_name, "PKTIDX jumped from %llu to %llu.", pktidx, raw_hdr.pktidx);
-        pktidx = raw_hdr.pktidx;
+        hashpipe_error(thread_name, "PKTIDX %llu is not the expected %llu. Ignoring this.", raw_hdr.pktidx, pktidx);
       }
       
       // store block-data start
