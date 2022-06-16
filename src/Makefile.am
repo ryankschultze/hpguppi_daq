@@ -41,7 +41,6 @@ hpguppi_threads = \
 		hpguppi_ata_ibv_payload_order_thread.c \
 		hpguppi_atasnap_obs_rawdisk_thread.c \
 		guppiraw_ibv_packetize_thread.c \
-		hpguppi_ata_fildisk_thread.c \
 		mysigproc/mysigproc_utils.c
 
 if IBVERBS_ENABLED
@@ -100,6 +99,7 @@ hpguppi_databuf += \
 		hpguppi_blade_databuf.h
 
 hpguppi_threads += \
+		hpguppi_ata_fildisk_thread.c \
 		hpguppi_ata_blade_beamformer_thread.c \
 		hpguppi_ata_blade_obs_rawdisk_thread.c
 
