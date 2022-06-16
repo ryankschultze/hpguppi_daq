@@ -26,8 +26,6 @@ RUN cd /work \
 
 ## Primary builds
 FROM ubuntu:20.04
-## Rawspec
-COPY --from=rawspec_builder /work/rawspec /work/rawspec
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -124,12 +122,18 @@ RUN cd /work \
     --with-hashpipestatus-lib=/work/hashpipe/src/.libs \
 && gem install curses
 
+## Rawspec
+COPY --from=rawspec_builder /work/rawspec /work/rawspec
+
 ## Hpguppi_daq
 COPY . /work/hpguppi_daq
 RUN cd /work/hpguppi_daq/src \
 && git submodule update --init \
+&& rm -rf install-sh libtool ltmain.sh install-sh depcomp configure config.* aclocal.m4 compile automa4te.cache/ missing Makefile Makefile.in \
 && autoreconf -is \
-&& CXX=g++-10 ./configure \
+&& mkdir ../build \
+&& cd ../build \
+&& CXX=g++-10 ../src/configure \
     --with-sla-lib=/work/pyslalib \
     --with-hashpipe=/work/hashpipe/src/.libs \
     --with-cuda-include=/usr/local/cuda-11.4.1/include \
