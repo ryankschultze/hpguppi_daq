@@ -32,6 +32,7 @@ COPY --from=rawspec_builder /work/rawspec /work/rawspec
 ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update -y && apt-get install -y \
+    libpq-dev \
 # AUTOMAKE
     automake \
     autoconf \
@@ -128,13 +129,13 @@ RUN cd /work \
 COPY . /work/hpguppi_daq
 RUN cd /work/hpguppi_daq/src \
 && git submodule update --init \
-&& autoreconf -is \
-&& CXX=g++-10 ./configure \
-    --with-sla-lib=/work/pyslalib \
-    --with-hashpipe=/work/hashpipe/src/.libs \
-    --with-cuda-include=/usr/local/cuda-11.4.1/include \
-    --with-rawspec=/work/rawspec \
-&& make
+&& autoreconf -is 
+# && CXX=g++-10 ./configure \
+#     --with-sla-lib=/work/pyslalib \
+#     --with-hashpipe=/work/hashpipe/src/.libs \
+#     --with-cuda-include=/usr/local/cuda-11.4.1/include \
+#     --with-rawspec=/work/rawspec \
+# && make
 #   --with-uvh5=/work/uvh5c99/build \
 #   --with-xgpu=/work/xGPU/src \ # without xgpu due to container lacking gpu
 #   --with-blade=/work/blade/install \ # without blade due to container lacking gpu
