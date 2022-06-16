@@ -1,0 +1,15 @@
+version: "3"
+services:
+  hp_daq: #docker run -it -v ${PWD}/test:/mnt/buf0 -v ${PWD}/src:/work/hpguppi_daq/src hp_daq /bin/sh
+    container_name: hp_daq
+    build: .
+    entrypoint: /bin/sh
+    stdin_open: true
+    tty: true
+    volumes:
+    - ./test/:/mnt/buf0
+    - ./src:/work/hpguppi_daq/src
+    environment:
+      # for hashpipe_status_monitor.rb
+      LD_LIBRARY_PATH: /work/hashpipe/src/.libs
+      HASHPIPE_KEYFILE: /work
