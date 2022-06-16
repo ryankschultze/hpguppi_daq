@@ -21,8 +21,15 @@ AS_VAR_SET_IF(CFLAGS,[],[CFLAGS=])
 AC_PROG_CC
 AC_PROG_CXX
 
-# Check processor flags
-AX_CHECK_X86_FEATURES
+# Check processor flags, set empty X86_FEATURE_CFLAGS if not x86 arch
+AC_RUN_IFELSE(
+    [AC_LANG_PROGRAM([#include <stdlib.h>],
+        [__builtin_cpu_init ();]
+    )],
+    [AX_CHECK_X86_FEATURES],
+    [X86_FEATURE_CFLAGS=]
+)
+
 AM_CONDITIONAL([HAVE_AVX512F],
                [test "x$ax_cv_gcc_x86_cpu_supports_avx512f" = xyes])
 
