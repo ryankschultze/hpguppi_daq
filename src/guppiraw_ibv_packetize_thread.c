@@ -36,7 +36,7 @@
 // accordingly.  Returns 0 on success or -1 on error.
 static
 int
-parse_ibvpktsz(struct hpguppi_pktbuf_info *pktbuf_info, char * ibvpktsz)
+parse_ibvpktsz(struct hpguppi_pktbuf_info *pktbuf_info, char * ibvpktsz, size_t blocksize)
 {
   int i;
   char * p;
@@ -98,7 +98,7 @@ parse_ibvpktsz(struct hpguppi_pktbuf_info *pktbuf_info, char * ibvpktsz)
   pktbuf_info->num_chunks = nchunks;
   pktbuf_info->pkt_size = pkt_size;
   pktbuf_info->slot_size = slot_size;
-  pktbuf_info->slots_per_block = BLOCK_DATA_SIZE / slot_size;
+  pktbuf_info->slots_per_block = blocksize / slot_size;
 
   pktbuf_info->slots_per_block = (pktbuf_info->slots_per_block/8) * 8;
 
@@ -240,7 +240,7 @@ static int init(hashpipe_thread_args_t *args)
   // Get pointer to hpguppi_pktbuf_info
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(db);
   // Parse ibvpktsz
-  if(parse_ibvpktsz(pktbuf_info, ibvpktsz)) {
+  if(parse_ibvpktsz(pktbuf_info, ibvpktsz, blocsize)) {
     return HASHPIPE_ERR_PARAM;
   }
   
