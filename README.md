@@ -4,11 +4,9 @@
 
 # Dockerfile usage
 
-```
-docker -t hp_daq .
+`docker build -t hp_daq .`
 
-docker run -it --cap-add IPC_LOCK --volume ${PWD}/tests:/mnt/buf0 hp_daq
-```
+`docker run -it --cap-add IPC_LOCK --volume ${PWD}/test:/mnt/buf0 --env HASHPIPE_KEYFILE=/work --env LD_LIBRARY_PATH=/work/hashpipe/src/.libs:/work/xGPU/src:/work/uvh5c99/build:/work/uvh5c99/build/subprojects/radiointerferometryc99:${LD_LIBRARY_PATH} hp_daq`
 
 # Basic library dependencies
 
