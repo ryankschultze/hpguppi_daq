@@ -23,15 +23,6 @@
 #include "hpguppi_pktbuf.h"
 #include "hpguppi_rawspec.h"
 
-#define ELAPSED_S(start,stop) \
-  ((int64_t)stop.tv_sec-start.tv_sec)
-
-#ifdef ELAPSED_NS
-#undef ELAPSED_NS
-#endif
-#define ELAPSED_NS(start,stop) \
-  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
-
 // Parses the ibvpktsz string for chunk sizes and initializes db's pktbuf_info
 // accordingly.  Returns 0 on success or -1 on error.
 static

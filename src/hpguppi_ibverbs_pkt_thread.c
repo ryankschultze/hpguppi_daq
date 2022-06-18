@@ -98,14 +98,6 @@
 // #define IBV_FLOW_ATTR_SNIFFER IBV_EXP_FLOW_ATTR_SNIFFER
 // #endif
 
-// Forget previous (possilby less parenthesized) version
-#ifdef ELAPSED_NS
-#undef ELAPSED_NS
-#endif
-
-#define ELAPSED_NS(start,stop) \
-  (((int64_t)(stop).tv_sec-(start).tv_sec)*1000*1000*1000 + \
-   ((stop).tv_nsec-(start).tv_nsec))
 
 // Wait for a block_info's databuf block to be free, then copy status buffer to
 // block's header and clear block's data.  Calling thread will exit on error

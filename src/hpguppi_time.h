@@ -11,6 +11,12 @@
 #include <hashpipe.h>
 #include "slalib.h"
 
+#define ELAPSED_S(start,stop) \
+  ((int64_t)(stop).tv_sec-(start).tv_sec)
+
+#define ELAPSED_NS(start,stop) \
+  (ELAPSED_S(start,stop)*1000*1000*1000+((stop).tv_nsec-(start).tv_nsec))
+
 struct mjd_t {
   int    stt_imjd;
   int    stt_smjd;

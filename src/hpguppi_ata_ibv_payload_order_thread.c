@@ -54,15 +54,6 @@
 #define memcpy_nt(dst,src,len) memcpy(dst,src,len)
 #endif
 
-#define ELAPSED_S(start,stop) \
-  ((int64_t)stop.tv_sec-start.tv_sec)
-
-#ifdef ELAPSED_NS
-#undef ELAPSED_NS
-#endif
-#define ELAPSED_NS(start,stop) \
-  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
-
 // This thread's init() function, if provided, is called by the Hashpipe
 // framework at startup to allow the thread to perform initialization tasks
 // such as setting up network connections or GPU devices.

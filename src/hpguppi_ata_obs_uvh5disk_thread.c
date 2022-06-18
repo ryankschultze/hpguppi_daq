@@ -34,12 +34,6 @@
 
 #define MJD0 2400000.5
 
-#define ELAPSED_S(start,stop) \
-  ((int64_t)stop.tv_sec-start.tv_sec)
-
-#define ELAPSED_NS(start,stop) \
-  (ELAPSED_S(start,stop)*1000*1000*1000+(stop.tv_nsec-start.tv_nsec))
-
 static int safe_close(UVH5_file_t* uvh5_file) {
   UVH5close(uvh5_file);
   return 0;
