@@ -222,12 +222,6 @@ static int init(hashpipe_thread_args_t *args)
   }
   hashpipe_status_unlock_safe(st);
 
-  // blockn_time = blocsize / ((blockn_freq * blockn_pol * 2 * nbits)/8);
-  // if(blockn_time % pktntime != 0) {
-  //   hashpipe_error(thread_name, "NTIME (%d) %% (%d) PKTNTIME != 0", blockn_time, pktntime);
-  //   return HASHPIPE_ERR_PARAM;
-  // }
-
   // Get pointer to hpguppi_pktbuf_info
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(db);
   // Parse ibvpktsz
@@ -422,12 +416,6 @@ static void * run(hashpipe_thread_args_t * args)
         blockpkt_slot = (blockpkt_slot + 1)%slots_per_block;
         if(blockpkt_slot == 0){
           //! TODO update status while waiting
-
-          // guppifile_pos = lseek(guppifile_fd, 0, SEEK_CUR);
-          // lseek(guppifile_fd, raw_hdr.hdr_pos, SEEK_SET);
-          // read(guppifile_fd, hpguppi_databuf_header(dbout, curblk), raw_hdr.hdr_size);
-          // lseek(guppifile_fd, guppifile_pos, SEEK_SET);
-
           hashpipe_status_lock_safe(st);
             memcpy((char*)hpguppi_databuf_header(dbout, curblk), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
           hashpipe_status_unlock_safe(st);
@@ -463,6 +451,46 @@ static void * run(hashpipe_thread_args_t * args)
     guppifile_fd = open(guppifile_path, O_RDONLY);
   } // while guppifile_fd
   hashpipe_info(thread_name, "Could not open %s.", guppifile_path);
+
+  int obsdone;
+  hget_obsdone(st, &obsdone);
+  while(!obsdone){
+    do {
+      base_addr = hpguppi_pktbuf_block_slot_ptr(dbout, curblk, blockpkt_slot);
+      pkt_header.timestamp = __bswap_64(pktidx);
+      pkt_header.chan = __bswap_16(schan + blockfreq_i);
+      pkt_header.feng_id = __bswap_16(blockant_i);
+
+      // assume second chunk is packet header
+      memcpy(base_addr + chunks[1].chunk_offset, &pkt_header, chunks[1].chunk_size);
+      // don't bother with data
+
+      // increment indices
+      blockpkt_slot = (blockpkt_slot + 1)%slots_per_block;
+      if(blockpkt_slot == 0){
+        hashpipe_status_lock_safe(st);
+          memcpy((char*)hpguppi_databuf_header(dbout, curblk), st->buf, HASHPIPE_STATUS_TOTAL_SIZE);
+        hashpipe_status_unlock_safe(st);
+
+        hpguppi_databuf_set_filled(dbout, curblk);
+        curblk = (curblk + 1) %dbout->header.n_block;
+        // progress buffers
+        while(hpguppi_databuf_wait_free(dbout, curblk) == HASHPIPE_TIMEOUT && run_threads());
+      }
+
+      // Iterate through dimensions
+      blockant_i = (blockant_i + 1) % blockn_ant;
+      if (blockant_i == 0) {
+        blockfreq_i = (blockfreq_i + pktnchan) % blockn_freq;
+        if (blockfreq_i == 0) {
+          blocktime_i = (blocktime_i + pktntime) % blockn_time;
+          blockpol_i = (blockpol_i + blockn_pol) % blockn_pol; // practically no-op
+          pktidx += pktntime;
+        }
+      }
+    } while ((blockant_i | blockfreq_i | blocktime_i | blockpol_i) != 0);
+    hget_obsdone(st, &obsdone);
+  }
 
   hashpipe_info(thread_name, "exiting!");
   pthread_exit(NULL);
