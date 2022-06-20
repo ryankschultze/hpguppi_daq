@@ -97,6 +97,9 @@ typedef struct hpguppi_databuf {
 #define hpguppi_databuf_data(d, block_id)\
     _hpguppi_databuf_data((hpguppi_databuf_t *)d, block_id)
 
+#define hpguppi_databuf_size(d)\
+    _hpguppi_databuf_size((hpguppi_databuf_t*) d)
+
 static inline char *_hpguppi_databuf_header(hpguppi_databuf_t *d, int block_id) {
     if(block_id < 0 || d->header.n_block < block_id) {
         hashpipe_error(__FUNCTION__,
@@ -117,6 +120,10 @@ static inline char *_hpguppi_databuf_data(hpguppi_databuf_t *d, int block_id) {
     } else {
         return d->block[0].data + block_id*d->header.block_size;
     }
+}
+
+static inline size_t _hpguppi_databuf_size(hpguppi_databuf_t* d) {
+    return d->header.block_size - d->header.header_size;
 }
 
 /*
