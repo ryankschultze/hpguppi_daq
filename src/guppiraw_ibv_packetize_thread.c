@@ -96,49 +96,16 @@ parse_ibvpktsz(struct hpguppi_pktbuf_info *pktbuf_info, char * ibvpktsz, size_t 
   return 0;
 }
 
-void _null_terminate_key(char *key){
-  while(*key != '=' && *(key++) != ' ');
-  *key = '\0';  
-}
-
-void _null_terminate_last_quote(char *str){
-  str += 72;
-  while(*(str--) != '\'');
-  *str = '\0';  
-}
-
-void hput_buf(char *buf, char *guppiheader_buf) {
-  char value[71] = {'\0'};
-
-  // Loop over the 80-byte records until the "END " record
-  while(strncmp(guppiheader_buf, "END ", 4) != 0) {
-    value[0] = '\0';
-    _null_terminate_key(guppiheader_buf);
-    // check if target buf has the same key
-    hgets(buf, guppiheader_buf, 71, value);
-
-    if(value[0] != '\0') {
-      hashpipe_info(
-        __FUNCTION__,
-        "Honouring existing `%s` value: `%s`",// (over '%s)",
-        guppiheader_buf,
-        value//,
-        // guppiheader_buf+10
-      );
-    }
-    else {
-      if(*(guppiheader_buf+10) == '\''){ // strings start with " '"
-        _null_terminate_last_quote(guppiheader_buf+10);
-        hputs(buf, guppiheader_buf, guppiheader_buf+11);
-      }
-      else { // not a string, probably some numeric value
-        strncpy(value, guppiheader_buf+9, sizeof(value));
-        hputs(buf, guppiheader_buf, guppiheader_buf+9);
-        // fprintf(stderr, "\tkey: `%s`, value: `%s`\n", guppiheader_buf, value);
-      }
-    }
-    guppiheader_buf += 80;
+int header_key_count(char* guppi_header) {
+  int key_count = 0;
+  while(strncmp(guppi_header+key_count*80, "END ", 4) != 0 && guppi_header[key_count*80 + 8] == '=') {
+    key_count++;
   }
+  return key_count;
+}
+
+int directio_round_up(int size) {
+  return (size + 511) & ~ 511;
 }
 
 static int init(hashpipe_thread_args_t *args)
@@ -155,9 +122,10 @@ static int init(hashpipe_thread_args_t *args)
 
   uint32_t blockn_ant, blockn_freq, blockn_pol;
   uint32_t schan=0;
-  uint32_t blocsize=0;
+  uint32_t guppi_blocsize=0, blocsize=0;
   uint32_t nbits=0;
   uint32_t pktnchan=0, pktntime=0;
+  uint32_t directio=0;
   char ibvpktsz[80];
   strcpy(ibvpktsz, "42,16,8192");
 
@@ -177,9 +145,10 @@ static int init(hashpipe_thread_args_t *args)
   char guppifile_header[MAX_RAW_HDR_SIZE];
   // Read header (plus some data, probably)
   read(guppifile_fd, guppifile_header, MAX_RAW_HDR_SIZE);
+  off_t guppifile_size = lseek(guppifile_fd, 0, SEEK_END);
   close(guppifile_fd);
 
-  hgetu4(guppifile_header, "BLOCSIZE", &blocsize);
+  hgetu4(guppifile_header, "BLOCSIZE", &guppi_blocsize);
   hgetu4(guppifile_header, "PKTNCHAN", &pktnchan);
   hgetu4(guppifile_header, "PKTNTIME", &pktntime);
   blockn_ant = 1; // default
@@ -187,25 +156,48 @@ static int init(hashpipe_thread_args_t *args)
   hgetu4(guppifile_header, "OBSNCHAN", &blockn_freq);
   hgetu4(guppifile_header, "NPOL", &blockn_pol);
   hgetu4(guppifile_header, "NBITS", &nbits);
+  hgetu4(guppifile_header, "DIRECTIO", &directio);
   hgetu4(guppifile_header, "SCHAN", &schan);
-  fprintf(stderr, "Block parameters:\n");
-  fprintf(stderr, "\tBLOCSIZE = %d\n", blocsize);
-  fprintf(stderr, "\tPKTNCHAN = %d\n", pktnchan);
-  fprintf(stderr, "\tPKTNTIME = %d\n", pktntime);
-  fprintf(stderr, "\tNANTS    = %d\n", blockn_ant);
-  fprintf(stderr, "\tOBSNCHAN = %d\n", blockn_freq);
-  fprintf(stderr, "\tNPOL     = %d\n", blockn_pol);
-  fprintf(stderr, "\tNBITS    = %d\n", nbits);
-  fprintf(stderr, "\tSCHAN    = %d\n", schan);
+  hashpipe_info(thread_name, "Block parameters:");
+  hashpipe_info(thread_name, "\tBLOCSIZE = %d", guppi_blocsize);
+  hashpipe_info(thread_name, "\tPKTNCHAN = %d", pktnchan);
+  hashpipe_info(thread_name, "\tPKTNTIME = %d", pktntime);
+  hashpipe_info(thread_name, "\tNANTS    = %d", blockn_ant);
+  hashpipe_info(thread_name, "\tOBSNCHAN = %d", blockn_freq);
+  hashpipe_info(thread_name, "\tNPOL     = %d", blockn_pol);
+  hashpipe_info(thread_name, "\tNBITS    = %d", nbits);
+  hashpipe_info(thread_name, "\tSCHAN    = %d", schan);
+
+  // set BLOCSIZE to the next lowest multiple of the RAW input BLOCSIZE
+  int header_size = header_key_count(guppifile_header)*80;
+  if(directio == 1) {
+    header_size = directio_round_up(header_size);
+    guppi_blocsize = directio_round_up(guppi_blocsize);
+  }
+  int guppifile_blocks = guppifile_size / (header_size + guppi_blocsize);
+  hashpipe_info(thread_name, "Ingest filesize: %llu (%d blocks)", guppifile_size, guppifile_blocks);
+  int blocksize_ratio = (hpguppi_databuf_size(db)/guppi_blocsize);
+  hashpipe_info(thread_name, "Blocksize ratio: %d", blocksize_ratio);
+  // further restrict blocsize so that it is at most 1/4 the entire ingest file
+  // 1/4 ensures 4 blocks are pushed downstream before the file completes. This
+  // is sure to trigger the payload_order_thread to push at least one of its
+  // n_wblock=3 working blocks further downstream, securing the inititialisation of the 
+  // 'observation' and an output file.
+  if(blocksize_ratio > guppifile_blocks/4) {
+    blocksize_ratio = guppifile_blocks/4;
+    hashpipe_info(thread_name, "Reduced blocksize ratio: %d", blocksize_ratio);
+  }
+  blocsize = blocksize_ratio*guppi_blocsize;
 
   hashpipe_status_lock_safe(st);
   {
     // get keys that can override those values of the GUPPIRAW header
     hgetu4(st->buf, "PKTNCHAN", &pktnchan);
     hgetu4(st->buf, "PKTNTIME", &pktntime);
+    hputu4(st->buf, "BLOCSIZE", blocsize);
 
     // push keys
-    hputu4(st->buf, "BLOCSIZE", blocsize);
+    hputu4(st->buf, "RAWBLKSZ", guppi_blocsize);
     hputu4(st->buf, "PKTNCHAN", pktnchan);
     hputu4(st->buf, "PKTNTIME", pktntime);
     hputu4(st->buf, "NANTS", blockn_ant);
@@ -224,7 +216,6 @@ static int init(hashpipe_thread_args_t *args)
 
   // Get pointer to hpguppi_pktbuf_info
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(db);
-  // Parse ibvpktsz
   if(parse_ibvpktsz(pktbuf_info, ibvpktsz, blocsize)) {
     return HASHPIPE_ERR_PARAM;
   }
@@ -285,7 +276,7 @@ static void * run(hashpipe_thread_args_t * args)
   hashpipe_status_lock_safe(st);
     hgets(st->buf, "RAWSTEM", sizeof(guppifile_pathstem), guppifile_pathstem);
   
-    hgetu4(st->buf, "BLOCSIZE", &blocsize);
+    hgetu4(st->buf, "RAWBLKSZ", &blocsize);
     hgetu4(st->buf, "PKTNCHAN", &pktnchan);
     hgetu4(st->buf, "PKTNTIME", &pktntime);
     blockn_ant = 1; // default
