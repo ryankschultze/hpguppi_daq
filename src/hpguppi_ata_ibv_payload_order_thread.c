@@ -255,7 +255,7 @@ int debug_i=0, debug_j=0;
   // wblk is a two element array of block_info structures (i.e. the working
   // blocks)
   int wblk_idx;
-  const int n_wblock = 4;
+  const int n_wblock = 3;
   struct datablock_stats wblk[n_wblock];
   uint32_t *thread_wblk_pkt_count = malloc(ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
   memset(thread_wblk_pkt_count, 0, ATA_IBV_FOR_PACKET_THREAD_COUNT*n_wblock*sizeof(uint32_t));
