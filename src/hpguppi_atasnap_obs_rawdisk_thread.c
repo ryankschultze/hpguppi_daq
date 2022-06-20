@@ -68,14 +68,17 @@ static int safe_close(int *pfd) {
 
 static void *run(hashpipe_thread_args_t * args)
 {
-    // Local aliases to shorten access to args fields
-    // Our output buffer happens to be a hpguppi_input_databuf
-    
-  hpguppi_input_databuf_t *indb  = (hpguppi_input_databuf_t *)args->ibuf;
-
+  // Local aliases to shorten access to args fields
   hashpipe_status_t* st = &(args->st);
   const char* status_key = args->thread_desc->skey;
   const char* thread_name = args->thread_desc->name;
+
+  // The output buffer is generic
+  hpguppi_databuf_t *indb  = (hpguppi_databuf_t *)hpguppi_databuf_attach_retry(args->instance_id, args->input_buffer);
+  if(!indb) {
+    hashpipe_error(thread_name, "Could not attach to input databuf #(%d).", args->input_buffer);
+    return THREAD_ERROR;
+  }
 
   /* Read in general parameters */
   struct hpguppi_params gp;
@@ -100,7 +103,7 @@ static void *run(hashpipe_thread_args_t * args)
 
   char *datablock_header;
   int blocksize=0, len=0;
-  int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/BLOCK_DATA_SIZE) , filenum=0;
+  int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/hpguppi_databuf_size(indb)) , filenum=0;
   int got_packet_0=0;
   char *hend;
   int open_flags = 0;
@@ -126,7 +129,7 @@ static void *run(hashpipe_thread_args_t * args)
   // Used to calculate moving average of fill-to-free times for input blocks
   uint64_t fill_to_free_elapsed_ns;
   uint64_t fill_to_free_moving_sum_ns = 0;
-  uint64_t fill_to_free_block_ns[N_INPUT_BLOCKS] = {0};
+  uint64_t *fill_to_free_block_ns = malloc(sizeof(uint64_t) * indb->header.n_block);
   struct timespec ts_free_input = {0}, ts_block_recvd = {0};
   
   /* Heartbeat variables */
@@ -161,7 +164,7 @@ static void *run(hashpipe_thread_args_t * args)
               hputu8(st->buf, "OBSNDROP", obs_ndrop_total);
               hputu4(st->buf, "OBSBLKPS", blocks_per_second);
               hputr4(st->buf, "OBSBLKMS",
-                round((double)fill_to_free_moving_sum_ns / N_INPUT_BLOCKS) / 1e6);
+                round((double)fill_to_free_moving_sum_ns / indb->header.n_block) / 1e6);
               hputs(st->buf, "DAQPULSE", timestr);
               HPUT_DAQ_STATE(st, state);
           }
@@ -458,7 +461,7 @@ static hashpipe_thread_desc_t obs_rawdisk_thread = {
     skey: "OBSSTAT",
     init: NULL,
     run:  run,
-    ibuf_desc: {hpguppi_input_databuf_create},
+    ibuf_desc: {NULL},
     obuf_desc: {NULL}
 };
 

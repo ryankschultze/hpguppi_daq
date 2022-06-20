@@ -53,6 +53,22 @@ hashpipe_databuf_t *hpguppi_input_databuf_create(int instance_id, int databuf_id
     return (hashpipe_databuf_t *)d;
 }
 
+hashpipe_databuf_t *hpguppi_databuf_attach_retry(int instance_id, int databuf_id) {
+  // Attach to databuf as a low-level hashpipe databuf. Cannot create
+  // the upstream databuf if it does not yet exist. Wait at most 1 second
+  // for it to be created by a different thread. 
+  struct timespec ts = {0, 1000}; // One microsecond
+  int max_tries = 1000000; // One million microseconds
+  hashpipe_databuf_t *db = NULL;
+  for(int i = 0; i < max_tries; i++) {
+      db = hashpipe_databuf_attach(instance_id, databuf_id);
+      if(db) break;
+      nanosleep(&ts, NULL);
+  }
+
+  return db;
+}
+
 #if 0 // OLD STUFF
 
 int hpguppi_databuf_detach(struct guppi_databuf *d) {

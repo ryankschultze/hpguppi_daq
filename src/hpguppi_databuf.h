@@ -126,6 +126,8 @@ static inline size_t _hpguppi_databuf_size(hpguppi_databuf_t* d) {
     return d->header.block_size - d->header.header_size;
 }
 
+hashpipe_databuf_t *hpguppi_databuf_attach_retry(int instance_id, int databuf_id);
+
 /*
  * HPGUPPI INPUT BUFFER CREATE
  */
