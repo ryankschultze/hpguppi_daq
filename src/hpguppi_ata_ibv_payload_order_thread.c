@@ -287,7 +287,9 @@ int debug_i=0, debug_j=0;
   char flag_state_update = 0;
   char  LATE_PKTIDX_flagged = 0;
   char  PKT_OBS_FENG_flagged,
-        PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged;
+        PKT_OBS_SCHAN_flagged,
+        PKT_OBS_NCHAN_flagged,
+        PKT_OBS_PKTNTIME_flagged;
 
   // Variables for working with the input databuf
   struct hpguppi_pktbuf_info * pktbuf_info = hpguppi_pktbuf_info_ptr(dbin);
@@ -447,6 +449,7 @@ int debug_i=0, debug_j=0;
             PKT_OBS_FENG_flagged = 0;
             PKT_OBS_SCHAN_flagged = 0;
             PKT_OBS_NCHAN_flagged = 0;
+            PKT_OBS_PKTNTIME_flagged = 0;
           }
         }
 
@@ -633,7 +636,7 @@ int debug_i=0, debug_j=0;
           LATE_PKTIDX_flagged,\
           dest_feng_pktidx_offset\
         )\
-        firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged)\
+        firstprivate (p_u8pkt, obs_info, PKT_OBS_FENG_flagged, PKT_OBS_SCHAN_flagged, PKT_OBS_NCHAN_flagged, PKT_OBS_PKTNTIME_flagged)\
         reduction(min:obs_info_validity)\
         num_threads (ATA_IBV_FOR_PACKET_THREAD_COUNT)
         // The above `reduction` initialises each local variable as MAX>OBS_SEEMS_VALID, 
@@ -729,6 +732,16 @@ int debug_i=0, debug_j=0;
                 pkt_info.pkt_schan, pkt_info.pkt_schan + obs_info.pkt_nchan, obs_info.schan, obs_info.schan + obs_info.nchan
               );
               PKT_OBS_NCHAN_flagged = 1;
+            }
+            break;
+          case PKT_OBS_PKTNTIME:
+            if(!PKT_OBS_PKTNTIME_flagged){
+              obs_info_validity = OBS_INVALID_PKTNTIME;
+              hashpipe_error(thread_name, 
+                "Packet ignored: PKT_OBS_PKTNTIME\n\tPKTNTIME %d != %d ATASNAP_DEFAULT_PKTNTIME",
+                obs_info.pkt_ntime, ATASNAP_DEFAULT_PKTNTIME
+              );
+              PKT_OBS_PKTNTIME_flagged = 1;
             }
             break;
           default:

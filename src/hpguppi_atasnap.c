@@ -177,6 +177,9 @@ unsigned check_pkt_observability(
       hashpipe_warn(__FUNCTION__, "pkt_chans [%d-%d] <> [%d-%d] ata_oi->chans",
               pkt_schan, pkt_schan + ata_oi->pkt_nchan, ata_oi->schan, ata_oi->schan + ata_oi->nchan);
       break;
+    case PKT_OBS_PKTNTIME:
+      hashpipe_error(__FUNCTION__, "PKTNTIME %d != %d ATASNAP_DEFAULT_PKTNTIME",
+              ata_oi->pkt_ntime, ATASNAP_DEFAULT_PKTNTIME);
     default:
       break;
   }
@@ -347,7 +350,7 @@ char ata_snap_obs_info_read_with_validity(hashpipe_status_t *st, struct ata_snap
     // then obs will continue to be invalid or valid
     return 0;
   }
-  else if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
+  if(ata_snap_obs_info_valid(*obs_info)) { // if change in obs_info and obs_info seems valid
     ata_snap_populate_block_related_fields(obs_info->eff_block_size, obs_info);
     *validity = OBS_SEEMS_VALID;
     return 1;

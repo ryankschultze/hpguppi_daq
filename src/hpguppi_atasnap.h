@@ -268,16 +268,18 @@ enum pkt_obs_code { PKT_OBS_OK=0,
                     PKT_OBS_IDX,
                     PKT_OBS_FENG,
                     PKT_OBS_SCHAN,
-                    PKT_OBS_NCHAN
+                    PKT_OBS_NCHAN,
+                    PKT_OBS_PKTNTIME
                   };
 enum obs_info_validity { 
-                OBS_UNKNOWN=-5,       //=-5
-                OBS_INVALID_FENG=-4,  //=-4
-                OBS_INVALID_SCHAN=-3, //=-3
-                OBS_INVALID_NCHAN=-2, //=-2
-                OBS_INVALID=-1,       //=-1
-                OBS_SEEMS_VALID=0,    //=0   sign bit for validity
-                OBS_VALID=1           //=1
+                OBS_UNKNOWN=-6,         //=-5
+                OBS_INVALID_PKTNTIME=-5,//=-5
+                OBS_INVALID_FENG=-4,    //=-4
+                OBS_INVALID_SCHAN=-3,   //=-3
+                OBS_INVALID_NCHAN=-2,   //=-2
+                OBS_INVALID=-1,         //=-1
+                OBS_SEEMS_VALID=0,      //=0   sign bit for validity
+                OBS_VALID=1             //=1
               };
 
 struct __attribute__ ((__packed__)) ata_snap_payload_header {
@@ -438,7 +440,7 @@ ata_snap_obs_info_valid(const struct ata_snap_obs_info oi)
     (oi.nchan      != 0) &&
     (oi.pkt_npol   != 0) &&
     (oi.time_nbits != 0) &&
-    (oi.pkt_ntime  != 0) &&
+    (oi.pkt_ntime  == ATASNAP_DEFAULT_PKTNTIME) &&
     (oi.pkt_nchan  != 0) &&
     (oi.schan      != OBS_INFO_INVALID_SCHAN);
 }
@@ -737,6 +739,9 @@ unsigned check_pkt_observability_sans_idx(
   }
   if(pkt_schan + ata_oi->pkt_nchan > ata_oi->schan + ata_oi->nchan){
     return PKT_OBS_NCHAN;
+  }
+  if(ata_oi->pkt_ntime != ATASNAP_DEFAULT_PKTNTIME){
+    return PKT_OBS_PKTNTIME;
   }
   return PKT_OBS_OK;
 }
