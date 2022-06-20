@@ -85,8 +85,8 @@
 
 #include "hashpipe.h"
 #include "hpguppi_databuf.h"
-#include "hpguppi_time.h"
 #include "hpguppi_ibverbs_pkt_thread.h"
+#include "hpguppi_time.h"
 
 // Milliseconds between periodic status buffer updates
 #define PERIODIC_STATUS_BUFFER_UPDATE_MS (200)
