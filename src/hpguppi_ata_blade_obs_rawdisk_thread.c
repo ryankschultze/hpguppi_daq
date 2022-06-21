@@ -86,6 +86,7 @@ static void *run(hashpipe_thread_args_t * args)
   /* Init output file descriptor (-1 means no file open) */
   int* fdraws = malloc(sizeof(int));
   int nbeams = 1;
+  int nfdraws = 0;
   // pthread_cleanup_push((void *)safe_close, fdraws, &nbeams);
 
   /* Set I/O priority class for this thread to "real time" */
@@ -103,7 +104,7 @@ static void *run(hashpipe_thread_args_t * args)
   int curblock_in=0;
 
   char *datablock_header;
-  int beam_blocksize=0, len=0;
+  int file_blocksi=0, len=0;
   int block_count=0, blocks_per_file= (int) (((uint64_t)16<<30)/hpguppi_databuf_size(indb)) , filenum=0;
   int got_packet_0=0;
   char *hend;
@@ -257,24 +258,30 @@ static void *run(hashpipe_thread_args_t * args)
           directio = hpguppi_read_directio_mode(datablock_header);
           hgeti4(datablock_header, "STTVALID", &gp.stt_valid);
           /* Get full data block size */
-          hgeti4(datablock_header, "BLOCSIZE", &beam_blocksize);
+          hgeti4(datablock_header, "BLOCSIZE", &file_blocksize);
 
           // free previous fdraws
           free(fdraws);
 
-          nbeams = 1;
+          nbeams = 0;
           hgeti4(datablock_header, "NBEAMS", &nbeams);
-          if(beam_blocksize % nbeams == 0){
-            hashpipe_warn(thread_name, "BLOCSIZE %d split per NBEAMS %d.", beam_blocksize, nbeams);
-            beam_blocksize /= nbeams;
+          if(nbeams>0){
+            if(file_blocksize % nbeams == 0){
+              hashpipe_warn(thread_name, "BLOCSIZE %d split per NBEAMS %d.", file_blocksize, nbeams);
+              file_blocksize /= nbeams;
+            }
+            else{
+              hashpipe_warn(thread_name, "NBEAMS %d is not a factor of BLOCSIZE %d. Outputting a single file.", nbeams, file_blocksize);
+              nbeams = 1;
+            }
+            nfdraws = nbeams;
           }
           else{
-            hashpipe_warn(thread_name, "NBEAMS %d is not a factor of BLOCSIZE %d. Outputting a single file.", nbeams, beam_blocksize);
-            nbeams = 1;
+            nfdraws = 1;
           }
 
-          fdraws = malloc(nbeams*sizeof(int));
-          for(i = 0; i < nbeams; i++){
+          fdraws = malloc(nfdraws*sizeof(int));
+          for(i = 0; i < nfdraws; i++){
             fdraws[i] = -1;
           }
         }
@@ -304,10 +311,12 @@ static void *run(hashpipe_thread_args_t * args)
           || pf.hdr.start_sec != mjd->stt_smjd + mjd->stt_offs)// and Observation timestamp has changed
           ){// Start new stem.
           fprintf(stderr, "STT_MJD value changed. Starting a new file stem.\n");
-          for(i = 0; i < nbeams; i++){
+
+          for(i = 0; i < nfdraws; i++){
             close(fdraws[i]);
             fdraws[i] = -1;
           }
+          
           // Reset fdraw, got_packet_0, filenum, block_count
           got_packet_0 = 0;
           filenum = 0;
@@ -355,9 +364,15 @@ static void *run(hashpipe_thread_args_t * args)
         if(directio) {
           open_flags |= O_DIRECT;
         }
-        for(i = 0; i < nbeams; i++){
-          sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
 
+        for(i = 0; i < nfdraws; i++){
+          if(nbeams==0){
+            sprintf(fname, "%s.%04d.raw", pf.basefilename,filenum);
+          }
+          else{
+            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
+          }
+          
           fprintf(stderr, "Opening first raw file '%s' (directio=%d)\n", fname, directio);
           fdraws[i] = open(fname, open_flags, 0644);
           if (fdraws[i]==-1) {
@@ -365,15 +380,21 @@ static void *run(hashpipe_thread_args_t * args)
             pthread_exit(NULL);
           }
         }
-
+        
       }
 
       /* See if we need to open next file */
       if (block_count >= blocks_per_file) {
         filenum++;
-        for(i = 0; i < nbeams; i++){
+        
+        for(i = 0; i < nfdraws; i++){
           close(fdraws[i]);
-          sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
+          if(nbeams==0){
+            sprintf(fname, "%s.%04d.raw", pf.basefilename,filenum);
+          }
+          else{
+            sprintf(fname, "%s-beam%04d.%04d.raw", pf.basefilename, i, filenum);
+          }
 
           open_flags = O_CREAT|O_WRONLY;//|O_SYNC;
           if(directio) {
@@ -386,6 +407,7 @@ static void *run(hashpipe_thread_args_t * args)
             pthread_exit(NULL);
           }
         }
+        
         block_count=0;
       }
 
@@ -393,7 +415,7 @@ static void *run(hashpipe_thread_args_t * args)
       if (got_packet_0) {
         // Overwrite the incomming datablock headers to be appropriate for output
         hputi4(datablock_header, "NBEAMS", 1);
-        hputi4(datablock_header, "BLOCSIZE", beam_blocksize);
+        hputi4(datablock_header, "BLOCSIZE", file_blocksize);
         
         if(waiting != -1){
           /* Note writing status */
@@ -423,7 +445,8 @@ static void *run(hashpipe_thread_args_t * args)
             // Round up to next multiple of 512
             len = (len+511) & ~511;
         }
-        for(i = 0; i < nbeams; i++){
+        
+        for(i = 0; i < nfdraws; i++){
           /* Write header (and padding, if any) */
           rv = write_all(fdraws[i], datablock_header, len);
           if (rv != len) {
@@ -436,12 +459,13 @@ static void *run(hashpipe_thread_args_t * args)
 
         /* Write data */
         datablock_header = hpguppi_databuf_data(indb, curblock_in);
-        len = beam_blocksize;
+        len = file_blocksize;
         if(directio) {
             // Round up to next multiple of 512
             len = (len+511) & ~511;
         }
-        for(i = 0; i < nbeams; i++){
+        
+        for(i = 0; i < nfdraws; i++){
           rv = write_all(fdraws[i], datablock_header, (size_t)len);
           if (rv != len) {
               char msg[100];
@@ -456,9 +480,9 @@ static void *run(hashpipe_thread_args_t * args)
           }
 
           // offset data pointer to the next beam's data
-          datablock_header += beam_blocksize;
+          datablock_header += file_blocksize;
         }
-
+        
         /* Increment counter */
         block_count++;
       }
@@ -467,12 +491,14 @@ static void *run(hashpipe_thread_args_t * args)
       if(block_stop_pktidx == obs_stop_pktidx) {
         // If file open, close it
         if(fdraws[0] != -1) {
-          for(i = 0; i < nbeams; i++){
+          
+          for(i = 0; i < nfdraws; i++){
             // Close file
             close(fdraws[i]);
             // Reset fdraw, got_packet_0, filenum, block_count
             fdraws[i] = -1;
           }
+          
           got_packet_0 = 0;
           filenum = 0;
           block_count=0;
